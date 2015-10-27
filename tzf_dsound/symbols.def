@@ -1,0 +1,17 @@
+LIBRARY "dsound"
+
+EXPORTS
+  DirectSoundCreate            = DirectSoundCreate_Detour            @1
+  DirectSoundEnumerateA        = DirectSoundEnumerateA_Detour        @2
+  DirectSoundEnumerateW        = DirectSoundEnumerateW_Detour        @3
+
+  DirectSoundCaptureCreate     = DirectSoundCaptureCreate_Detour     @6
+  DirectSoundCaptureEnumerateA = DirectSoundCaptureEnumerateA_Detour @7
+  DirectSoundCaptureEnumerateW = DirectSoundCaptureEnumerateW_Detour @8
+
+  GetDeviceID                  = GetDeviceID_Detour                  @9
+  DirectSoundFullDuplexCreate  = DirectSoundFullDuplexCreate_Detour  @10
+
+  DirectSoundCreate8           = DirectSoundCreate8_Detour           @11
+  DirectSoundCaptureCreate8    = DirectSoundCaptureCreate8_Detour    @12
+ 
