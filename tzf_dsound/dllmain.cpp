@@ -1,1256 +1,39 @@
-﻿#include <Windows.h>
+﻿/**
+ * This file is part of Tales of Zestiria "Fix".
+ *
+ * Tales of Zestiria "Fix" is free software : you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by The Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * Tales of Zestiria "Fix" is distributed in the hope that it will be
+ * useful,
+ *
+ * But WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tales of Zestiria "Fix".
+ *
+ *   If not, see <http://www.gnu.org/licenses/>.
+ *
+**/
+
+#include <Windows.h>
 
 #include "config.h"
 #include "log.h"
 
-#include <string>
-
-#include <dsound.h>
-
-#include <comdef.h>
-
-#include <initguid.h>
-#include <Mmdeviceapi.h>
-#include <Audiopolicy.h>
-#include <Audioclient.h>
+#include "sound.h"
+#include "framerate.h"
+#include "general_io.h"
+#include "steam.h"
 
 #pragma comment (lib, "kernel32.lib")
 
-HMODULE backend_dll = nullptr;
-
-//
-// Create and reuse a single DirectSound Instance to minimize issues with Bink
-//
-IDirectSound* g_pDS       = nullptr;
-bool          new_session = false;
-
-void
-LoadBackend (void)
-{
-  if (backend_dll != nullptr)
-    return;
-
-  dll_log.LogEx (true, L"Loading Default dsound.dll: ");
-
-  wchar_t wszBackendDLL [MAX_PATH] = { L'\0' };
-#ifdef _WIN64
-  GetSystemDirectory (wszBackendDLL, MAX_PATH);
-#else
-  BOOL bWOW64;
-  IsWow64Process (GetCurrentProcess (), &bWOW64);
-
-  if (bWOW64)
-    GetSystemWow64Directory (wszBackendDLL, MAX_PATH);
-  else
-    GetSystemDirectory (wszBackendDLL, MAX_PATH);
-#endif
-
-  lstrcatW (wszBackendDLL, L"\\dsound.dll");
-
-  dll_log.LogEx (false, L"%s... ", wszBackendDLL);
-
-  backend_dll = LoadLibrary (wszBackendDLL);
-
-  if (backend_dll != nullptr)
-     dll_log.LogEx (false, L"done!\n");
-  else
-    dll_log.LogEx (false, L"failed!\n");
-}
-
-#define __PTR_SIZE   sizeof LPCVOID
-#define __PAGE_PRIVS PAGE_EXECUTE_READWRITE
-
-#define DSOUND_VIRTUAL_OVERRIDE(_Base,_Index,_Name,_Override,_Original,_Type){\
-  void** vftable = *(void***)*_Base;                                          \
-                                                                              \
-  if (vftable [_Index] != _Override) {                                        \
-    DWORD dwProtect;                                                          \
-                                                                              \
-    VirtualProtect (&vftable [_Index], __PTR_SIZE, __PAGE_PRIVS, &dwProtect); \
-                                                                              \
-  /*dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",*/  \
-               /*L##_Name, vftable [_Index],                              */  \
-               /*TZF_DescribeVirtualProtectFlags (dwProtect));            */  \
-                                                                              \
-    if (_Original == NULL)                                                    \
-      _Original = (##_Type)vftable [_Index];                                  \
-                                                                              \
-    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
-                                                                              \
-    vftable [_Index] = _Override;                                             \
-                                                                              \
-    VirtualProtect (&vftable [_Index], __PTR_SIZE, dwProtect, &dwProtect);    \
-                                                                              \
-  /*dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",*/\
-                /*L##_Name, vftable [_Index],                               */\
-                /*TZF_DescribeVirtualProtectFlags (dwProtect));             */\
-  }                                                                           \
-}
-
-#define DSOUND_STUB(_Return, _Name, _Proto, _Args)                        \
-  _Return WINAPI                                                          \
-  _Name##_Detour _Proto {                                                 \
-    LoadBackend ();                                                       \
-                                                                          \
-    typedef _Return (STDMETHODCALLTYPE *passthrough_t) _Proto;            \
-    static passthrough_t _default_impl = nullptr;                         \
-                                                                          \
-    if (_default_impl == nullptr) {                                       \
-      static const char* szName = #_Name;                                 \
-      _default_impl = (passthrough_t)GetProcAddress (backend_dll, szName);\
-                                                                          \
-      if (_default_impl == nullptr) {                                     \
-          dll_log.Log (                                                   \
-            L"Unable to locate symbol  %s in dsound.dll",                 \
-            L#_Name);                                                     \
-        return E_NOTIMPL;                                                 \
-      }                                                                   \
-    }                                                                     \
-                                                                          \
-    dll_log.Log (L"[!] %s %s - "                                          \
-               L"[Calling Thread: 0x%04x]",                               \
-        L#_Name, L#_Proto, GetCurrentThreadId ());                        \
-                                                                          \
-    return _default_impl _Args;                                           \
-}
-
-const wchar_t*
-TZF_DescribeHRESULT (HRESULT result)
-{
-  switch (result)
-  {
-    /* Generic (SUCCEEDED) */
-
-  case S_OK:
-    return L"S_OK";
-
-  case S_FALSE:
-    return L"S_FALSE";
-
-
-   /* DirectSound */
-  case DS_NO_VIRTUALIZATION:
-    return L"DS_NO_VIRTUALIZATION";
-
-  case DSERR_ALLOCATED:
-    return L"DSERR_ALLOCATED";
-
-  case DSERR_CONTROLUNAVAIL:
-    return L"DSERR_CONTROLUNAVAIL";
-
-  case DSERR_INVALIDPARAM:
-    return L"DSERR_INVALIDPARAM";
-
-  case DSERR_INVALIDCALL:
-    return L"DSERR_INVALIDCALL";
-
-  case DSERR_GENERIC:
-    return L"DSERR_GENERIC";
-
-  case DSERR_PRIOLEVELNEEDED:
-    return L"DSERR_PRIOLEVELNEEDED";
-
-  case DSERR_OUTOFMEMORY:
-    return L"DSERR_OUTOFMEMORY";
-
-  case DSERR_BADFORMAT:
-    return L"DSERR_BADFORMAT";
-
-  case DSERR_UNSUPPORTED:
-    return L"DSERR_UNSUPPORTED";
-
-  case DSERR_NODRIVER:
-    return L"DSERR_NODRIVER";
-
-  case DSERR_ALREADYINITIALIZED:
-    return L"DSERR_ALREADYINITIALIZED";
-
-  case DSERR_NOAGGREGATION:
-    return L"DSERR_NOAGGREGATION";
-
-  case DSERR_BUFFERLOST:
-    return L"DSERR_BUFFERLOST";
-
-  case DSERR_OTHERAPPHASPRIO:
-    return L"DSERR_OTHERAPPHASPRIO";
-
-  case DSERR_UNINITIALIZED:
-    return L"DSERR_UNINITIALIZED";
-
-  case DSERR_NOINTERFACE:
-    return L"DSERR_NOINTERFACE";
-
-  case DSERR_ACCESSDENIED:
-    return L"DSERR_ACCESSDENIED";
-
-  case DSERR_BUFFERTOOSMALL:
-    return L"DSERR_BUFFERTOOSMALL";
-
-  case DSERR_DS8_REQUIRED:
-    return L"DSERR_DS8_REQUIRED";
-
-  case DSERR_SENDLOOP:
-    return L"DSERR_SENDLOOP";
-
-  case DSERR_BADSENDBUFFERGUID:
-    return L"DSERR_BADSENDBUFFERGUID";
-
-  case DSERR_OBJECTNOTFOUND:
-    return L"DSERR_OBJECTNOTFOUND";
-
-  case DSERR_FXUNAVAILABLE:
-    return L"DSERR_FXUNAVAILABLE";
-
-
-#if 0
-    /* Generic (FAILED) */
-
-  case E_FAIL:
-    return L"E_FAIL";
-
-  case E_INVALIDARG:
-    return L"E_INVALIDARG";
-
-  case E_OUTOFMEMORY:
-    return L"E_OUTOFMEMORY";
-
-  case E_NOTIMPL:
-    return L"E_NOTIMPL";
-#endif
-
-
-  default:
-    dll_log.Log (L" *** Encountered unknown HRESULT: (0x%08X)",
-      (unsigned long)result);
-    return L"UNKNOWN";
-  }
-}
-
-#define DSOUND_CALL(_Ret, _Call) {                                   \
-  dll_log.LogEx (true, L"  Calling original function: ");            \
-  (_Ret) = (_Call);                                                  \
-  dll_log.LogEx (false, L"(ret=%s)\n\n", TZF_DescribeHRESULT (_Ret));\
-}
-
-typedef HRESULT (WINAPI *DSound_GetSpeakerConfig_t)
-          (IDirectSound *This, 
-     _Out_ LPDWORD       pdwSpeakerConfig);
-
-DSound_GetSpeakerConfig_t DSound_GetSpeakerConfig_Original = nullptr;
-
-HRESULT
-WINAPI DSound_GetSpeakerConfig (IDirectSound *This, 
-                          _Out_ LPDWORD       pdwSpeakerConfig)
-{
-  dll_log.Log (L"[!] %s (%08Xh, %08Xh) - "
-    L"[Calling Thread: 0x%04x]",
-    L"IDirectSound::GetSpeakerConfig", This, pdwSpeakerConfig,
-    GetCurrentThreadId ()
-  );
-
-  HRESULT ret;
-  DSOUND_CALL(ret,DSound_GetSpeakerConfig_Original (This, pdwSpeakerConfig));
-
-  if (*pdwSpeakerConfig == DSSPEAKER_7POINT1_SURROUND ||
-      *pdwSpeakerConfig == DSSPEAKER_7POINT1 ) {
-    *pdwSpeakerConfig = DSSPEAKER_5POINT1_SURROUND;
-    dll_log.Log ( L"IDirectSound::GetSpeakerConfig (...) : "
-                  L"Reporting 7.1 system as 5.1\n" );
-  }
-
-  return ret;
-}
-
-typedef HRESULT (WINAPI *DSound_SetSpeakerConfig_t)
-          (IDirectSound *This, 
-     _In_  DWORD         dwSpeakerConfig);
-
-DSound_SetSpeakerConfig_t DSound_SetSpeakerConfig_Original = nullptr;
-
-HRESULT
-WINAPI DSound_SetSpeakerConfig (IDirectSound *This, 
-                          _In_  DWORD         dwSpeakerConfig)
-{
-  dll_log.Log (L"[!] %s (%08Xh, %08Xh) - "
-               L"[Calling Thread: 0x%04x]",
-                 L"IDirectSound::SetSpeakerConfig",
-                   This, dwSpeakerConfig,
-                     GetCurrentThreadId ()
-  );
-
-  HRESULT ret;
-  DSOUND_CALL(ret,DSound_SetSpeakerConfig_Original (This, dwSpeakerConfig));
-
-  if (dwSpeakerConfig == DSSPEAKER_7POINT1_SURROUND ||
-      dwSpeakerConfig == DSSPEAKER_7POINT1 ) {
-    dwSpeakerConfig = DSSPEAKER_5POINT1_SURROUND;
-    dll_log.Log ( L"IDirectSound::SetSpeakerConfig (...) : "
-                  L"Changing 7.1 system to 5.1\n" );
-  }
-
-  return ret;
-}
-
-typedef HRESULT (WINAPI *DSound_GetSpeakerConfig8_t)
-         (IDirectSound8 *This, 
-     _Out_ LPDWORD       pdwSpeakerConfig);
-
-DSound_GetSpeakerConfig8_t DSound_GetSpeakerConfig8_Original = nullptr;
-
-HRESULT
-WINAPI DSound_GetSpeakerConfig8 (IDirectSound8 *This, 
-                           _Out_ LPDWORD        pdwSpeakerConfig)
-{
-  dll_log.Log (L"[!] %s (%08Xh, %08Xh) - "
-               L"[Calling Thread: 0x%04x]",
-                 L"IDirectSound8::GetSpeakerConfig",
-                   This, pdwSpeakerConfig,
-                     GetCurrentThreadId ()
-  );
-
-  HRESULT ret;
-  DSOUND_CALL(ret,DSound_GetSpeakerConfig8_Original (This, pdwSpeakerConfig));
-
-  if (*pdwSpeakerConfig == DSSPEAKER_7POINT1_SURROUND ||
-      *pdwSpeakerConfig == DSSPEAKER_7POINT1 ) {
-    *pdwSpeakerConfig = DSSPEAKER_5POINT1_SURROUND;
-    dll_log.Log ( L"IDirectSound8::GetSpeakerConfig (...) : "
-                  L"Reporting 7.1 system as 5.1\n" );
-  }
-
-  return ret;
-}
-
-_Check_return_
-HRESULT
-WINAPI
-DirectSoundCreate_Detour (_In_opt_   LPCGUID        pcGuidDevice,
-                          _Outptr_   LPDIRECTSOUND *ppDS,
-                          _Pre_null_ LPUNKNOWN      pUnkOuter)
-{
-  LoadBackend ();
-
-  dll_log.Log ( L"[!] %s (%08Xh, %08Xh, %08Xh) - "
-                L"[Calling Thread: 0x%04x]",
-                  L"DirectSoundCreate",
-                    pcGuidDevice, ppDS, pUnkOuter,
-                      GetCurrentThreadId ()
-  );
-
-  if (g_pDS) {
-    dll_log.Log ( L" @ Short-Circuiting and returning previous IDirectSound "
-                  L"interface." );
-
-    *ppDS = g_pDS;
-    (*ppDS)->AddRef ();
-
-    return S_OK;
-  }
-
-  typedef HRESULT (WINAPI *DirectSoundCreate_t)
-         (_In_opt_ LPCGUID        pcGuidDevice,
-          _Outptr_ LPDIRECTSOUND *ppDS,
-        _Pre_null_ LPUNKNOWN      pUnkOuter);
-
-  static DirectSoundCreate_t dsound_create =
-    (DirectSoundCreate_t)GetProcAddress (backend_dll, "DirectSoundCreate");
-
-  HRESULT ret = dsound_create (pcGuidDevice, ppDS, pUnkOuter);
-
-  if (SUCCEEDED (ret)) {
-    DSOUND_VIRTUAL_OVERRIDE ( ppDS, 8, "IDirectSound::GetSpeakerConfig",
-                              DSound_GetSpeakerConfig,
-                              DSound_GetSpeakerConfig_Original,
-                              DSound_GetSpeakerConfig_t );
-
-    DSOUND_VIRTUAL_OVERRIDE ( ppDS, 9, "IDirectSound::SetSpeakerConfig",
-                              DSound_SetSpeakerConfig,
-                              DSound_SetSpeakerConfig_Original,
-                              DSound_SetSpeakerConfig_t );
-
-    DWORD dwSpeaker;
-
-    if (SUCCEEDED ((*ppDS)->GetSpeakerConfig (&dwSpeaker)))
-      (*ppDS)->SetSpeakerConfig (dwSpeaker);
-  }
-  else {
-    _com_error ce (ret);
-    dll_log.Log ( L" > FAILURE %s - (%s)", TZF_DescribeHRESULT (ret),
-                                            ce.ErrorMessage () );
-  }
-
-  return ret;
-}
-
-DSOUND_STUB(HRESULT, DirectSoundEnumerateA, (_In_ LPDSENUMCALLBACKA pDSEnumCallback, _In_opt_ LPVOID pContext),
-                                            (                       pDSEnumCallback,                 pContext))
-
-DSOUND_STUB(HRESULT, DirectSoundEnumerateW, (_In_ LPDSENUMCALLBACKW pDSEnumCallback, _In_opt_ LPVOID pContext),
-                                            (                       pDSEnumCallback,                 pContext))
-
-DSOUND_STUB(HRESULT, DirectSoundCaptureCreate, (_In_opt_ LPCGUID pcGuidDevice, _Outptr_ LPDIRECTSOUNDCAPTURE *ppDSC, _Pre_null_ LPUNKNOWN pUnkOuter),
-                                               (                 pcGuidDevice,                                ppDSC,                      pUnkOuter))
-
-DSOUND_STUB(HRESULT, DirectSoundCaptureEnumerateA, (_In_ LPDSENUMCALLBACKA pDSEnumCallback, _In_opt_ LPVOID pContext),
-                                                   (                       pDSEnumCallback,                 pContext))
-
-DSOUND_STUB(HRESULT, DirectSoundCaptureEnumerateW, (_In_ LPDSENUMCALLBACKW pDSEnumCallback, _In_opt_ LPVOID pContext),
-                                                   (                       pDSEnumCallback,                 pContext))
-
-HRESULT
-WINAPI
-DirectSoundCreate8_Detour ( _In_opt_ LPCGUID         pcGuidDevice,
-                            _Outptr_ LPDIRECTSOUND8 *ppDS8,
-                          _Pre_null_ LPUNKNOWN       pUnkOuter )
-{
-  LoadBackend ();
-
-  dll_log.Log ( L"[!] %s (%08Xh, %08Xh, %08Xh) - "
-                L"[Calling Thread: 0x%04x]",
-                  L"DirectSoundCreate8",
-                    pcGuidDevice, ppDS8, pUnkOuter,
-                      GetCurrentThreadId ()
-   );
-
-  typedef HRESULT (WINAPI *DirectSoundCreate8_t)
-         (_In_opt_ LPCGUID         pcGuidDevice,
-          _Outptr_ LPDIRECTSOUND8 *ppDS,
-        _Pre_null_ LPUNKNOWN       pUnkOuter);
-
-  static DirectSoundCreate8_t dsound_create8 =
-    (DirectSoundCreate8_t)GetProcAddress (backend_dll, "DirectSoundCreate8");
-
-  HRESULT ret = dsound_create8 (pcGuidDevice, ppDS8, pUnkOuter);
-
-  if (SUCCEEDED (ret)) {
-    DSOUND_VIRTUAL_OVERRIDE ( ppDS8, 8, "IDirectSound8::GetSpeakerConfig",
-                              DSound_GetSpeakerConfig8,
-                              DSound_GetSpeakerConfig8_Original,
-                              DSound_GetSpeakerConfig8_t );
-
-    DWORD dwSpeaker;
-
-    if (SUCCEEDED ((*ppDS8)->GetSpeakerConfig (&dwSpeaker)))
-      (*ppDS8)->SetSpeakerConfig (dwSpeaker);
-  } else {
-    _com_error ce (ret);
-    dll_log.Log ( L" > FAILURE %s - (%s)", TZF_DescribeHRESULT (ret),
-                                            ce.ErrorMessage () );
-  }
-
-  return ret;
-}
-
-DSOUND_STUB(HRESULT, DirectSoundCaptureCreate8, (_In_opt_ LPCGUID pcGuidDevice, _Outptr_ LPDIRECTSOUNDCAPTURE8 *ppDSC, _Pre_null_ LPUNKNOWN pUnkOuter),
-                                                (                 pcGuidDevice,                                 ppDSC,                      pUnkOuter))
-
-
-HRESULT
-WINAPI
-DirectSoundFullDuplexCreate_Detour
-(
-  _In_opt_   LPCGUID                      pcGuidCaptureDevice,
-  _In_opt_   LPCGUID                      pcGuidRenderDevice,
-  _In_       LPCDSCBUFFERDESC             pcDSCBufferDesc,
-  _In_       LPCDSBUFFERDESC              pcDSBufferDesc,
-             HWND                         hWnd,
-             DWORD                        dwLevel,
-  _Outptr_   LPDIRECTSOUNDFULLDUPLEX     *ppDSFD,
-  _Outptr_   LPDIRECTSOUNDCAPTUREBUFFER8 *ppDSCBuffer8,
-  _Outptr_   LPDIRECTSOUNDBUFFER8        *ppDSBuffer8,
-  _Pre_null_ LPUNKNOWN                    pUnkOuter
-  )
-{
-  LoadBackend ();
-
-  dll_log.Log ( L"[!] %s (%08Xh, %08Xh, %08Xh) - "
-                L"[Calling Thread: 0x%04x]",
-                  L"DirectSoundFullDuplexCreate",
-                    NULL, NULL, pUnkOuter,
-                      GetCurrentThreadId ()
-  );
-
-  return S_OK;
-}
-
-DSOUND_STUB(HRESULT, GetDeviceID, (_In_opt_ LPCGUID pGuidSrc, _Out_ LPGUID pGuidDest),
-                                  (                 pGuidSrc,              pGuidDest))
-
-#pragma comment (lib, "MinHook/lib/libMinHook.x86.lib")
-#include "MinHook/include/MinHook.h"
-
-
-typedef DECLSPEC_IMPORT HMODULE (WINAPI *LoadLibraryA_t)(LPCSTR  lpFileName);
-typedef DECLSPEC_IMPORT HMODULE (WINAPI *LoadLibraryW_t)(LPCWSTR lpFileName);
-
-LoadLibraryA_t LoadLibraryA_Original = nullptr;
-LoadLibraryW_t LoadLibraryW_Original = nullptr;
-
-HMODULE
-WINAPI
-LoadLibraryA_Detour (LPCSTR lpFileName)
-{
-  if (lpFileName == nullptr)
-    return NULL;
-
-  HMODULE hMod = LoadLibraryA_Original (lpFileName);
-
-  if (strstr (lpFileName, "steam_api") ||
-      strstr (lpFileName, "SteamworksNative")) {
-    //TZF::SteamAPI::Init (false);
-  }
-
-  return hMod;
-}
-
-HMODULE
-WINAPI
-LoadLibraryW_Detour (LPCWSTR lpFileName)
-{
-  if (lpFileName == nullptr)
-    return NULL;
-
-  HMODULE hMod = LoadLibraryW_Original (lpFileName);
-
-  if (wcsstr (lpFileName, L"steam_api") ||
-      wcsstr (lpFileName, L"SteamworksNative")) {
-    //TZF::SteamAPI::Init (false);
-  }
-
-  return hMod;
-}
-
-
-MH_STATUS
-WINAPI
-TZF_CreateFuncHook ( LPCWSTR pwszFuncName,
-  LPVOID  pTarget,
-  LPVOID  pDetour,
-  LPVOID *ppOriginal )
-{
-  MH_STATUS status =
-    MH_CreateHook ( pTarget,
-      pDetour,
-      ppOriginal );
-
-  if (status != MH_OK) {
-    dll_log.Log ( L" [ MinHook ] Failed to Install Hook for '%s' "
-      L"[Address: %04Xh]!  (Status: \"%hs\")",
-      pwszFuncName,
-      pTarget,
-      MH_StatusToString (status) );
-  }
-
-  return status;
-}
-
-MH_STATUS
-WINAPI
-TZF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
-                    LPVOID  pDetour,    LPVOID *ppOriginal )
-{
-#if 1
-  HMODULE hMod = GetModuleHandle (pwszModule);
-
-  if (hMod == NULL) {
-    if (LoadLibraryW_Original != nullptr) {
-      hMod = LoadLibraryW_Original (pwszModule);
-    } else {
-      hMod = LoadLibraryW (pwszModule);
-    }
-  }
-
-  LPVOID pFuncAddr =
-    GetProcAddress (hMod, pszProcName);
-
-  MH_STATUS status =
-    MH_CreateHook ( pFuncAddr,
-      pDetour,
-      ppOriginal );
-#else
-  MH_STATUS status =
-    MH_CreateHookApi ( pwszModule,
-      pszProcName,
-      pDetour,
-      ppOriginal );
-#endif
-
-  if (status != MH_OK) {
-    dll_log.Log ( L" [ MinHook ] Failed to Install Hook for: '%hs' in '%s'! "
-                  L"(Status: \"%hs\")",
-                    pszProcName,
-                      pwszModule,
-                        MH_StatusToString (status) );
-  }
-
-  return status;
-}
-
-MH_STATUS
-WINAPI
-TZF_EnableHook (LPVOID pTarget)
-{
-  MH_STATUS status =
-    MH_EnableHook (pTarget);
-
-  if (status != MH_OK)
-  {
-    if (pTarget != MH_ALL_HOOKS) {
-      dll_log.Log( L" [ MinHook ] Failed to Enable Hook with Address: %04Xh!"
-                   L" (Status: \"%hs\")",
-                     pTarget,
-                       MH_StatusToString (status) );
-    } else {
-      dll_log.Log ( L" [ MinHook ] Failed to Enable All Hooks! "
-                    L"(Status: \"%hs\")",
-                      MH_StatusToString (status) );
-    }
-  }
-
-  return status;
-}
-
-MH_STATUS
-WINAPI
-TZF_DisableHook (LPVOID pTarget)
-{
-  MH_STATUS status =
-    MH_DisableHook (pTarget);
-
-  if (status != MH_OK)
-  {
-    if (pTarget != MH_ALL_HOOKS) {
-      dll_log.Log ( L" [ MinHook ] Failed to Disable Hook with Address: %04Xh!"
-                    L" (Status: \"%hs\")",
-                      pTarget,
-                        MH_StatusToString (status) );
-    } else {
-      dll_log.Log ( L" [ MinHook ] Failed to Disable All Hooks! "
-                    L"(Status: \"%hs\")",
-                      MH_StatusToString (status) );
-    }
-  }
-
-  return status;
-}
-
-MH_STATUS
-WINAPI
-TZF_RemoveHook (LPVOID pTarget)
-{
-  MH_STATUS status =
-    MH_RemoveHook (pTarget);
-
-  if (status != MH_OK)
-  {
-    dll_log.Log ( L" [ MinHook ] Failed to Remove Hook with Address: %04Xh! "
-                  L"(Status: \"%hs\")",
-                    pTarget,
-                      MH_StatusToString (status) );
-  }
-
-  return status;
-}
-
-MH_STATUS
-WINAPI
-TZF_Init_MinHook (void)
-{
-  MH_STATUS status;
-
-  if ((status = MH_Initialize ()) != MH_OK)
-  {
-    dll_log.Log ( L" [ MinHook ] Failed to Initialize MinHook Library! "
-                  L"(Status: \"%hs\")",
-                    MH_StatusToString (status) );
-  }
-
-#if 0
-  //
-  // Hook LoadLibrary so that we can watch for things like steam_api*.dll
-  //
-  TZF_CreateDLLHook ( L"kernel32.dll",
-                       "LoadLibraryA",
-                      LoadLibraryA_Detour,
-           (LPVOID *)&LoadLibraryA_Original );
-
-  TZF_CreateDLLHook ( L"kernel32.dll",
-                       "LoadLibraryW",
-                      LoadLibraryW_Detour,
-           (LPVOID *)&LoadLibraryW_Original );
-#endif
-
-  //TZF_EnableHook (MH_ALL_HOOKS);
-
-  return status;
-}
-
-MH_STATUS
-WINAPI
-TZF_UnInit_MinHook (void)
-{
-  MH_STATUS status;
-
-  if ((status = MH_Uninitialize ()) != MH_OK) {
-    dll_log.Log ( L" [ MinHook ] Failed to Uninitialize MinHook Library! "
-                  L"(Status: \"%hs\")",
-                    MH_StatusToString (status) );
-  }
-
-  return status;
-}
-
-
-typedef HRESULT (STDAPICALLTYPE *CoCreateInstance_t)(
-                                               _In_     REFCLSID  rclsid,
-                                               _In_opt_ LPUNKNOWN pUnkOuter,
-                                               _In_     DWORD     dwClsContext,
-                                               _In_     REFIID    riid,
-_COM_Outptr_ _At_(*ppv, _Post_readable_size_(_Inexpressible_(varies)))
-                                                         LPVOID FAR*
-                                                                  ppv);
-
-CoCreateInstance_t CoCreateInstance_Original = nullptr;
-
-IMMDevice* g_pAudioDev;
-
-
-typedef HRESULT (STDMETHODCALLTYPE *IAudioClient_GetMixFormat_t)
-               (IAudioClient       *This,
-         _Out_  WAVEFORMATEX      **ppDeviceFormat);
-
-IAudioClient_GetMixFormat_t IAudioClient_GetMixFormat_Original = nullptr;
-
-#include <comdef.h>
-#include <audiomediatype.h>
-
-HRESULT
-STDMETHODCALLTYPE
-IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
-                           _Out_  WAVEFORMATEX      **ppDeviceFormat)
-{
-  dll_log.Log (L" [!] IAudioClient::GetMixFormat (%08Xh)", This);
-
-  if (new_session) {
-    dll_log.Log (L" >> Overriding  -  "
-                 L"Using Device Format rather than Mix Format <<");
-
-    WAVEFORMATEX*   pMixFormat;
-    IPropertyStore* pStore;
-
-    if (SUCCEEDED (g_pAudioDev->OpenPropertyStore (STGM_READ, &pStore)))
-    {
-      PROPVARIANT property;
-
-      if (SUCCEEDED (pStore->GetValue (
-                        PKEY_AudioEngine_DeviceFormat, &property
-                       )
-                    )
-         )
-      {
-        pMixFormat = (PWAVEFORMATEX)property.blob.pBlobData;
-        if (pMixFormat->cbSize > sizeof (WAVEFORMATEX)) {
-          if (pMixFormat->cbSize = 22) {
-            std::wstring format_name;
-
-            if (((PWAVEFORMATEXTENSIBLE)pMixFormat)->SubFormat ==
-                  KSDATAFORMAT_SUBTYPE_PCM)
-              format_name = L"PCM";
-            if (((PWAVEFORMATEXTENSIBLE)pMixFormat)->SubFormat ==
-                  KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)
-              format_name = L"IEEE Floating-Point";
-            else
-              format_name = L"Unknown";
-
-            dll_log.Log (L" Extensible WAVEFORMAT Found...");
-            dll_log.Log (L"  %lu Channels, %lu Samples Per Sec, %lu Bits"
-                         L" Per Sample (%lu Actual)",
-              ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Format.nChannels,
-              ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Format.nSamplesPerSec,
-              ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Format.wBitsPerSample,
-              ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Samples.wValidBitsPerSample);
-            dll_log.Log (L"  Format: %s", format_name.c_str ());
-
-            pMixFormat->wBitsPerSample =
-              ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Samples.wValidBitsPerSample;
-
-            DWORD dwChannels =
-              ((PWAVEFORMATEXTENSIBLE)pMixFormat)->dwChannelMask;
-
-            dll_log.LogEx (true, L" Speaker Geometry:");
-
-            if (dwChannels & SPEAKER_FRONT_LEFT)
-              dll_log.LogEx (false, L" FrontLeft");
-            if (dwChannels & SPEAKER_FRONT_RIGHT)
-              dll_log.LogEx (false, L" FrontRight");
-            if (dwChannels & SPEAKER_FRONT_CENTER)
-              dll_log.LogEx (false, L" FrontCenter");
-            if (dwChannels & SPEAKER_LOW_FREQUENCY)
-              dll_log.LogEx (false, L" LowFrequencyEmitter");
-            if (dwChannels & SPEAKER_BACK_LEFT)
-              dll_log.LogEx (false, L" BackLeft");
-            if (dwChannels & SPEAKER_BACK_RIGHT)
-              dll_log.LogEx (false, L" BackRight");
-            if (dwChannels & SPEAKER_FRONT_LEFT_OF_CENTER)
-              dll_log.LogEx (false, L" FrontLeftOfCenter");
-            if (dwChannels & SPEAKER_FRONT_RIGHT_OF_CENTER)
-              dll_log.LogEx (false, L" FrontRightOfCenter");
-            if (dwChannels & SPEAKER_SIDE_LEFT)
-              dll_log.LogEx (false, L" SideLeft");
-            if (dwChannels & SPEAKER_SIDE_RIGHT)
-              dll_log.LogEx (false, L" SideRight");
-
-            dll_log.LogEx (false, L"\n");
-
-            // Dolby Atmos? Neat!
-//#define SPEAKER_TOP_CENTER              0x800
-//#define SPEAKER_TOP_FRONT_LEFT          0x1000
-//#define SPEAKER_TOP_FRONT_CENTER        0x2000
-//#define SPEAKER_TOP_FRONT_RIGHT         0x4000
-//#define SPEAKER_TOP_BACK_LEFT           0x8000
-//#define SPEAKER_TOP_BACK_CENTER         0x10000
-//#define SPEAKER_TOP_BACK_RIGHT          0x20000
-          }
-        }
-
-        if (pMixFormat->nChannels > config.audio.channels) {
-          dll_log.Log ( L"  ** Downmixing from %lu channels to %lu",
-                         pMixFormat->nChannels, config.audio.channels );
-          pMixFormat->nChannels = config.audio.channels;
-        }
-
-        #define TARGET_SAMPLE_RATE config.audio.sample_hz
-
-        if (pMixFormat->nSamplesPerSec != TARGET_SAMPLE_RATE) {
-          dll_log.Log ( L"  ** Resampling Audiostream from %lu Hz to %lu Hz",
-                          pMixFormat->nSamplesPerSec, TARGET_SAMPLE_RATE );
-          pMixFormat->nSamplesPerSec = TARGET_SAMPLE_RATE;
-        }
-
-        *ppDeviceFormat = (PWAVEFORMATEX)CoTaskMemAlloc (pMixFormat->cbSize);
-        memcpy (*ppDeviceFormat, pMixFormat, pMixFormat->cbSize);
-
-        pStore->Release ();
-
-        return S_OK;
-      }
-
-      pStore->Release ();
-    }
-  }
-
-  return IAudioClient_GetMixFormat_Original (This, ppDeviceFormat);
-}
-
-
-typedef HRESULT (STDMETHODCALLTYPE *IAudioClient_Initialize_t)
-               (IAudioClient       *This,
-          _In_  AUDCLNT_SHAREMODE   ShareMode,
-          _In_  DWORD               StreamFlags,
-          _In_  REFERENCE_TIME      hnsBufferDuration,
-          _In_  REFERENCE_TIME      hnsPeriodicity,
-          _In_  const WAVEFORMATEX *pFormat,
-      _In_opt_  LPCGUID             AudioSessionGuid);
-
-IAudioClient_Initialize_t IAudioClient_Initialize_Original = nullptr;
-
-HRESULT
-STDMETHODCALLTYPE
-IAudioClient_Initialize_Detour (IAudioClient       *This,
-                          _In_  AUDCLNT_SHAREMODE   ShareMode,
-                          _In_  DWORD               StreamFlags,
-                          _In_  REFERENCE_TIME      hnsBufferDuration,
-                          _In_  REFERENCE_TIME      hnsPeriodicity,
-                          _In_  const WAVEFORMATEX *pFormat,
-                      _In_opt_  LPCGUID             AudioSessionGuid)
-{
-  dll_log.Log (L" [!] IAudioClient::Initialize (...)");
-
-  dll_log.Log (
-    L"  {Share Mode: %lu - Stream Flags: 0x%04X}", ShareMode, StreamFlags );
-  dll_log.Log (
-    L"  >> Channels: %lu, Samples Per Sec: %lu, Bits Per Sample: %hu\n",
-    pFormat->nChannels, pFormat->nSamplesPerSec, pFormat->wBitsPerSample );
-
-#if 0
-  WAVEFORMATEX format;
-
-  format.cbSize          = pFormat->cbSize;
-  format.nAvgBytesPerSec = pFormat->nAvgBytesPerSec;
-  format.nBlockAlign     = pFormat->nBlockAlign;
-  format.nChannels       = pFormat->nChannels;
-  format.nSamplesPerSec  = pFormat->nSamplesPerSec;
-  format.wBitsPerSample  = pFormat->wBitsPerSample;
-  format.wFormatTag      = pFormat->wFormatTag;
-
-  WAVEFORMATEX *pClosestMatch =
-    (PWAVEFORMATEX)CoTaskMemAlloc (sizeof (WAVEFORMATEXTENSIBLE));
-
-  if (This->IsFormatSupported (AUDCLNT_SHAREMODE_SHARED, pFormat, &pClosestMatch) == S_OK) {
-    CoTaskMemFree (pClosestMatch);
-    pClosestMatch = &format;
-  }
-#endif
-
-  WAVEFORMATEX *pClosestMatch = (WAVEFORMATEX *)pFormat;
-
-  #define AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM      0x80000000
-  #define AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY 0x08000000
-
-  // These two flags were observed when using WinMM to play a sound that had a
-  //   different format than the output device. Like the SRC_DEFAULT_QUALITY
-  //     flag above, these are undocumented.
-  #define AUDCLNT_STREAMFLAGS_UNKNOWN4000000 0x4000000
-  #define AUDCLNT_STREAMFLAGS_UNKNOWN0100000 0x0100000
-
-  // This is REQUIRED or we cannot get the shared stream to work this way!
-  StreamFlags |= ( AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
-                   AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY );
-
-  // Since these two flags are even LESS documented than the ones above (which
-  //   are needed, make the use of these optional).
-  if (! config.audio.compatibility) {
-    StreamFlags |= ( AUDCLNT_STREAMFLAGS_UNKNOWN0100000 |
-                     AUDCLNT_STREAMFLAGS_UNKNOWN4000000 );
-  }
-
-  HRESULT ret =
-    IAudioClient_Initialize_Original (This,           AUDCLNT_SHAREMODE_SHARED,
-                                      StreamFlags,    hnsBufferDuration,
-                                      hnsPeriodicity, pClosestMatch,
-                                      AudioSessionGuid);
-
-  _com_error error (ret);
-
-#if 0
-  if (pClosestMatch != &format)
-    CoTaskMemFree (pClosestMatch);
-#endif
-
-  dll_log.Log ( L"   Result: 0x%04X (%s)\n", ret - AUDCLNT_ERR (0x0000),
-                  error.ErrorMessage () );
-
-  new_session = false;
-  //DSOUND_VIRTUAL_OVERRIDE ( ppAudioClient, 8, "IAudioClient::GetMixFormat",
-    //IAudioClient_GetMixFormat_Original,
-    //IAudioClient_GetMixFormat_Original,
-    //IAudioClient_GetMixFormat_t );
-
-  return ret;
-}
-
-typedef HRESULT (STDMETHODCALLTYPE *IMMDevice_Activate_t)
-                     (IMMDevice    *This,
-                _In_  REFIID        iid,
-                _In_  DWORD         dwClsCtx,
-            _In_opt_  PROPVARIANT  *pActivationParams,
-               _Out_  void        **ppInterface);
-
-IMMDevice_Activate_t IMMDevice_Activate_Original = nullptr;
-
-HRESULT
-STDMETHODCALLTYPE
-IMMDevice_Activate_Detour (IMMDevice    *This,
-                     _In_  REFIID        iid,
-                     _In_  DWORD         dwClsCtx,
-                 _In_opt_  PROPVARIANT  *pActivationParams,
-                    _Out_  void        **ppInterface)
-{
-  if (iid == __uuidof (IAudioSessionManager2)) {
-    dll_log.Log ( L" >> IMMDevice Activating IAudioSessionManager2 Interface "
-                  L" (new_session = true)" );
-    new_session = true;
-  }
-  
-  else if (iid == __uuidof (IAudioClient)) {
-    dll_log.Log (L" >> IMMDevice Activating IAudioClient Interface");
-  }
-  
-  else {
-    std::wstring iid_str;
-    wchar_t*     pwszIID;
-
-    if (SUCCEEDED (StringFromIID (iid, (LPOLESTR *)&pwszIID)))
-    {
-           iid_str = pwszIID;
-      CoTaskMemFree (pwszIID);
-    }
-
-    dll_log.Log (L"IMMDevice::Activate (%s, ...)\n", iid_str.c_str ());
-  }
-
-  HRESULT ret =
-    IMMDevice_Activate_Original ( This,
-                                    iid,
-                                      dwClsCtx,
-                                        pActivationParams,
-                                          ppInterface );
-
-  if (SUCCEEDED (ret)) {
-    if (iid == __uuidof (IAudioClient)) {
-      IAudioClient** ppAudioClient = (IAudioClient **)ppInterface;
-
-      // vtbl (ppAudioClient)
-      // --------------------
-      // 3   Initialize
-      // 4   GetBufferSize
-      // 5   GetStreamLatency
-      // 6   GetCurrentPadding
-      // 7   IsFormatSupported
-      // 8   GetMixFormat
-      // 9   GetDevicePeriod
-      // 10  Start
-      // 11  Stop
-      // 12  Reset
-      // 13  SetEventHandle
-      // 14  GetService
-
-      DSOUND_VIRTUAL_OVERRIDE ( ppAudioClient, 3, "IAudioClient::Initialize",
-                                IAudioClient_Initialize_Detour,
-                                IAudioClient_Initialize_Original,
-                                IAudioClient_Initialize_t );
-
-      DSOUND_VIRTUAL_OVERRIDE ( ppAudioClient, 8, "IAudioClient::GetMixFormat",
-                                IAudioClient_GetMixFormat_Detour,
-                                IAudioClient_GetMixFormat_Original,
-                                IAudioClient_GetMixFormat_t );
-
-      g_pAudioDev = This;
-
-      // Stop listening to device enumeration and so forth after the first
-      //   audio session is created... this is behavior specific to this game.
-      if (new_session) {
-#if 0
-    TZF_CreateDLLHook ( L"kernel32.dll", "SleepConditionVariableCS", 
-                        SleepConditionVariableCS_Detour,
-             (LPVOID *)&SleepConditionVariableCS_Original );
-
-    TZF_CreateDLLHook ( L"kernel32.dll", "Sleep", 
-                        Sleep_Detour,
-             (LPVOID *)&Sleep_Original );
-
-    TZF_CreateDLLHook ( L"kernel32.dll", "SuspendThread", 
-                        SuspendThread_Detour,
-             (LPVOID *)&SuspendThread_Original );
-#endif
-
-#if 0
-        TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf", 
-                        sprintf_Detour,
-             (LPVOID *)&sprintf_Original );
-
-       TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf_s", 
-                        sprintf_s_Detour,
-             (LPVOID *)&sprintf_s_Original );
-
-       TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf", 
-                        _snprintf_Detour,
-             (LPVOID *)&_snprintf_Original );
-
-       TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf_s", 
-                        _snprintf_s_Detour,
-             (LPVOID *)&_snprintf_s_Original );
-#endif
-
-//        TZF_EnableHook (MH_ALL_HOOKS);
-      }
-    }
-  }
-
-  return ret;
-}
-
-HRESULT
-STDAPICALLTYPE
-CoCreateInstance_Detour (_In_     REFCLSID    rclsid,
-                         _In_opt_ LPUNKNOWN   pUnkOuter,
-                         _In_     DWORD       dwClsContext,
-                         _In_     REFIID      riid,
-  _COM_Outptr_ _At_(*ppv, _Post_readable_size_(_Inexpressible_(varies)))
-                                  LPVOID FAR* ppv)
-{
-  HRESULT hr =
-    CoCreateInstance_Original (rclsid, pUnkOuter, dwClsContext, riid, ppv);
-
-  if (SUCCEEDED (hr) && riid == __uuidof (IMMDeviceEnumerator)) {
-    IMMDeviceEnumerator** ppEnum = (IMMDeviceEnumerator **)ppv;
-
-    IMMDevice* pDev;
-    HRESULT hr2 =
-      (*ppEnum)->GetDefaultAudioEndpoint (eRender, eConsole, &pDev);
-
-    // vtbl (&pDev)
-    // ------------
-    // 3 Activate
-
-    if (SUCCEEDED (hr2)) {
-      DSOUND_VIRTUAL_OVERRIDE ( (void **)&pDev, 3, "IMMDevice::Activate",
-                                IMMDevice_Activate_Detour,
-                                IMMDevice_Activate_Original,
-                                IMMDevice_Activate_t );
-      pDev->Release ();
-    }
-
-    // vtbl (ppEnum)
-    // -------------
-    // 3  EnumAudioEndpoints
-    // 4  GetDefaultAudioEndpoint
-    // 5  GetDevice
-  }
-
-  return hr;
-}
-
-
-//#define LOG_FILE_IO
-#ifdef LOG_FILE_IO
-typedef BOOL (WINAPI *ReadFile_t)(_In_        HANDLE       hFile,
-                                  _Out_       LPVOID       lpBuffer,
-                                  _In_        DWORD        nNumberOfBytesToRead,
-                                  _Out_opt_   LPDWORD      lpNumberOfBytesRead,
-                                  _Inout_opt_ LPOVERLAPPED lpOverlapped);
-
-ReadFile_t ReadFile_Original = nullptr;
-
-#include <memory>
-
-BOOL
-GetFileNameFromHandle (HANDLE hFile, WCHAR *pszFileName, const unsigned int uiMaxLen)
-{
-  pszFileName[0]=0;
-
-  std::unique_ptr <WCHAR> ptrcFni (new WCHAR[_MAX_PATH + sizeof(FILE_NAME_INFO)]);
-  FILE_NAME_INFO *pFni = reinterpret_cast <FILE_NAME_INFO *>(ptrcFni.get ());
-
-  BOOL b = GetFileInformationByHandleEx (hFile, 
-    FileNameInfo,
-    pFni,
-    sizeof(FILE_NAME_INFO) + (_MAX_PATH * sizeof (WCHAR)) );
-  if ( b )
-  {
-    wcsncpy_s(pszFileName, 
-      min(uiMaxLen, (pFni->FileNameLength / sizeof(pFni->FileName[0])) + 1 ), 
-      pFni->FileName, 
-      _TRUNCATE);
-  }
-  return b;
-}
-
-BOOL
-WINAPI
-ReadFile_Detour (_In_        HANDLE       hFile,
-                 _Out_       LPVOID       lpBuffer,
-                 _In_        DWORD        nNumberOfBytesToRead,
-                 _Out_opt_   LPDWORD      lpNumberOfBytesRead,
-                 _Inout_opt_ LPOVERLAPPED lpOverlapped)
-{
-  wchar_t wszFileName [MAX_PATH] = { L'\0' };
-
-  GetFileNameFromHandle (hFile, wszFileName, MAX_PATH);
-
-  dll_log.Log (L"Reading: %s ...", wszFileName);
-
-  return ReadFile_Original (hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead, lpOverlapped);
-}
-
-typedef HANDLE (WINAPI *CreateFileW_t)(_In_     LPCTSTR               lpFileName,
-                                       _In_     DWORD                 dwDesiredAccess,
-                                       _In_     DWORD                 dwShareMode,
-                                       _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-                                       _In_     DWORD                 dwCreationDisposition,
-                                       _In_     DWORD                 dwFlagsAndAttributes,
-                                       _In_opt_ HANDLE                hTemplateFile);
-
-CreateFileW_t CreateFileW_Original = nullptr;
-
-HANDLE
-WINAPI
-CreateFileW_Detour (_In_     LPCWSTR               lpFileName,
-                    _In_     DWORD                 dwDesiredAccess,
-                    _In_     DWORD                 dwShareMode,
-                    _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-                    _In_     DWORD                 dwCreationDisposition,
-                    _In_     DWORD                 dwFlagsAndAttributes,
-                    _In_opt_ HANDLE                hTemplateFile)
-{
-  dll_log.Log (L" [!] CreateFile (%s, ...)", lpFileName);
-
-  if (! _wcsicmp (lpFileName, L"raw\\movie\\am_toz_op_001.bk2")) {
-    dll_log.Log (L"Opening Intro Movie!\n");
-  }
-
-  return CreateFileW_Original (lpFileName, dwDesiredAccess, dwShareMode,
-                               lpSecurityAttributes, dwCreationDisposition,
-                               dwFlagsAndAttributes, hTemplateFile);
-}
-
-typedef HANDLE (WINAPI *CreateFileA_t)(_In_     LPCSTR                lpFileName,
-                                       _In_     DWORD                 dwDesiredAccess,
-                                       _In_     DWORD                 dwShareMode,
-                                       _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-                                       _In_     DWORD                 dwCreationDisposition,
-                                       _In_     DWORD                 dwFlagsAndAttributes,
-                                       _In_opt_ HANDLE                hTemplateFile);
-
-CreateFileA_t CreateFileA_Original = nullptr;
-
-HANDLE
-WINAPI
-CreateFileA_Detour (_In_     LPCSTR                lpFileName,
-                    _In_     DWORD                 dwDesiredAccess,
-                    _In_     DWORD                 dwShareMode,
-                    _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-                    _In_     DWORD                 dwCreationDisposition,
-                    _In_     DWORD                 dwFlagsAndAttributes,
-                    _In_opt_ HANDLE                hTemplateFile)
-{
-  dll_log.Log (L" [!] CreateFile (%hs, ...)", lpFileName);
-
-  if (! stricmp (lpFileName, "raw\\movie\\am_toz_op_001.bk2")) {
-    dll_log.Log (L"Opening Intro Movie!\n");
-  }
-
-  return CreateFileA_Original (lpFileName, dwDesiredAccess, dwShareMode,
-                               lpSecurityAttributes, dwCreationDisposition,
-                               dwFlagsAndAttributes, hTemplateFile);
-}
-
-
-typedef HFILE (WINAPI *OpenFile_t)(_In_    LPCSTR     lpFileName,
-                                   _Inout_ LPOFSTRUCT lpReOpenBuff,
-                                   _In_    UINT       uStyle);
-
-OpenFile_t OpenFile_Original = nullptr;
-
-HFILE
-WINAPI
-OpenFile_Detour (_In_    LPCSTR     lpFileName,
-                 _Inout_ LPOFSTRUCT lpReOpenBuff,
-                 _In_    UINT       uStyle)
-{
-  dll_log.Log (L" [!] OpenFile (%hs, ...)", lpFileName);
-
-  if (! stricmp (lpFileName, "raw\\movie\\am_toz_op_001.bk2")) {
-    dll_log.Log (L"Opening Intro Movie!\n");
-  }
-
-  return OpenFile_Original (lpFileName, lpReOpenBuff, uStyle);
-}
-#endif
-
-
-typedef struct _D3DMATRIX {
-    union {
-        struct {
-            float        _11, _12, _13, _14;
-            float        _21, _22, _23, _24;
-            float        _31, _32, _33, _34;
-            float        _41, _42, _43, _44;
-
-        };
-        float m[4][4];
-    };
-} D3DMATRIX;
+#include <d3d9.h>
+#include <d3d9types.h>
 
 typedef D3DMATRIX* (WINAPI *D3DXMatrixMultiply_t)(_Inout_    D3DMATRIX *pOut,
                                                   _In_ const D3DMATRIX *pM1,
@@ -1264,6 +47,17 @@ D3DXMatrixMultiply_Detour (_Inout_       D3DMATRIX *pOut,
                            _In_          D3DMATRIX *pM1,
                            _In_          D3DMATRIX *pM2)
 {
+  if (pM1->_11 == 2.0f/1920.0f &&
+      pM1->_22 == 2.0f/1080.0f &&
+      pM1->_44 == 1.0f)
+    dll_log.Log (L"Ortho Matrix (1)");
+
+  if (pM2->_11 == 2.0f/1920.0f &&
+      pM2->_22 == 2.0f/1080.0f &&
+      pM2->_44 == 1.0f)
+    dll_log.Log (L"Ortho Matrix (2)");
+
+#if 0
 //  if (pM2->_44 == 0.0f ||
       //pM1->_44 == 0.0f) {
 //    dll_log.Log (L" [!] D3DMatrixMultiply (...) ");
@@ -1302,6 +96,7 @@ D3DXMatrixMultiply_Detour (_Inout_       D3DMATRIX *pOut,
     pM1->_22 = atan (fovy / 2.0f * 2.0f * 3.14159265f);
     //dll_log.Log (L"FOVY1=%f\n",
                  //);
+#endif
 
     //::tanpM1->_22 * 2.0f
   //}
@@ -1312,53 +107,227 @@ D3DXMatrixMultiply_Detour (_Inout_       D3DMATRIX *pOut,
   return D3DXMatrixMultiply_Original (pOut, pM1, pM2);
 }
 
-typedef bool (__cdecl *SteamAPI_Init_t)(void);
-SteamAPI_Init_t SteamAPI_Init_Original = nullptr;
+#include "hook.h"
 
-bool
-__cdecl
-SteamAPI_Init_Detour (void)
+typedef HRESULT (STDMETHODCALLTYPE *SetSamplerState_t)
+(IDirect3DDevice9*   This,
+  DWORD               Sampler,
+  D3DSAMPLERSTATETYPE Type,
+  DWORD               Value);
+
+SetSamplerState_t D3D9SetSamplerState_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
+  DWORD               Sampler,
+  D3DSAMPLERSTATETYPE Type,
+  DWORD               Value)
 {
-  dll_log.Log (L" [!] SteamAPI_Init (...) ");
+  if (Type == D3DSAMP_MIPFILTER ||
+      Type == D3DSAMP_MINFILTER ||
+      Type == D3DSAMP_MAGFILTER ||
+      Type == D3DSAMP_MIPMAPLODBIAS) {
+    //dll_log.Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
 
-  return true;
+    if (Type < 8) {
+      //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
+      if (Type == D3DSAMP_MIPFILTER) {
+        if (Value != D3DTEXF_NONE)
+          Value = D3DTEXF_LINEAR;
+      }
+      if (Type == D3DSAMP_MAGFILTER ||
+                  D3DSAMP_MINFILTER)
+        Value = D3DTEXF_ANISOTROPIC;
+    } else {
+#if 0
+      float bias = *((float *)(&Value));
+      if (bias > 3.0f)
+        bias = 3.0f;
+      if (bias < -3.0f)
+        bias = -3.0f;
+      Value = *((LPDWORD)(&bias));
+#endif
+      //dll_log.Log (L" Mip Bias: %f", (float)Value);
+    }
+  }
+  if (Type == D3DSAMP_MAXANISOTROPY)
+    Value = 16;
+  //if (Type == D3DSAMP_MAXMIPLEVEL)
+    //Value = 0;
+  return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
+}
+
+IDirect3DVertexShader9* g_pVS;
+
+typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
+  (IDirect3DDevice9*       This,
+   IDirect3DVertexShader9* pShader);
+
+SetVertexShader_t D3D9SetVertexShader_Original = nullptr;
+
+bool changed = false;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
+                            IDirect3DVertexShader9* pShader)
+{
+  if (g_pVS != pShader)
+    changed = true;
+
+  g_pVS = pShader;
+  return D3D9SetVertexShader_Original (This, pShader);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_t)(
+  IDirect3DDevice9* This,
+  UINT              StartRegister,
+  CONST float*      pConstantData,
+  UINT              Vector4fCount);
+
+SetVertexShaderConstantF_t D3D9SetVertexShaderConstantF_Original = nullptr;
+
+static uint32_t crc32_tab[] = {
+  0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
+  0xe963a535, 0x9e6495a3,	0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
+  0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2,
+  0xf3b97148, 0x84be41de,	0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
+  0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec,	0x14015c4f, 0x63066cd9,
+  0xfa0f3d63, 0x8d080df5,	0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
+  0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,	0x35b5a8fa, 0x42b2986c,
+  0xdbbbc9d6, 0xacbcf940,	0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
+  0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423,
+  0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
+  0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,	0x76dc4190, 0x01db7106,
+  0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
+  0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
+  0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
+  0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457, 0x65b0d9c6, 0x12b7e950,
+  0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
+  0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7,
+  0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0,
+  0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa,
+  0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
+  0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81,
+  0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
+  0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683, 0xe3630b12, 0x94643b84,
+  0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
+  0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
+  0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc,
+  0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5, 0xd6d6a3e8, 0xa1d1937e,
+  0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
+  0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55,
+  0x316e8eef, 0x4669be79, 0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
+  0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe, 0xb2bd0b28,
+  0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
+  0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f,
+  0x72076785, 0x05005713, 0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
+  0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242,
+  0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
+  0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69,
+  0x616bffd3, 0x166ccf45, 0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2,
+  0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db, 0xaed16a4a, 0xd9d65adc,
+  0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
+  0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693,
+  0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
+  0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
+};
+
+uint32_t
+crc32(uint32_t crc, const void *buf, size_t size)
+{
+  const uint8_t *p;
+
+  p = (uint8_t *)buf;
+  crc = crc ^ ~0U;
+
+  while (size--)
+    crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+
+  return crc ^ ~0U;
+}
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
+                                     UINT              StartRegister,
+                                     CONST float*      pConstantData,
+                                     UINT              Vector4fCount)
+{
+  if (Vector4fCount == 4) {
+    D3DMATRIX* matrix = (D3DMATRIX *)pConstantData;
+
+    UINT len = 65536;
+    char szFunc [65536];
+    g_pVS->GetFunction (szFunc, &len);
+
+    uint32_t crc = crc32 (0, szFunc, len);
+
+    if (crc == 446150694 && matrix->_44 == 1.0f && matrix->_33 == 1.0f && matrix->_22 == 1.0f && matrix->_11 == 1.0f) {
+      dll_log.Log (L"Ortho Matrix!");
+      dll_log.LogEx (false, L"| %f %f %f %f |\n"
+                   L"| %f %f %f %f |\n"
+                   L"| %f %f %f %f |\n"
+                   L"| %f %f %f %F | (%d - %d)",
+                   matrix->_11,matrix->_12,matrix->_13,matrix->_14,
+                   matrix->_21,matrix->_22,matrix->_23,matrix->_24,
+                   matrix->_31,matrix->_32,matrix->_33,matrix->_34,
+                   matrix->_41,matrix->_42,matrix->_43,matrix->_44, StartRegister, crc);
+
+      //matrix->_22 -= ((16.0f/9.0f - config.render.aspect_ratio) * matrix->_22) / 2.0f;
+
+
+      D3DMATRIX scale;
+      ZeroMemory (&scale, sizeof (D3DMATRIX));
+      scale._11 = 1.0f;
+      scale._22 = 1.0f;
+      scale._33 = 1.0f;
+      scale._44 = 1.0f - (16.0f/9.0f - config.render.aspect_ratio) / 2.0f;
+      D3DXMatrixMultiply_Original (matrix, matrix, &scale);
+    }
+  }
+
+  return D3D9SetVertexShaderConstantF_Original (This, StartRegister, pConstantData, Vector4fCount);
 }
 
 DWORD
 WINAPI DllThread (LPVOID user)
 {
   if (TZF_Init_MinHook() == MH_OK) {
-    TZF_CreateDLLHook ( L"Ole32.dll", "CoCreateInstance",
-                        CoCreateInstance_Detour,
-             (LPVOID *)&CoCreateInstance_Original );
+    tzf::SoundFix::Init     ();
+    tzf::FrameRateFix::Init ();
+    tzf::FileIO::Init       ();
+    tzf::SteamFix::Init     ();
 
-    //TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXMatrixMultiply", 
-                        //D3DXMatrixMultiply_Detour,
-             //(LPVOID *)&D3DXMatrixMultiply_Original );
+    TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXMatrixMultiply", 
+                        D3DXMatrixMultiply_Detour,
+             (LPVOID *)&D3DXMatrixMultiply_Original );
 
-#ifdef LOG_FILE_IO
-    TZF_CreateDLLHook ( L"kernel32.dll", "OpenFile",
-                        OpenFile_Detour,
-             (LPVOID *)&OpenFile_Original );
-
-    TZF_CreateDLLHook ( L"kernel32.dll", "CreateFileW",
-                        CreateFileW_Detour,
-             (LPVOID *)&CreateFileW_Original );
-
-    TZF_CreateDLLHook ( L"kernel32.dll", "CreateFileA",
-                        CreateFileA_Detour,
-             (LPVOID *)&CreateFileA_Original );
-
-    TZF_CreateDLLHook ( L"kernel32.dll", "ReadFile",
-                        ReadFile_Detour,
-             (LPVOID *)&ReadFile_Original );
+#if 0
+    TZF_CreateDLLHook ( L"winmm.dll", "timeBeginPeriod",
+                        timeBeginPeriod_Detour,
+             (LPVOID *)&timeBeginPeriod_Original );
 #endif
 
-    TZF_EnableHook    (MH_ALL_HOOKS);
-  }
+    TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetSamplerState_Override",
+                        D3D9SetSamplerState_Detour,
+              (LPVOID*)&D3D9SetSamplerState_Original );
 
-  DirectSoundCreate_Detour   (NULL, &g_pDS, NULL);
-  g_pDS->SetCooperativeLevel (NULL, DSSCL_EXCLUSIVE);
+    TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShaderConstantF_Override",
+                        D3D9SetVertexShaderConstantF_Detour,
+              (LPVOID*)&D3D9SetVertexShaderConstantF_Original );
+
+    TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShader_Override",
+                        D3D9SetVertexShader_Detour,
+              (LPVOID*)&D3D9SetVertexShader_Original );
+
+    TZF_EnableHook (MH_ALL_HOOKS);
+  }
 
   return 0;
 }
@@ -1372,33 +341,119 @@ DllMain (HMODULE /* hModule */,
   switch (ul_reason_for_call)
   {
   case DLL_PROCESS_ATTACH:
-    dll_log.init ("dsound.log", "w");
-    dll_log.Log  (L"dsound.log created");
+  {
+    dll_log.init ("logs/tzfix.log", "w");
+    dll_log.Log  (L"tzfix.log created");
 
     if (! TZF_LoadConfig ()) {
-      config.audio.channels      = 6;
-      config.audio.sample_hz     = 44100;
-      config.audio.compatibility = false;
+      config.audio.channels          = 6;
+      config.audio.sample_hz         = 44100;
+      config.audio.compatibility     = false;
+      config.audio.enable_fix        = true;
+
+      config.framerate.stutter_fix   = true;
+
+      config.file_io.capture         = false;
+
+      config.steam.allow_broadcasts  = false;
+
+      config.render.aspect_ratio     = 1.777778f;
+      config.render.fovy             = 0.785398f;
+
+      config.render.aspect_addr      = 0x00D52398;
+      config.render.fovy_addr        = 0x00D5239C;
+      config.render.trilinear_filter = true;
 
       // Save a new config if none exists
       TZF_SaveConfig ();
     }
 
-    // Create a thread to load the REAL dsound.dll,
-    //  do this from a thread so we do not deadlock!
     CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
-    break;
+
+    Sleep (50);
+
+    DWORD dwOld;
+
+    UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
+    HANDLE hProc = GetCurrentProcess ();
+
+#if 0
+    float* fTest = ((float *)addr);
+    while (true) {
+      if (*fTest == 960.0f)
+        dll_log.Log (L"%p, 960", fTest);
+
+      if (*fTest == 540.0f)
+        dll_log.Log (L"%p, 540", fTest);
+
+      fTest++;
+    }
+#endif
+
+#if 0
+    while (true) {
+      if (*(float *)addr == 1920.0f) {
+        dll_log.Log (L"1920f: %08Xh", addr);
+      }
+      if (*(int *)addr == 1920) {
+        dll_log.Log (L"1920lu: %08Xh", addr);
+      }
+      if (*(float *)addr == 1080.0f) {
+        dll_log.Log (L"1080f: %08Xh", addr);
+      }
+      if (*(int *)addr == 1080) {
+        dll_log.Log (L"1080lu: %08Xh", addr);
+      }
+      addr++;
+    }
+#endif
+
+#if 0
+    float* fTest = (float *)0x00D93690;
+
+    for (int i = 0; i < 1000; fTest++) {
+      dll_log.Log (L"%p, %f", fTest, *fTest);
+    }
+#endif
+
+#if 0
+    if (config.render.aspect_ratio != 1.777778f) {
+      VirtualProtect ((LPVOID)config.render.aspect_addr, 4, PAGE_READWRITE, &dwOld);
+      *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
+    }
+#endif
+
+    if (config.render.fovy != 0.785398f) {
+      VirtualProtect ((LPVOID)config.render.fovy_addr, 4, PAGE_READWRITE, &dwOld);
+      *((float *)config.render.fovy_addr) = config.render.fovy;
+    }
+  } break;
 
   case DLL_THREAD_ATTACH:
   case DLL_THREAD_DETACH:
     break;
 
   case DLL_PROCESS_DETACH:
-    //TZF_SaveConfig ();
-    //dll_log.Log (L"closing log file");
-    //dll_log.close ();
+    tzf::SoundFix::Shutdown     ();
+    tzf::FrameRateFix::Shutdown ();
+    tzf::FileIO::Shutdown       ();
+    tzf::SteamFix::Shutdown     ();
+
+    TZF_UnInit_MinHook ();
+    TZF_SaveConfig     ();
+
+    dll_log.LogEx      (true,  L"Closing log file... ");
+    dll_log.close      ();
+    dll_log.LogEx      (false, L"done!");
     break;
   }
 
   return TRUE;
 }
+
+
+
+// 0.2.2
+// -----
+// + Corrects errors at application exit about removing hooks that were not created
+// + Improved logic to detect new audio sessions for TZFIX.Audio

@@ -1,25 +1,30 @@
 /**
-* This file is part of Batman "Fix".
-*
-* Batman "Fix" is free software : you can redistribute it and / or modify
-* it under the terms of the GNU General Public License as published by
-* The Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-*
-* Batman "Fix" is distributed in the hope that it will be useful,
-* But WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
+ * This file is part of Tales of Zestiria "Fix".
+ *
+ * Tales of Zestiria "Fix" is free software : you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by The Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * Tales of Zestiria "Fix" is distributed in the hope that it will be
+ * useful,
+ *
+ * But WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tales of Zestiria "Fix".
+ *
+ *   If not, see <http://www.gnu.org/licenses/>.
+ *
 **/
-
 #ifndef __TZF__INI_H__
 #define __TZF__INI_H__
 
 #include <string>
 #include <map>
+#include <vector>
 
 namespace tzf {
 namespace INI {
@@ -44,16 +49,15 @@ namespace INI {
         name = section_name;
       }
 
-      // Technically, this isn't 1:1 ... but as far as WE'RE concerned, all the
-      //   keys we're interested in _are_.
       std::wstring& get_value     (std::wstring key);
       bool          contains_key  (std::wstring key);
       void          add_key_value (std::wstring key, std::wstring value);
 
       //protected:
       //private:
-      std::wstring                               name;
-      std::multimap <std::wstring, std::wstring> pairs;
+      std::wstring                              name;
+      std::map     <std::wstring, std::wstring> pairs;
+      std::vector  <std::wstring>               ordered_keys;
     };
 
     const std::map <std::wstring, Section>& get_sections (void);
@@ -64,10 +68,18 @@ namespace INI {
   protected:
   private:
     FILE*     fINI;
+
     wchar_t*  wszName;
     wchar_t*  wszData;
+
     std::map <std::wstring, Section>
               sections;
+
+    // Preserve insertion order so that we write the INI file in the
+    //   same order we read it. Otherwise things get jumbled around
+    //     arbitrarily as the map is re-hashed.
+    std::vector <std::wstring>
+              ordered_sections;
   };
 
 }

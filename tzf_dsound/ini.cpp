@@ -1,18 +1,23 @@
 /**
-* This file is part of Batman "Fix".
-*
-* Batman "Fix" is free software : you can redistribute it and / or modify
-* it under the terms of the GNU General Public License as published by
-* The Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-*
-* Batman "Fix" is distributed in the hope that it will be useful,
-* But WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
+ * This file is part of Tales of Zestiria "Fix".
+ *
+ * Tales of Zestiria "Fix" is free software : you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by The Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * Tales of Zestiria "Fix" is distributed in the hope that it will be
+ * useful,
+ *
+ * But WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tales of Zestiria "Fix".
+ *
+ *   If not, see <http://www.gnu.org/licenses/>.
+ *
 **/
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -275,6 +280,7 @@ tzf::INI::File::parse (void)
         Section section = Process_Section (wszData, sec_name, start, finish);
 
         sections.insert (std::pair <std::wstring, Section> (sec_name, section));
+        ordered_sections.push_back (sec_name);
         delete [] sec_name;
 
         if (eof)
@@ -365,6 +371,7 @@ tzf::INI::File::import (std::wstring import_data)
           Section section = Process_Section (wszImport, sec_name, start, finish);
 
           sections.insert (std::pair <std::wstring, Section> (sec_name, section));
+          ordered_sections.push_back (sec_name);
         }
         delete [] sec_name;
 
@@ -387,26 +394,20 @@ std::wstring invalid = L"Invalid";
 std::wstring&
 tzf::INI::File::Section::get_value (std::wstring key)
 {
-  for (std::multimap <std::wstring, std::wstring>::iterator it = pairs.begin ();
-         it != pairs.end ();
-           it++) {
-    if ((*it).first == key)
-      return (*it).second;
-  }
+  std::map <std::wstring, std::wstring>::iterator it_key = pairs.find (key);
+
+  if (it_key != pairs.end ())
+    return (*it_key).second;
 
   return invalid;
-
-  // Only works if this is set-associative -- it's not.
-  //  * This "INI" can have multiple keys with the same name!
-  //return pairs [key];
 }
 
 bool
 tzf::INI::File::Section::contains_key (std::wstring key)
 {
-  for (std::multimap <std::wstring, std::wstring>::iterator it = pairs.begin ();
-  it != pairs.end ();
-    it++) {
+  for ( std::map <std::wstring, std::wstring>::iterator it = pairs.begin ();
+          it != pairs.end ();
+            it++ ) {
     if ((*it).first == key)
       return true;
   }
@@ -418,6 +419,7 @@ void
 tzf::INI::File::Section::add_key_value (std::wstring key, std::wstring value)
 {
   pairs.insert (std::pair <std::wstring, std::wstring> (key, value));
+  ordered_keys.push_back (key);
 }
 
 bool
@@ -429,7 +431,10 @@ tzf::INI::File::contains_section (std::wstring section)
 tzf::INI::File::Section&
 tzf::INI::File::get_section (std::wstring section)
 {
-  return sections [section];// sections.find (section);
+  if (sections.find (section) == sections.end ())
+    ordered_sections.push_back (section);
+
+  return sections [section];
 }
 
 void
@@ -448,24 +453,25 @@ tzf::INI::File::write (std::wstring fname)
     return;
   }
 
-  std::map <std::wstring, Section>::iterator it  = sections.begin ();
-  std::map <std::wstring, Section>::iterator end = sections.end ();
+  std::vector <std::wstring>::iterator it  = ordered_sections.begin ();
+  std::vector <std::wstring>::iterator end = ordered_sections.end   ();
 
   while (it != end) {
-    Section& section = (*it).second;
+    Section& section = get_section (*it);
     fwprintf (fOut, L"[%s]\n", section.name.c_str ());
 
-    std::map <std::wstring, std::wstring>::iterator key_it  = section.pairs.begin ();
-    std::map <std::wstring, std::wstring>::iterator key_end = section.pairs.end   ();
+    std::vector <std::wstring>::iterator key_it  = section.ordered_keys.begin ();
+    std::vector <std::wstring>::iterator key_end = section.ordered_keys.end   ();
 
     while (key_it != key_end) {
-      fwprintf (fOut, L"%s=%s\n", key_it->first.c_str (), key_it->second.c_str ());
+      std::wstring val = section.get_value (*key_it);
+      fwprintf (fOut, L"%s=%s\n", key_it->c_str (), val.c_str ());
       ++key_it;
     }
 
-    fwprintf (fOut, L"\n");
-
-    ++it;
+    // Append a newline for everything except the last line...
+    if (++it != end)
+      fwprintf (fOut, L"\n");
   }
 
   fflush (fOut);
