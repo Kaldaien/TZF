@@ -30,6 +30,8 @@
 #include "general_io.h"
 #include "steam.h"
 
+#include "command.h"
+
 #pragma comment (lib, "kernel32.lib")
 
 #include <d3d9.h>
@@ -295,6 +297,200 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
   return D3D9SetVertexShaderConstantF_Original (This, StartRegister, pConstantData, Vector4fCount);
 }
 
+class TZF_KeyboardHooker
+{
+private:
+  HANDLE                     hMsgPump;
+  HHOOK                      hHook;
+  static TZF_KeyboardHooker* pKeyboardHook;
+
+  static char                text [16384];
+  static int                 len;
+
+protected:
+  TZF_KeyboardHooker (void) { }
+
+public:
+  static TZF_KeyboardHooker* getInstance (void)
+  {
+    if (pKeyboardHook == NULL)
+      pKeyboardHook = new TZF_KeyboardHooker ();
+
+    return pKeyboardHook;
+  }
+
+  void Start (void)
+  {
+    hMsgPump =
+      CreateThread ( NULL,
+                       NULL,
+                         TZF_KeyboardHooker::MessagePump,
+                           &hHook,
+                             NULL,
+                               NULL );
+  }
+
+  void End (void)
+  {
+    TerminateThread     (hMsgPump, 0);
+    UnhookWindowsHookEx (hHook);
+  }
+
+  HANDLE GetThread (void)
+  {
+    return hMsgPump;
+  }
+
+  static DWORD
+  WINAPI
+  MessagePump (LPVOID hook_ptr)
+  {
+    Sleep (1000);
+
+    len = 1;
+    ZeroMemory (text, 1024);
+
+    text [0] = '>';
+
+    typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
+
+    static HMODULE               hMod =
+      LoadLibrary (L"d3d9.dll");
+    static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
+      =
+      (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
+
+    BMF_DrawExternalOSD ("ToZ Fix", text);
+
+
+    MSG       msg;
+    HINSTANCE hInst = GetModuleHandle (NULL);
+
+    *(HHOOK *)hook_ptr = SetWindowsHookEx ( WH_KEYBOARD_LL,
+                                              LowLevelKeyboardProc,
+                                                hInst,
+                                                  0 );
+
+    while (GetMessage (&msg, NULL, 0, 0) > 0)
+    {
+      TranslateMessage (&msg);
+      DispatchMessage  (&msg);
+    }
+
+    return 0;
+  }
+
+  static LRESULT
+  CALLBACK
+  LowLevelKeyboardProc (int nCode, WPARAM wParam, LPARAM lParam)
+  {
+    typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
+
+    static HMODULE               hMod =
+      LoadLibrary (L"d3d9.dll");
+    static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
+                                      =
+      (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
+
+    static BYTE keys_ [256] = { 0 };
+    static bool visible     = false;
+
+    static bool command_issued = false;
+    static std::string result_str;
+
+    if (nCode >= 0) {
+      if (true) {
+        KBDLLHOOKSTRUCT* pHookStruct = (KBDLLHOOKSTRUCT *)lParam;
+
+        if (visible && pHookStruct->vkCode == VK_BACK) {
+          len--;
+          if (len < 0)
+            len = 0;
+          text [len + 1] = '\0';
+        } else if (pHookStruct->vkCode == VK_SHIFT || pHookStruct->vkCode == VK_LSHIFT || pHookStruct->vkCode == VK_RSHIFT) {
+          if (wParam == WM_KEYDOWN)
+            keys_ [VK_SHIFT] = 0x81;
+          else
+            keys_ [VK_SHIFT] = 0x00;
+        }
+        else if (pHookStruct->vkCode == VK_CAPITAL) {
+          if (wParam == WM_KEYDOWN) {
+            if (keys_ [VK_CAPITAL] == 0x00)
+              keys_ [VK_CAPITAL] = 0x81;
+            else
+              keys_ [VK_CAPITAL] = 0x00;
+          }
+        }
+        else if (pHookStruct->vkCode == VK_CONTROL || pHookStruct->vkCode == VK_LCONTROL || pHookStruct->vkCode == VK_RCONTROL) {
+          if (wParam == WM_KEYDOWN)
+            keys_ [VK_CONTROL] = 0x81;
+          else
+            keys_ [VK_CONTROL] = 0x00;
+        }
+        else if (visible && pHookStruct->vkCode == VK_RETURN) {
+          if (wParam == WM_KEYDOWN) {
+            eTB_CommandResult result = command.ProcessCommandLine (text+1);
+
+            if (result.getStatus ()) {
+              len = 1;
+              text [1] = '\0';
+            }
+
+            result_str     = result.getWord () + std::string (" ")   +
+                             result.getArgs () + std::string (":  ") +
+                             result.getResult ();
+
+            command_issued = true;
+          }
+        }
+        else if (wParam == WM_KEYDOWN) {
+          keys_ [pHookStruct->vkCode] = 0x81;
+
+          if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_OEM_PERIOD])
+            visible = ! visible;
+
+          if (visible) {
+            char key_str [2];
+            key_str [1] = '\0';
+
+            if (1 == ToAsciiEx ( pHookStruct->vkCode,
+                                 pHookStruct->scanCode,
+                                 keys_,
+                                (LPWORD)key_str,
+                                 pHookStruct->flags,
+                                 GetKeyboardLayout (0) )) {
+              strncat (text, key_str, 1);
+              len++;
+              command_issued = false;
+            }
+          }
+        } else if (wParam == WM_KEYUP) {
+          keys_ [pHookStruct->vkCode] = 0x00;
+        }
+
+        if (visible) {
+          if (! command_issued)
+            BMF_DrawExternalOSD ("ToZ Fix", text);
+          else {
+            std::string output (text);
+            output += "\n";
+            output += result_str;
+            BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
+          }
+          return 1;
+        } else
+          BMF_DrawExternalOSD ("ToZ Fix", " ");
+      }
+    }
+
+    return CallNextHookEx (NULL, nCode, wParam, lParam);
+  };
+};
+
+TZF_KeyboardHooker* TZF_KeyboardHooker::pKeyboardHook;
+char                TZF_KeyboardHooker::text [16384];
+int                 TZF_KeyboardHooker::len;
+
 DWORD
 WINAPI DllThread (LPVOID user)
 {
@@ -318,6 +514,7 @@ WINAPI DllThread (LPVOID user)
                         D3D9SetSamplerState_Detour,
               (LPVOID*)&D3D9SetSamplerState_Original );
 
+#if 0
     TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShaderConstantF_Override",
                         D3D9SetVertexShaderConstantF_Detour,
               (LPVOID*)&D3D9SetVertexShaderConstantF_Original );
@@ -325,6 +522,7 @@ WINAPI DllThread (LPVOID user)
     TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShader_Override",
                         D3D9SetVertexShader_Detour,
               (LPVOID*)&D3D9SetVertexShader_Original );
+#endif
 
     TZF_EnableHook (MH_ALL_HOOKS);
   }
@@ -334,7 +532,7 @@ WINAPI DllThread (LPVOID user)
 
 BOOL
 APIENTRY
-DllMain (HMODULE /* hModule */,
+DllMain (HMODULE hModule,
          DWORD    ul_reason_for_call,
          LPVOID  /* lpReserved */)
 {
@@ -367,6 +565,9 @@ DllMain (HMODULE /* hModule */,
       // Save a new config if none exists
       TZF_SaveConfig ();
     }
+
+    command.AddVariable ("FudgeFactor",    new eTB_VarStub <float> (&config.framerate.fudget_factor));
+    command.AddVariable ("AllowFakeSleep", new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
 
     CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
 
@@ -416,17 +617,18 @@ DllMain (HMODULE /* hModule */,
     }
 #endif
 
-#if 0
     if (config.render.aspect_ratio != 1.777778f) {
       VirtualProtect ((LPVOID)config.render.aspect_addr, 4, PAGE_READWRITE, &dwOld);
       *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
     }
-#endif
 
     if (config.render.fovy != 0.785398f) {
       VirtualProtect ((LPVOID)config.render.fovy_addr, 4, PAGE_READWRITE, &dwOld);
       *((float *)config.render.fovy_addr) = config.render.fovy;
     }
+
+    TZF_KeyboardHooker* pHook = TZF_KeyboardHooker::getInstance ();
+    pHook->Start ();
   } break;
 
   case DLL_THREAD_ATTACH:
@@ -441,6 +643,9 @@ DllMain (HMODULE /* hModule */,
 
     TZF_UnInit_MinHook ();
     TZF_SaveConfig     ();
+
+    TZF_KeyboardHooker* pHook = TZF_KeyboardHooker::getInstance ();
+    pHook->End ();
 
     dll_log.LogEx      (true,  L"Closing log file... ");
     dll_log.close      ();

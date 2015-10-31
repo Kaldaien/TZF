@@ -159,7 +159,9 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="command.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="console.h" />
     <ClInclude Include="framerate.h" />
     <ClInclude Include="general_io.h" />
     <ClInclude Include="hook.h" />
@@ -171,7 +173,9 @@
     <ClInclude Include="steam.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="command.cpp" />
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="console.cpp" />
     <ClCompile Include="dllmain.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</CompileAsManaged>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
