@@ -169,6 +169,7 @@
     <ClInclude Include="log.h" />
     <ClInclude Include="MinHook\include\MinHook.h" />
     <ClInclude Include="parameter.h" />
+    <ClInclude Include="render.h" />
     <ClInclude Include="sound.h" />
     <ClInclude Include="steam.h" />
   </ItemGroup>
@@ -195,6 +196,7 @@
     <ClCompile Include="ini.cpp" />
     <ClCompile Include="log.cpp" />
     <ClCompile Include="parameter.cpp" />
+    <ClCompile Include="render.cpp" />
     <ClCompile Include="sound.cpp" />
     <ClCompile Include="general_io.cpp" />
     <ClCompile Include="steam.cpp" />

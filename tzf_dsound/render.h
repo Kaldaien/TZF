@@ -19,17 +19,18 @@
  *   If not, see <http://www.gnu.org/licenses/>.
  *
 **/
-#ifndef __TZF__STEAM_H__
-#define __TZF__STEAM_H__
+
+#ifndef __TZF__RENDER_H__
+#define __TZF__RENDER_H__
 
 #include "command.h"
 
 namespace tzf
 {
-  namespace SteamFix
+  namespace RenderFix
   {
-    void Init     (void);
-    void Shutdown (void);
+    void Init     ();
+    void Shutdown ();
 
     class CommandProcessor : public eTB_iVariableListener {
     public:
@@ -46,7 +47,8 @@ namespace tzf
       }
 
     protected:
-      eTB_Variable* allow_broadcasts_;
+      eTB_Variable* fovy_;
+      eTB_Variable* aspect_ratio_;
 
     private:
       static CommandProcessor* pCommProc;
@@ -54,5 +56,4 @@ namespace tzf
   }
 }
 
-
-#endif /* __TZF__STEAM_H__ */
+#endif /* __TZF__RENDER_H__ */
