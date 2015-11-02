@@ -22,12 +22,47 @@
 #ifndef __TZF__SOUND_H__
 #define __TZF__SOUND_H__
 
+#include <mmeapi.h>
+
+#include "command.h"
+
 namespace tzf
 {
   namespace SoundFix
   {
     void Init     (void);
     void Shutdown (void);
+
+    class CommandProcessor : public eTB_iVariableListener {
+    public:
+      CommandProcessor (void);
+
+      virtual bool OnVarChange (eTB_Variable* var, void* val = NULL);
+
+      static CommandProcessor* getInstance (void)
+      {
+        if (pCommProc == NULL)
+          pCommProc = new CommandProcessor ();
+
+        return pCommProc;
+      }
+
+    protected:
+      eTB_Variable* sample_rate_;
+      eTB_Variable* channels_;
+      eTB_Variable* enable_;
+      eTB_Variable* compatibility_;
+
+    private:
+      static CommandProcessor* pCommProc;
+    };
+
+    // True once the game has initialized sound
+    extern bool wasapi_init;
+
+    extern WAVEFORMAT snd_core_fmt;
+    extern WAVEFORMAT snd_bink_fmt;
+    extern WAVEFORMAT snd_device_fmt;
   }
 }
 

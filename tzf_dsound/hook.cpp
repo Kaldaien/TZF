@@ -24,6 +24,51 @@
 #include "hook.h"
 #include "log.h"
 #include "command.h"
+#include "sound.h"
+
+#include <mmsystem.h>
+#pragma comment (lib, "winmm.lib")
+
+#include <comdef.h>
+
+struct window_t {
+  DWORD proc_id;
+  HWND  root;
+};
+
+BOOL
+CALLBACK
+TZF_EnumWindows (HWND hWnd, LPARAM lParam)
+{
+  window_t& win = *(window_t*)lParam;
+
+  DWORD proc_id = 0;
+
+  GetWindowThreadProcessId (hWnd, &proc_id);
+
+  if (win.proc_id != proc_id) {
+    if (GetWindow (hWnd, GW_OWNER) != (HWND)nullptr ||
+        GetWindowTextLength (hWnd) < 30             ||
+     (! IsWindowVisible     (hWnd)))
+      return TRUE;
+  }
+
+  win.root = hWnd;
+  return FALSE;
+}
+
+HWND
+TZF_FindRootWindow (DWORD proc_id)
+{
+  window_t win;
+
+  win.proc_id  = proc_id;
+  win.root     = 0;
+
+  EnumWindows (TZF_EnumWindows, (LPARAM)&win);
+
+  return win.root;
+}
 
 class TZF_KeyboardHooker
 {
@@ -33,7 +78,12 @@ private:
   static TZF_KeyboardHooker* pKeyboardHook;
 
   static char                text [16384];
-  static int                 len;
+
+  static BYTE keys_ [256];
+  static bool visible;
+
+  static bool command_issued;
+  static std::string result_str;
 
 protected:
   TZF_KeyboardHooker (void) { }
@@ -73,34 +123,41 @@ public:
   WINAPI
   MessagePump (LPVOID hook_ptr)
   {
-    len = 1;
-    ZeroMemory (text, 1024);
+    ZeroMemory (text, 16384);
 
     text [0] = '>';
 
-    MSG       msg;
-    HINSTANCE hInst = GetModuleHandle (NULL);
+    extern    HMODULE hDLLMod;
 
+    HWND  hWndForeground;
     DWORD dwThreadId;
 
-    while (true) {
-      wchar_t wszTitle [32];
-      HWND hWndForeground = GetForegroundWindow ();
+    int hits = 0;
 
-      if (! hWndForeground) {
-        Sleep (1);
+    DWORD dwTime = timeGetTime ();
+
+    while (true) {
+      if (! tzf::SoundFix::wasapi_init) {
+        Sleep (83);
         continue;
       }
 
-      GetWindowText (hWndForeground, wszTitle, 32);
+      hWndForeground = GetForegroundWindow ();
 
-      if (wcsstr (wszTitle, L"Tales of Zestiria")) {
-        dwThreadId = GetWindowThreadProcessId (hWndForeground, NULL);
-        break;
+      if ((! hWndForeground) ||
+             hWndForeground != TZF_FindRootWindow (GetCurrentProcessId ())) {
+        Sleep (83);
+        continue;
       }
+
+      dwThreadId = GetWindowThreadProcessId (hWndForeground, nullptr);
+
+      break;
     }
 
-    Sleep (20);
+    dll_log.Log ( L"  # Found window in %03.01f seconds, "
+                     L"installing keyboard hook...",
+                   (float)(timeGetTime () - dwTime) / 1000.0f );
 
     typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
 
@@ -110,18 +167,68 @@ public:
       =
       (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
 
-    BMF_DrawExternalOSD ("ToZ Fix", text);
+    dwTime = timeGetTime ();
+    hits   = 1;
 
-    *(HHOOK *)hook_ptr = SetWindowsHookEx ( WH_KEYBOARD,
+    while (! (*(HHOOK *)hook_ptr = SetWindowsHookEx ( WH_KEYBOARD,
                                               KeyboardProc,
-                                                hInst,
-                                                  dwThreadId );
+                                                hDLLMod,
+                                                  dwThreadId ))) {
+      _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
+      dll_log.Log ( L"  @ SetWindowsHookEx failed: 0x%04X (%s)",
+                    err.WCode (), err.ErrorMessage () );
 
-    while (GetMessage (&msg, NULL, 0, 0) > 0)
+      ++hits;
+
+      if (hits >= 5) {
+        dll_log.Log ( L"  * Failed to install keyboard hook after %lu tries... "
+          L"bailing out!",
+          hits );
+        return 0;
+      }
+
+      Sleep (1);
+    }
+
+    dll_log.Log ( L"  * Installed keyboard hook for command console... "
+                        L"%lu %s (%lu ms!)",
+                  hits,
+                    hits > 1 ? L"tries" : L"try",
+                      timeGetTime () - dwTime );
+
+    DWORD last_time = timeGetTime ();
+    bool  carret    = true;
+
+    //193 - 199
+
+    while (true)
     {
-      TranslateMessage (&msg);
-      DispatchMessage  (&msg);
+      if (visible) {
+        std::string output (text);
+
+        // Blink the Carret
+        if (timeGetTime () - last_time > 333) {
+          carret = ! carret;
+
+          last_time = timeGetTime ();
+        }
+
+        if (carret)
+          output += "-";
+
+        // Show Command Results
+        if (command_issued) {
+          output += "\n";
+          output += result_str;
+        }
+
+        BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
+      } else {
+        BMF_DrawExternalOSD ("ToZ Fix", " ");
+      }
+
+      Sleep (16);
     }
 
     return 0;
@@ -139,12 +246,6 @@ public:
                                       =
       (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
 
-    static BYTE keys_ [256] = { 0 };
-    static bool visible     = false;
-
-    static bool command_issued = false;
-    static std::string result_str;
-
     if (nCode >= 0) {
       if (true) {
         DWORD   vkCode   = LOWORD (wParam);
@@ -154,12 +255,13 @@ public:
 
         if (visible && vkCode == VK_BACK) {
           if (keyDown) {
+            int len = strlen (text);
             len--;
-            if (len < 0)
-              len = 0;
-            text [len + 1] = '\0';
+            if (len < 1)
+              len = 1;
+            text [len] = '\0';
           }
-        } else if ((!repeated) && (vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT)) {
+        } else if ((vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT)) {
           if (keyDown)
             keys_ [VK_SHIFT] = 0x81;
           else
@@ -173,7 +275,7 @@ public:
               keys_ [VK_CAPITAL] = 0x00;
           }
         }
-        else if ((!repeated) && (vkCode == VK_CONTROL || vkCode == VK_LCONTROL || vkCode == VK_RCONTROL)) {
+        else if ((vkCode == VK_CONTROL || vkCode == VK_LCONTROL || vkCode == VK_RCONTROL)) {
           if (keyDown)
             keys_ [VK_CONTROL] = 0x81;
           else
@@ -187,15 +289,16 @@ public:
               eTB_CommandResult result = command.ProcessCommandLine (text+1);
 
               if (result.getStatus ()) {
-                len = 1;
                 text [1] = '\0';
+                command_issued = true;
+              }
+              else {
+                command_issued = false;
               }
 
               result_str     = result.getWord () + std::string (" ")   +
                                result.getArgs () + std::string (":  ") +
                                result.getResult ();
-
-              command_issued = true;
             }
           }
         }
@@ -204,7 +307,7 @@ public:
 
           keys_ [vkCode] = 0x81;
 
-          if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_OEM_PERIOD] && new_press)
+          if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
             visible = ! visible;
 
           if (visible) {
@@ -218,7 +321,6 @@ public:
                                  0,
                                  GetKeyboardLayout (0) )) {
               strncat (text, key_str, 1);
-              len++;
               command_issued = false;
             }
           }
@@ -226,18 +328,8 @@ public:
           keys_ [vkCode] = 0x00;
         }
 
-        if (visible) {
-          if (! command_issued)
-            BMF_DrawExternalOSD ("ToZ Fix", text);
-          else {
-            std::string output (text);
-            output += "\n";
-            output += result_str;
-            BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
-          }
+        if (visible)
           return 1;
-        } else
-          BMF_DrawExternalOSD ("ToZ Fix", " ");
       }
     }
 
@@ -483,4 +575,9 @@ TZF_UnInit_MinHook (void)
 
 TZF_KeyboardHooker* TZF_KeyboardHooker::pKeyboardHook;
 char                TZF_KeyboardHooker::text [16384];
-int                 TZF_KeyboardHooker::len;
+
+BYTE TZF_KeyboardHooker::keys_ [256] = { 0 };
+bool TZF_KeyboardHooker::visible     = false;
+
+bool TZF_KeyboardHooker::command_issued = false;
+std::string TZF_KeyboardHooker::result_str;

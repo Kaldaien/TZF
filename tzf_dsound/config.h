@@ -37,9 +37,9 @@ struct tzf_config_t
   } audio;
 
   struct {
-    bool  allow_fake_sleep = false;
-    bool  stutter_fix      = false;
-    float fudget_factor    = 4.0f;
+    bool  allow_fake_sleep = true;
+    bool  stutter_fix      = true;
+    float fudge_factor     = 2.0f;
   } framerate;
 
   struct {

@@ -82,7 +82,7 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
     BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
     // Double Speed - May be necessary, but simply removing Sleep (0) does most of the work here.
     lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
-                                     config.framerate.fudget_factor/* * freq.QuadPart*/;
+                                     config.framerate.fudge_factor/* * freq.QuadPart*/;
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
     return ret;
   }

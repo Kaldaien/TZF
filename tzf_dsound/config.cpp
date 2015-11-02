@@ -238,7 +238,7 @@ TZF_LoadConfig (std::wstring name) {
     config.framerate.stutter_fix = framerate.stutter_fix->get_value ();
 
   if (framerate.fudge_factor->load ())
-    config.framerate.fudget_factor = framerate.fudge_factor->get_value ();
+    config.framerate.fudge_factor = framerate.fudge_factor->get_value ();
 
   if (framerate.allow_fake_sleep->load ())
     config.framerate.allow_fake_sleep = framerate.allow_fake_sleep->get_value ();
@@ -287,7 +287,7 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   framerate.stutter_fix->set_value (config.framerate.stutter_fix);
   framerate.stutter_fix->store     ();
 
-  framerate.fudge_factor->set_value (config.framerate.fudget_factor);
+  framerate.fudge_factor->set_value (config.framerate.fudge_factor);
   framerate.fudge_factor->store     ();
 
   framerate.allow_fake_sleep->set_value (config.framerate.allow_fake_sleep);

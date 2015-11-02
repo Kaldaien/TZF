@@ -53,6 +53,9 @@ WINAPI DllThread (LPVOID user)
   return 0;
 }
 
+
+HMODULE hDLLMod = { 0 };
+
 BOOL
 APIENTRY
 DllMain (HMODULE hModule,
@@ -63,6 +66,8 @@ DllMain (HMODULE hModule,
   {
   case DLL_PROCESS_ATTACH:
   {
+    hDLLMod = hModule;
+
     dll_log.init ("logs/tzfix.log", "w");
     dll_log.Log  (L"tzfix.log created");
 
@@ -73,6 +78,8 @@ DllMain (HMODULE hModule,
       config.audio.enable_fix        = true;
 
       config.framerate.stutter_fix   = true;
+      config.framerate.fudge_factor  = 2.0f;
+      config.framerate.allow_fake_sleep = true;
 
       config.file_io.capture         = false;
 
@@ -89,7 +96,7 @@ DllMain (HMODULE hModule,
       TZF_SaveConfig ();
     }
 
-    command.AddVariable ("FudgeFactor",    new eTB_VarStub <float> (&config.framerate.fudget_factor));
+    command.AddVariable ("FudgeFactor",    new eTB_VarStub <float> (&config.framerate.fudge_factor));
     command.AddVariable ("AllowFakeSleep", new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
 
     CreateThread (NULL, NULL, DllThread, 0, 0, NULL);

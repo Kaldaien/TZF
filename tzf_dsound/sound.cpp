@@ -41,6 +41,12 @@
 IDirectSound* g_pDS       = nullptr;
 bool          new_session = false;
 
+bool          tzf::SoundFix::wasapi_init = false;
+
+WAVEFORMAT tzf::SoundFix::snd_core_fmt;
+WAVEFORMAT tzf::SoundFix::snd_bink_fmt;
+WAVEFORMAT tzf::SoundFix::snd_device_fmt;
+
 WAVEFORMATEXTENSIBLE g_DeviceFormat;
 
 #define __PTR_SIZE   sizeof LPCVOID
@@ -478,6 +484,7 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
         //   truncate this sucker to a plain old WAVEFORMATEX
         IAudioClient_GetMixFormat_Original (This, ppDeviceFormat);
         memcpy (*ppDeviceFormat, pMixFormat, (*ppDeviceFormat)->cbSize);
+        memcpy (&tzf::SoundFix::snd_core_fmt, pMixFormat, sizeof (WAVEFORMATEX));
 
         pStore->Release ();
 
@@ -696,6 +703,7 @@ IMMDevice_Activate_Detour (IMMDevice    *This,
                         _snprintf_s_Detour,
              (LPVOID *)&_snprintf_s_Original );
 #endif
+        tzf::SoundFix::wasapi_init = true;
       }
     }
   }
@@ -754,6 +762,8 @@ LPVOID pfnDirectSoundCreate = nullptr;
 void
 tzf::SoundFix::Init (void)
 {
+  CommandProcessor* pCmdProc = CommandProcessor::getInstance ();
+
   if (! config.audio.enable_fix)
     return;
 
@@ -787,3 +797,51 @@ tzf::SoundFix::Shutdown (void)
   TZF_RemoveHook (pfnCoCreateInstance);
   TZF_RemoveHook (pfnDirectSoundCreate);
 }
+
+
+class SndInfoCmd : public eTB_Command {
+public:
+  virtual eTB_CommandResult execute (const char* szArgs) {
+    char info_str [2048];
+    sprintf (info_str, "\n"
+                       " (SoundCore)  SampleRate: %lu Channels: %lu  Format: 0x%04X  BytesPerSec: %lu\n"
+                       "  ( Device )  SampleRate: %lu Channels: %lu  Format: 0x%04X  BytesPerSec: %lu  BitsPerSample: %lu",
+                         tzf::SoundFix::snd_core_fmt.nSamplesPerSec,
+                         tzf::SoundFix::snd_core_fmt.nChannels,
+                         tzf::SoundFix::snd_core_fmt.wFormatTag,
+                         tzf::SoundFix::snd_core_fmt.nAvgBytesPerSec,
+
+                         g_DeviceFormat.Format.nSamplesPerSec,
+                         g_DeviceFormat.Format.nChannels,
+                         g_DeviceFormat.Format.wFormatTag,
+                         g_DeviceFormat.Format.nAvgBytesPerSec,
+                         g_DeviceFormat.Format.wBitsPerSample);
+
+    return eTB_CommandResult ("SoundInfo", "", info_str, 1);
+  }
+};
+
+tzf::SoundFix::CommandProcessor::CommandProcessor (void)
+{
+  sample_rate_   = new eTB_VarStub <int>  ((int *)&config.audio.sample_hz);
+  channels_      = new eTB_VarStub <int>  ((int *)&config.audio.channels);
+  enable_        = new eTB_VarStub <bool> (&config.audio.enable_fix);
+  compatibility_ = new eTB_VarStub <bool> (&config.audio.compatibility);
+
+  command.AddVariable ("SampleRate",            sample_rate_);
+  command.AddVariable ("Channels",              channels_);
+  command.AddVariable ("SoundFixCompatibility", compatibility_);
+  command.AddVariable ("EnableSoundFix",        enable_);
+
+  SndInfoCmd* sndinfo = new SndInfoCmd ();
+  command.AddCommand ("SoundInfo", sndinfo);
+}
+
+bool
+tzf::SoundFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
+{
+  return true;
+}
+
+
+tzf::SoundFix::CommandProcessor* tzf::SoundFix::CommandProcessor::pCommProc;
