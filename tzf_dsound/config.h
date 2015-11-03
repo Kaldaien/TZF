@@ -30,8 +30,8 @@ extern std::wstring TZF_VER_STR;
 struct tzf_config_t
 {
   struct {
-    uint32_t sample_hz     = 44100;
-    uint32_t channels      = 6;
+    uint32_t sample_hz     = 48000;
+    uint32_t channels      = 8;
     bool     compatibility = false;
     bool     enable_fix    = true;
   } audio;

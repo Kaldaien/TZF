@@ -60,9 +60,9 @@ namespace tzf
     // True once the game has initialized sound
     extern bool wasapi_init;
 
-    extern WAVEFORMAT snd_core_fmt;
-    extern WAVEFORMAT snd_bink_fmt;
-    extern WAVEFORMAT snd_device_fmt;
+    extern WAVEFORMATEX snd_core_fmt;
+    extern WAVEFORMATEX snd_bink_fmt;
+    extern WAVEFORMATEX snd_device_fmt;
   }
 }
 

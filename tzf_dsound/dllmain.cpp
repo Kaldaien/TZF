@@ -72,13 +72,13 @@ DllMain (HMODULE hModule,
     dll_log.Log  (L"tzfix.log created");
 
     if (! TZF_LoadConfig ()) {
-      config.audio.channels          = 6;
-      config.audio.sample_hz         = 44100;
+      config.audio.channels          = 8;
+      config.audio.sample_hz         = 48000;
       config.audio.compatibility     = false;
       config.audio.enable_fix        = true;
 
-      config.framerate.stutter_fix   = true;
-      config.framerate.fudge_factor  = 2.0f;
+      config.framerate.stutter_fix      = true;
+      config.framerate.fudge_factor     = 2.0f;
       config.framerate.allow_fake_sleep = true;
 
       config.file_io.capture         = false;

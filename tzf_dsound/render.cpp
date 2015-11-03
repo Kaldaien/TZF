@@ -316,10 +316,24 @@ tzf::RenderFix::Init (void)
             (LPVOID*)&D3D9SetVertexShader_Original );
 #endif
 
-  DWORD dwOld;
-
   UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
   HANDLE hProc = GetCurrentProcess ();
+
+#if 0
+  float* fTest = (float *)addr;
+  while (true) {
+    if (*fTest < 1.777778f + 0.000001f && *fTest > 1.777778f - 0.000001f) {
+      dll_log.Log (L"Aspect Ratio: Address=%08Xh",
+                   fTest);
+    }
+
+    if (*fTest < 0.785398f + 0.000001f && *fTest > 0.785398f - 0.000001f) {
+      dll_log.Log (L"FOVY: Address=%08Xh",
+                   fTest);
+    }
+    ++fTest;
+  }
+#endif
 
 #if 0
     float* fTest = ((float *)addr);
@@ -367,7 +381,7 @@ tzf::RenderFix::Init (void)
    (eTB_VarStub <float>*)command.FindVariable ("AspectRatio");
     aspect->setValue (config.render.aspect_ratio);
   }
-    
+
   if (config.render.fovy != 0.785398f) {
     eTB_VarStub <float>* fovy =
    (eTB_VarStub <float>*)command.FindVariable ("FOVY");
@@ -396,19 +410,43 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
   DWORD dwOld;
 
   if (var == aspect_ratio_) {
-    if (val != nullptr)
-      config.render.aspect_ratio = *(float *)val;
-
     VirtualProtect ((LPVOID)config.render.aspect_addr, 4, PAGE_READWRITE, &dwOld);
-    *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
+    float original = *((float *)config.render.aspect_addr);
+
+    if (((original < 1.777778f + 0.01f && original > 1.777778f - 0.01f) ||
+         (original == config.render.aspect_ratio))
+            && val != nullptr) {
+      config.render.aspect_ratio = *(float *)val;
+       dll_log.Log ( L" * Changing Aspect Ratio from %f to %f",
+                        original,
+                         config.render.aspect_ratio );
+       *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
+    }
+    else {
+      if (val != nullptr)
+        dll_log.Log ( L" * Unable to change Aspect Ratio, invalid memory address... (%f)",
+                        *((float *)config.render.aspect_addr) );
+    }
   }
 
   if (var == fovy_) {
-    if (val != nullptr)
-      config.render.fovy = *(float *)val;
-
     VirtualProtect ((LPVOID)config.render.fovy_addr, 4, PAGE_READWRITE, &dwOld);
-    *((float *)config.render.fovy_addr) = config.render.fovy;
+    float original = *((float *)config.render.fovy_addr);
+
+    if (((original < 0.785398f + 0.01f && original > 0.785398f - 0.01f) ||
+         (original == config.render.fovy))
+            && val != nullptr) {
+      config.render.fovy = *(float *)val;
+      dll_log.Log ( L" * Changing FOVY from %f to %f",
+                       original,
+                         config.render.fovy );
+      *((float *)config.render.fovy_addr) = config.render.fovy;
+    }
+    else {
+      if (val != nullptr)
+        dll_log.Log ( L" * Unable to change FOVY, invalid memory address... (%f)",
+                        *((float *)config.render.fovy_addr) );
+    }
   }
 
   return true;

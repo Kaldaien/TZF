@@ -43,9 +43,9 @@ bool          new_session = false;
 
 bool          tzf::SoundFix::wasapi_init = false;
 
-WAVEFORMAT tzf::SoundFix::snd_core_fmt;
-WAVEFORMAT tzf::SoundFix::snd_bink_fmt;
-WAVEFORMAT tzf::SoundFix::snd_device_fmt;
+WAVEFORMATEX tzf::SoundFix::snd_core_fmt;
+WAVEFORMATEX tzf::SoundFix::snd_bink_fmt;
+WAVEFORMATEX tzf::SoundFix::snd_device_fmt;
 
 WAVEFORMATEXTENSIBLE g_DeviceFormat;
 
@@ -396,6 +396,8 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
         pMixFormat = (PWAVEFORMATEX)property.blob.pBlobData;
         if (pMixFormat->cbSize > sizeof (WAVEFORMATEX)) {
           if (pMixFormat->cbSize = 22) {
+            memcpy (&tzf::SoundFix::snd_device_fmt, pMixFormat, sizeof (WAVEFORMATEX));
+
             std::wstring format_name;
 
             if (((PWAVEFORMATEXTENSIBLE)pMixFormat)->SubFormat ==
@@ -472,6 +474,8 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
           pMixFormat->nSamplesPerSec = TARGET_SAMPLE_RATE;
         }
 
+        pMixFormat->nAvgBytesPerSec = (pMixFormat->nSamplesPerSec * pMixFormat->nChannels * pMixFormat->wBitsPerSample) >> 3;
+
         g_DeviceFormat.Format.cbSize = 22;
         g_DeviceFormat.Format.nSamplesPerSec  = pMixFormat->nSamplesPerSec;
         g_DeviceFormat.Format.nChannels       = pMixFormat->nChannels;
@@ -484,7 +488,6 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
         //   truncate this sucker to a plain old WAVEFORMATEX
         IAudioClient_GetMixFormat_Original (This, ppDeviceFormat);
         memcpy (*ppDeviceFormat, pMixFormat, (*ppDeviceFormat)->cbSize);
-        memcpy (&tzf::SoundFix::snd_core_fmt, pMixFormat, sizeof (WAVEFORMATEX));
 
         pStore->Release ();
 
@@ -583,6 +586,9 @@ IAudioClient_Initialize_Detour (IAudioClient       *This,
                                       StreamFlags,    hnsBufferDuration,
                                       hnsPeriodicity, pClosestMatch,
                                       AudioSessionGuid);
+
+  if (new_session)
+    memcpy (&tzf::SoundFix::snd_core_fmt, pFormat, sizeof (WAVEFORMATEX));
 
   _com_error error (ret);
 
@@ -804,18 +810,19 @@ public:
   virtual eTB_CommandResult execute (const char* szArgs) {
     char info_str [2048];
     sprintf (info_str, "\n"
-                       " (SoundCore)  SampleRate: %lu Channels: %lu  Format: 0x%04X  BytesPerSec: %lu\n"
-                       "  ( Device )  SampleRate: %lu Channels: %lu  Format: 0x%04X  BytesPerSec: %lu  BitsPerSample: %lu",
+                       " (SoundCore)  SampleRate: %6lu Channels: %lu  Format: 0x%04X  BytesPerSec: %7lu  BitsPerSample: %lu\n"
+                       "  ( Device )  SampleRate: %6lu Channels: %lu  Format: 0x%04X  BytesPerSec: %7lu  BitsPerSample: %lu\n",
                          tzf::SoundFix::snd_core_fmt.nSamplesPerSec,
                          tzf::SoundFix::snd_core_fmt.nChannels,
                          tzf::SoundFix::snd_core_fmt.wFormatTag,
                          tzf::SoundFix::snd_core_fmt.nAvgBytesPerSec,
+                         tzf::SoundFix::snd_core_fmt.wBitsPerSample,
 
-                         g_DeviceFormat.Format.nSamplesPerSec,
-                         g_DeviceFormat.Format.nChannels,
-                         g_DeviceFormat.Format.wFormatTag,
-                         g_DeviceFormat.Format.nAvgBytesPerSec,
-                         g_DeviceFormat.Format.wBitsPerSample);
+                         tzf::SoundFix::snd_device_fmt.nSamplesPerSec,
+                         tzf::SoundFix::snd_device_fmt.nChannels,
+                         tzf::SoundFix::snd_device_fmt.wFormatTag,
+                         tzf::SoundFix::snd_device_fmt.nAvgBytesPerSec,
+                         tzf::SoundFix::snd_device_fmt.wBitsPerSample);
 
     return eTB_CommandResult ("SoundInfo", "", info_str, 1);
   }

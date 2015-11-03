@@ -137,7 +137,10 @@ public:
     DWORD dwTime = timeGetTime ();
 
     while (true) {
-      if (! tzf::SoundFix::wasapi_init) {
+      // Spin until either the soundfix is initialized or 15 seconds elapse;
+      //   this delays initialization of the hook and improves compatibility.
+      if ((! tzf::SoundFix::wasapi_init) &&
+          ((timeGetTime () - dwTime) < 15000)) {
         Sleep (83);
         continue;
       }
