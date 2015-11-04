@@ -91,6 +91,7 @@ DllMain (HMODULE hModule,
       config.render.aspect_addr      = 0x00D52398;
       config.render.fovy_addr        = 0x00D5239C;
       config.render.trilinear_filter = true;
+      config.render.letterbox_videos = true;
 
       // Save a new config if none exists
       TZF_SaveConfig ();

@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"0.3.4";
+std::wstring TZF_VER_STR = L"0.3.5";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -51,6 +51,7 @@ struct {
   tzf::ParameterInt*     aspect_addr;
   tzf::ParameterFloat*   fovy;
   tzf::ParameterFloat*   aspect_ratio;
+  tzf::ParameterBool*    aspect_correct_vids;
 } render;
 
 struct {
@@ -187,6 +188,16 @@ TZF_LoadConfig (std::wstring name) {
       L"TZFIX.Render",
         L"FOVY_Address" );
 
+   render.aspect_correct_vids =
+     static_cast <tzf::ParameterBool *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Aspect Ratio Correct Videos")
+       );
+   render.aspect_correct_vids->register_to_ini (
+     dll_ini,
+       L"TZFIX.Render",
+         L"AspectCorrectVideos" );
+
 
   steam.allow_broadcasts =
     static_cast <tzf::ParameterBool *>
@@ -255,6 +266,9 @@ TZF_LoadConfig (std::wstring name) {
   if (render.fovy->load ())
     config.render.fovy = render.fovy->get_value ();
 
+  if (render.aspect_correct_vids->load ())
+    config.render.letterbox_videos = render.aspect_correct_vids->get_value ();
+
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
 
@@ -304,6 +318,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   render.fovy->set_value (config.render.fovy);
   render.fovy->store     ();
+
+  render.aspect_correct_vids->set_value (config.render.letterbox_videos);
+  render.aspect_correct_vids->store     ();
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
   steam.allow_broadcasts->store     ();

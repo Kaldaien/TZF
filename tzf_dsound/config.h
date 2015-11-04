@@ -55,6 +55,7 @@ struct tzf_config_t
     float aspect_ratio     = 1.777778f;
     DWORD aspect_addr      = 0x00D52398;
     DWORD fovy_addr        = 0x00D5239C;
+    bool  letterbox_videos = true;
     bool  trilinear_filter = true;
   } render;
 

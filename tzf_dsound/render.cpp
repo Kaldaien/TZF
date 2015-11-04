@@ -157,28 +157,6 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
 
 IDirect3DVertexShader9* g_pVS;
 
-typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
-  (IDirect3DDevice9*       This,
-   IDirect3DVertexShader9* pShader);
-
-SetVertexShader_t D3D9SetVertexShader_Original = nullptr;
-
-bool changed = false;
-
-__declspec (dllexport)
-COM_DECLSPEC_NOTHROW
-HRESULT
-STDMETHODCALLTYPE
-D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
-                            IDirect3DVertexShader9* pShader)
-{
-  if (g_pVS != pShader)
-    changed = true;
-
-  g_pVS = pShader;
-  return D3D9SetVertexShader_Original (This, pShader);
-}
-
 typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_t)(
   IDirect3DDevice9* This,
   UINT              StartRegister,
@@ -247,6 +225,44 @@ crc32(uint32_t crc, const void *buf, size_t size)
   return crc ^ ~0U;
 }
 
+typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
+  (IDirect3DDevice9*       This,
+   IDirect3DVertexShader9* pShader);
+
+SetVertexShader_t D3D9SetVertexShader_Original = nullptr;
+
+#include <map>
+std::map <LPVOID, uint32_t> vs_checksums;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
+                            IDirect3DVertexShader9* pShader)
+{
+  if (g_pVS != pShader) {
+    if (pShader != nullptr) {
+      if (vs_checksums.find (pShader) == vs_checksums.end ()) {
+        UINT len = 2048;
+        char szFunc [2048];
+
+        pShader->GetFunction (szFunc, &len);
+
+        vs_checksums [pShader] = crc32 (0, szFunc, len);
+      }
+    }
+  }
+
+  g_pVS = pShader;
+  return D3D9SetVertexShader_Original (This, pShader);
+}
+
+//
+// Bink Video Vertex Shader
+//
+const int VS_CHECKSUM_BINK = -831857998;
+
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -255,40 +271,58 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
                                      CONST float*      pConstantData,
                                      UINT              Vector4fCount)
 {
-  if (Vector4fCount == 4) {
-    D3DMATRIX* matrix = (D3DMATRIX *)pConstantData;
+  if (config.render.letterbox_videos) {
+  if (Vector4fCount == 5 && StartRegister == 0) {
+    if (pConstantData [ 0] == 0.0015625f    && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
+        pConstantData [ 4] == 0.0f          && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
+        pConstantData [ 8] == 0.0f          && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f &&
+        pConstantData [12] == 0.0f          && pConstantData [13] == 0.0f          && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
+        pConstantData [16] == 1.0f          && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f) {
+      D3DVIEWPORT9 vp9_orig;
+      This->GetViewport (&vp9_orig);
 
-    UINT len = 65536;
-    char szFunc [65536];
-    g_pVS->GetFunction (szFunc, &len);
+      int width = vp9_orig.Width;
+      int height = (9.0f / 16.0f) * vp9_orig.Width;
 
-    uint32_t crc = crc32 (0, szFunc, len);
+      //dll_log.Log (L"checksum: %d", vs_crc32);
+      //dll_log.Log (L" Viewport: (%dx%d) -> (%dx%d)", vp9_orig.Width, vp9_orig.Height,
+                                                     //width, height);
 
-    if (crc == 446150694 && matrix->_44 == 1.0f && matrix->_33 == 1.0f && matrix->_22 == 1.0f && matrix->_11 == 1.0f) {
-      dll_log.Log (L"Ortho Matrix!");
-      dll_log.LogEx (false, L"| %f %f %f %f |\n"
-                   L"| %f %f %f %f |\n"
-                   L"| %f %f %f %f |\n"
-                   L"| %f %f %f %F | (%d - %d)",
-                   matrix->_11,matrix->_12,matrix->_13,matrix->_14,
-                   matrix->_21,matrix->_22,matrix->_23,matrix->_24,
-                   matrix->_31,matrix->_32,matrix->_33,matrix->_34,
-                   matrix->_41,matrix->_42,matrix->_43,matrix->_44, StartRegister, crc);
+     if (height != vp9_orig.Height && (vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
+        This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
 
-      //matrix->_22 -= ((16.0f/9.0f - config.render.aspect_ratio) * matrix->_22) / 2.0f;
-
-
-      D3DMATRIX scale;
-      ZeroMemory (&scale, sizeof (D3DMATRIX));
-      scale._11 = 1.0f;
-      scale._22 = 1.0f;
-      scale._33 = 1.0f;
-      scale._44 = 1.0f - (16.0f/9.0f - config.render.aspect_ratio) / 2.0f;
-      D3DXMatrixMultiply_Original (matrix, matrix, &scale);
+        D3DVIEWPORT9 vp9;
+        vp9.X     = vp9_orig.X;    vp9.Y      = vp9_orig.Y + (vp9_orig.Height - height) / 2;
+        vp9.Width = width;         vp9.Height = height;
+        vp9.MinZ  = vp9_orig.MinZ; vp9.MaxZ   = vp9_orig.MaxZ;
+        This->SetViewport (&vp9);
+      }
     }
+  }
   }
 
   return D3D9SetVertexShaderConstantF_Original (This, StartRegister, pConstantData, Vector4fCount);
+}
+
+
+
+typedef HRESULT (STDMETHODCALLTYPE *SetPixelShaderConstantF_t)(
+  IDirect3DDevice9* This,
+  UINT              StartRegister,
+  CONST float*      pConstantData,
+  UINT              Vector4fCount);
+
+SetVertexShaderConstantF_t D3D9SetPixelShaderConstantF_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetPixelShaderConstantF_Detour (IDirect3DDevice9* This,
+  UINT              StartRegister,
+  CONST float*      pConstantData,
+  UINT              Vector4fCount)
+{
+  return D3D9SetPixelShaderConstantF_Original (This, StartRegister, pConstantData, Vector4fCount);
 }
 
 
@@ -307,14 +341,20 @@ tzf::RenderFix::Init (void)
                      &SetSamplerState );
 
 #if 0
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShaderConstantF_Override",
+                      D3D9SetPixelShaderConstantF_Detour,
+            (LPVOID*)&D3D9SetPixelShaderConstantF_Original );
+#endif
+
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShaderConstantF_Override",
                       D3D9SetVertexShaderConstantF_Detour,
             (LPVOID*)&D3D9SetVertexShaderConstantF_Original );
 
+
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShader_Override",
                       D3D9SetVertexShader_Detour,
             (LPVOID*)&D3D9SetVertexShader_Original );
-#endif
+
 
   UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
   HANDLE hProc = GetCurrentProcess ();
@@ -402,8 +442,11 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   fovy_         = new eTB_VarStub <float> (&config.render.fovy,         this);
   aspect_ratio_ = new eTB_VarStub <float> (&config.render.aspect_ratio, this);
 
-  command.AddVariable ("AspectRatio", aspect_ratio_);
-  command.AddVariable ("FOVY",        fovy_);
+  eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool> (&config.render.letterbox_videos);
+
+  command.AddVariable ("AspectRatio",         aspect_ratio_);
+  command.AddVariable ("FOVY",                fovy_);
+  command.AddVariable ("AspectCorrectVideos", aspect_correct_vids);
 }
 
 bool
