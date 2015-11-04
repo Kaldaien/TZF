@@ -31,6 +31,9 @@ namespace tzf
 
     // True if the game is running in fullscreen
     extern bool fullscreen;
+
+    // True if the game is being framerate limited by the DRIVER
+    extern bool driver_limit_setup;
   }
 }
 

@@ -211,7 +211,8 @@ public:
     {
       std::string output;
 
-      if (config.framerate.stutter_fix && (! tzf::FrameRateFix::fullscreen)) {
+      if (config.framerate.stutter_fix && (! (tzf::FrameRateFix::fullscreen ||
+                                              tzf::FrameRateFix::driver_limit_setup))) {
         output += "<Run Game in Fullscreen Mode or Disable Stutter Fix!>\n";
       }
 

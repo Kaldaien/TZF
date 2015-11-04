@@ -31,7 +31,9 @@ bool stutter_fix_installed = false;
 
 #include <d3d9.h>
 D3DPRESENT_PARAMETERS present_params;
-bool tzf::FrameRateFix::fullscreen = false;
+
+bool tzf::FrameRateFix::fullscreen         = false;
+bool tzf::FrameRateFix::driver_limit_setup = false;
 
 typedef D3DPRESENT_PARAMETERS* (__stdcall *BMF_SetPresentParamsD3D9_t)(D3DPRESENT_PARAMETERS* pparams);
 BMF_SetPresentParamsD3D9_t BMF_SetPresentParamsD3D9_Original = nullptr;
@@ -47,10 +49,57 @@ BMF_SetPresentParamsD3D9_Detour (D3DPRESENT_PARAMETERS* pparams)
                     pparams->Windowed ? L"False" :
                                         L"True" );
 
+    if (config.framerate.stutter_fix) {
+    // On NVIDIA hardware, we can setup a framerate limiter at the driver
+    //   level to handle windowed mode or improperly setup VSYNC
+    static HMODULE hD3D9 = LoadLibrary (L"d3d9.dll");
+
+    typedef BOOL (__stdcall *BMF_NvAPI_IsInit_t)
+      (void);
+    typedef void (__stdcall *BMF_NvAPI_SetAppFriendlyName_t)
+      (const wchar_t* wszFriendlyName);
+    typedef BOOL (__stdcall *BMF_NvAPI_SetFramerateLimit_t)
+      (const wchar_t* wszName, uint32_t limit);
+
+    static BMF_NvAPI_IsInit_t             BMF_NvAPI_IsInit             =
+      (BMF_NvAPI_IsInit_t)GetProcAddress
+      (hD3D9, "BMF_NvAPI_IsInit");
+    static BMF_NvAPI_SetAppFriendlyName_t BMF_NvAPI_SetAppFriendlyName = 
+      (BMF_NvAPI_SetAppFriendlyName_t)GetProcAddress
+      (hD3D9, "BMF_NvAPI_SetAppFriendlyName");
+    static BMF_NvAPI_SetFramerateLimit_t BMF_NvAPI_SetFramerateLimit   = 
+      (BMF_NvAPI_SetFramerateLimit_t)GetProcAddress
+      (hD3D9, "BMF_NvAPI_SetFramerateLimit");
+
+    if ((! tzf::FrameRateFix::driver_limit_setup) && BMF_NvAPI_IsInit ()) {
+      BMF_NvAPI_SetAppFriendlyName (L"Tales of Zestiria");
+
+      DWORD   dwProcessSize = MAX_PATH;
+      wchar_t wszProcessName [MAX_PATH];
+
+      HANDLE hProc = GetCurrentProcess ();
+
+      QueryFullProcessImageName (hProc, 0, wszProcessName, &dwProcessSize);
+
+      if (! BMF_NvAPI_SetFramerateLimit (wszProcessName, 30UL)) {
+        MessageBox ( NULL,
+                       L"Stutter Fix:\t\t"
+                       L"Optimal NVIDIA Driver Framerate Limit Setup",
+                         L"Game Must Restart",
+                           MB_OK | MB_TOPMOST | MB_SETFOREGROUND |
+                           MB_ICONINFORMATION );
+        exit (0);
+      }
+
+      tzf::FrameRateFix::driver_limit_setup = true;
+    }
+    }
+
     if (! pparams->Windowed)
       tzf::FrameRateFix::fullscreen = true;
-    else
+    else {
       tzf::FrameRateFix::fullscreen = false;
+    }
   }
 
   return BMF_SetPresentParamsD3D9_Original (pparams);
@@ -100,9 +149,10 @@ BOOL
 WINAPI
 QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 {
-  BOOL ret   = QueryPerformanceCounter_Original (lpPerformanceCount);
+  BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
 
-  if (last_sleep != 0 || (! tzf::FrameRateFix::fullscreen)) {
+  if (last_sleep != 0 || (! (tzf::FrameRateFix::fullscreen ||
+                             tzf::FrameRateFix::driver_limit_setup))) {
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
     return ret;
   } else {
