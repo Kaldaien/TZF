@@ -267,7 +267,7 @@ TZF_LoadConfig (std::wstring name) {
     config.render.fovy = render.fovy->get_value ();
 
   if (render.aspect_correct_vids->load ())
-    config.render.letterbox_videos = render.aspect_correct_vids->get_value ();
+    config.render.blackbar_videos = render.aspect_correct_vids->get_value ();
 
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
@@ -319,7 +319,7 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   render.fovy->set_value (config.render.fovy);
   render.fovy->store     ();
 
-  render.aspect_correct_vids->set_value (config.render.letterbox_videos);
+  render.aspect_correct_vids->set_value (config.render.blackbar_videos);
   render.aspect_correct_vids->store     ();
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);

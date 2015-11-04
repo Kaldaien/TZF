@@ -167,16 +167,16 @@ SetVertexShaderConstantF_t D3D9SetVertexShaderConstantF_Original = nullptr;
 
 static uint32_t crc32_tab[] = {
   0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
-  0xe963a535, 0x9e6495a3,	0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
+  0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
   0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2,
-  0xf3b97148, 0x84be41de,	0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-  0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec,	0x14015c4f, 0x63066cd9,
-  0xfa0f3d63, 0x8d080df5,	0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
-  0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,	0x35b5a8fa, 0x42b2986c,
-  0xdbbbc9d6, 0xacbcf940,	0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
+  0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
+  0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9,
+  0xfa0f3d63, 0x8d080df5, 0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
+  0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b, 0x35b5a8fa, 0x42b2986c,
+  0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
   0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423,
   0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
-  0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,	0x76dc4190, 0x01db7106,
+  0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d, 0x76dc4190, 0x01db7106,
   0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
   0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
   0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
@@ -271,23 +271,30 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
                                      CONST float*      pConstantData,
                                      UINT              Vector4fCount)
 {
-  if (config.render.letterbox_videos) {
+  if (config.render.blackbar_videos) {
   if (Vector4fCount == 5 && StartRegister == 0) {
-    if (pConstantData [ 0] == 0.0015625f    && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
-        pConstantData [ 4] == 0.0f          && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
-        pConstantData [ 8] == 0.0f          && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f &&
-        pConstantData [12] == 0.0f          && pConstantData [13] == 0.0f          && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
-        pConstantData [16] == 1.0f          && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f) {
+    if (pConstantData [ 0] == 0.0015625f && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
+        pConstantData [ 4] == 0.0f       && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
+        pConstantData [ 8] == 0.0f       && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f &&
+        pConstantData [12] == 0.0f       && pConstantData [13] == 0.0f          && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
+        pConstantData [16] == 1.0f       && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f) {
       D3DVIEWPORT9 vp9_orig;
       This->GetViewport (&vp9_orig);
 
       int width = vp9_orig.Width;
       int height = (9.0f / 16.0f) * vp9_orig.Width;
 
+      // We can't do this, so instead we need to sidebar the stuff
+      if (height > vp9_orig.Height) {
+        width  = (16.0f / 9.0f) * vp9_orig.Height;
+        height = vp9_orig.Height;
+      }
+
       //dll_log.Log (L"checksum: %d", vs_crc32);
       //dll_log.Log (L" Viewport: (%dx%d) -> (%dx%d)", vp9_orig.Width, vp9_orig.Height,
                                                      //width, height);
 
+     // Letterbox Videos
      if (height != vp9_orig.Height && (vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
         This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
 
@@ -297,6 +304,17 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
         vp9.MinZ  = vp9_orig.MinZ; vp9.MaxZ   = vp9_orig.MaxZ;
         This->SetViewport (&vp9);
       }
+
+     // Sidebar Videos
+     if (width != vp9_orig.Width && (vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
+       This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+
+       D3DVIEWPORT9 vp9;
+       vp9.X     = vp9_orig.X + (vp9_orig.Width - width) / 2; vp9.Y = vp9_orig.Y;
+       vp9.Width = width;                                     vp9.Height = height;
+       vp9.MinZ  = vp9_orig.MinZ;                             vp9.MaxZ   = vp9_orig.MaxZ;
+       This->SetViewport (&vp9);
+     }
     }
   }
   }
@@ -442,7 +460,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   fovy_         = new eTB_VarStub <float> (&config.render.fovy,         this);
   aspect_ratio_ = new eTB_VarStub <float> (&config.render.aspect_ratio, this);
 
-  eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool> (&config.render.letterbox_videos);
+  eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool> (&config.render.blackbar_videos);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
   command.AddVariable ("FOVY",                fovy_);
