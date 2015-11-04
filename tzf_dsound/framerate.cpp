@@ -25,7 +25,37 @@
 #include "log.h"
 #include "hook.h"
 
+
 bool stutter_fix_installed = false;
+
+
+#include <d3d9.h>
+D3DPRESENT_PARAMETERS present_params;
+bool tzf::FrameRateFix::fullscreen = false;
+
+typedef D3DPRESENT_PARAMETERS* (__stdcall *BMF_SetPresentParamsD3D9_t)(D3DPRESENT_PARAMETERS* pparams);
+BMF_SetPresentParamsD3D9_t BMF_SetPresentParamsD3D9_Original = nullptr;
+
+D3DPRESENT_PARAMETERS*
+__stdcall
+BMF_SetPresentParamsD3D9_Detour (D3DPRESENT_PARAMETERS* pparams)
+{
+  if (pparams != nullptr) {
+    memcpy (&present_params, pparams, sizeof D3DPRESENT_PARAMETERS);
+
+    dll_log.Log ( L" %% Caught D3D9 Swapchain :: Fullscreen=%s",
+                    pparams->Windowed ? L"False" :
+                                        L"True" );
+
+    if (! pparams->Windowed)
+      tzf::FrameRateFix::fullscreen = true;
+    else
+      tzf::FrameRateFix::fullscreen = false;
+  }
+
+  return BMF_SetPresentParamsD3D9_Original (pparams);
+}
+
 
 static __declspec (thread) int           last_sleep     =   1;
 static __declspec (thread) LARGE_INTEGER last_perfCount = { 0 };
@@ -70,27 +100,29 @@ BOOL
 WINAPI
 QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 {
-  if (last_sleep != 0) {
-    BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
+  BOOL ret   = QueryPerformanceCounter_Original (lpPerformanceCount);
+
+  if (last_sleep != 0 || (! tzf::FrameRateFix::fullscreen)) {
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
     return ret;
   } else {
-    //LARGE_INTEGER freq;
-    //QueryPerformanceFrequency (&freq);
+    const float fudge_factor = config.framerate.fudge_factor;
 
     last_sleep = -1;
-    BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
-    // Double Speed - May be necessary, but simply removing Sleep (0) does most of the work here.
+
+    // Mess with the numbers slightly to prevent hiccups
     lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
-                                     config.framerate.fudge_factor/* * freq.QuadPart*/;
+                                     fudge_factor/* * freq.QuadPart*/;
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
+
     return ret;
   }
 }
 
 
-LPVOID pfnQueryPerformanceCounter = nullptr;
-LPVOID pfnSleep                   = nullptr;
+LPVOID pfnQueryPerformanceCounter  = nullptr;
+LPVOID pfnSleep                    = nullptr;
+LPVOID pfnBMF_SetPresentParamsD3D9 = nullptr;
 
 void
 tzf::FrameRateFix::Init (void)
@@ -108,6 +140,11 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&Sleep_Original,
            (LPVOID *)&pfnSleep );
 
+  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
+                      BMF_SetPresentParamsD3D9_Detour, 
+           (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
+                     &pfnBMF_SetPresentParamsD3D9 );
+
   stutter_fix_installed = true;
 }
 
@@ -117,6 +154,7 @@ tzf::FrameRateFix::Shutdown(void)
   if (! config.framerate.stutter_fix)
     return;
 
-  TZF_DisableHook (pfnQueryPerformanceCounter);
-  TZF_DisableHook (pfnSleep);
+  TZF_RemoveHook (pfnQueryPerformanceCounter);
+  TZF_RemoveHook (pfnSleep);
+  TZF_RemoveHook (pfnBMF_SetPresentParamsD3D9);
 }

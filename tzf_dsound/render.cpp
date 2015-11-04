@@ -322,12 +322,12 @@ tzf::RenderFix::Init (void)
 #if 0
   float* fTest = (float *)addr;
   while (true) {
-    if (*fTest < 1.777778f + 0.000001f && *fTest > 1.777778f - 0.000001f) {
+    if (*fTest < 1.777778f + 0.001f && *fTest > 1.777778f - 0.001f) {
       dll_log.Log (L"Aspect Ratio: Address=%08Xh",
                    fTest);
     }
 
-    if (*fTest < 0.785398f + 0.000001f && *fTest > 0.785398f - 0.000001f) {
+    if (*fTest < 0.785398f + 0.001f && *fTest > 0.785398f - 0.001f) {
       dll_log.Log (L"FOVY: Address=%08Xh",
                    fTest);
     }
@@ -376,6 +376,7 @@ tzf::RenderFix::Init (void)
 
   CommandProcessor* comm_proc = CommandProcessor::getInstance ();
 
+#if 0
   if (config.render.aspect_ratio != 1.777778f) {
     eTB_VarStub <float>* aspect =
    (eTB_VarStub <float>*)command.FindVariable ("AspectRatio");
@@ -387,6 +388,7 @@ tzf::RenderFix::Init (void)
    (eTB_VarStub <float>*)command.FindVariable ("FOVY");
     fovy->setValue (config.render.fovy);
   }
+#endif
 }
 
 void

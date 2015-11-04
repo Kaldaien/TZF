@@ -28,6 +28,9 @@ namespace tzf
   {
     void Init     (void);
     void Shutdown (void);
+
+    // True if the game is running in fullscreen
+    extern bool fullscreen;
   }
 }
 

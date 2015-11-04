@@ -25,6 +25,8 @@
 #include "log.h"
 #include "command.h"
 #include "sound.h"
+#include "framerate.h"
+#include "config.h"
 
 #include <mmsystem.h>
 #pragma comment (lib, "winmm.lib")
@@ -207,8 +209,14 @@ public:
 
     while (true)
     {
+      std::string output;
+
+      if (config.framerate.stutter_fix && (! tzf::FrameRateFix::fullscreen)) {
+        output += "<Run Game in Fullscreen Mode or Disable Stutter Fix!>\n";
+      }
+
       if (visible) {
-        std::string output (text);
+        output += text;
 
         // Blink the Carret
         if (timeGetTime () - last_time > 333) {
@@ -225,11 +233,9 @@ public:
           output += "\n";
           output += result_str;
         }
-
-        BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
-      } else {
-        BMF_DrawExternalOSD ("ToZ Fix", " ");
       }
+
+      BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
 
       Sleep (16);
     }
