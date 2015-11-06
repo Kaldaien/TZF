@@ -30,40 +30,40 @@ extern std::wstring TZF_VER_STR;
 struct tzf_config_t
 {
   struct {
-    uint32_t sample_hz     = 48000;
-    uint32_t channels      = 8;
-    bool     compatibility = false;
-    bool     enable_fix    = true;
+    uint32_t sample_hz      = 48000;
+    uint32_t channels       = 8;
+    bool     compatibility  = false;
+    bool     enable_fix     = true;
   } audio;
 
   struct {
-    bool  allow_fake_sleep = true;
-    bool  stutter_fix      = true;
-    float fudge_factor     = 2.0f;
+    bool  allow_fake_sleep  = true;
+    bool  stutter_fix       = true;
+    float fudge_factor      = 1.5f;
   } framerate;
 
   struct {
-    bool capture           = false;
+    bool capture            = false;
   } file_io;
 
   struct {
-    bool allow_broadcasts  = false;
+    bool allow_broadcasts   = false;
   } steam;
 
   struct {
-    float fovy             = 0.785398f;
-    float aspect_ratio     = 1.777778f;
-    DWORD aspect_addr      = 0x00D52398;
-    DWORD fovy_addr        = 0x00D5239C;
-    bool  blackbar_videos  = true;
-    bool  trilinear_filter = true;
+    float fovy              = 0.785398f;
+    float aspect_ratio      = 1.777778f;
+    DWORD aspect_addr       = 0x00D52398;
+    DWORD fovy_addr         = 0x00D5239C;
+    bool  blackbar_videos   = true;
+    bool  aspect_correction = false;
   } render;
 
   struct {
     std::wstring
-            version        = TZF_VER_STR;
+            version         = TZF_VER_STR;
     std::wstring
-            intro_video    = L"";
+            intro_video     = L"";
   } system;
 };
 

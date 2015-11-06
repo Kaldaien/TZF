@@ -72,26 +72,26 @@ DllMain (HMODULE hModule,
     dll_log.Log  (L"tzfix.log created");
 
     if (! TZF_LoadConfig ()) {
-      config.audio.channels          = 8;
-      config.audio.sample_hz         = 48000;
-      config.audio.compatibility     = false;
-      config.audio.enable_fix        = true;
+      config.audio.channels             = 8;
+      config.audio.sample_hz            = 48000;
+      config.audio.compatibility        = false;
+      config.audio.enable_fix           = true;
 
       config.framerate.stutter_fix      = true;
-      config.framerate.fudge_factor     = 2.0f;
+      config.framerate.fudge_factor     = 1.5f;
       config.framerate.allow_fake_sleep = true;
 
-      config.file_io.capture         = false;
+      config.file_io.capture            = false;
 
-      config.steam.allow_broadcasts  = false;
+      config.steam.allow_broadcasts     = false;
 
-      config.render.aspect_ratio     = 1.777778f;
-      config.render.fovy             = 0.785398f;
+      config.render.aspect_ratio        = 1.777778f;
+      config.render.fovy                = 0.785398f;
 
-      config.render.aspect_addr      = 0x00D52398;
-      config.render.fovy_addr        = 0x00D5239C;
-      config.render.trilinear_filter = true;
-      config.render.blackbar_videos  = true;
+      config.render.aspect_addr         = 0x00D52398;
+      config.render.fovy_addr           = 0x00D5239C;
+      config.render.blackbar_videos     = true;
+      config.render.aspect_correction   = false;
 
       // Save a new config if none exists
       TZF_SaveConfig ();

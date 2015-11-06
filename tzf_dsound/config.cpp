@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"0.3.5";
+std::wstring TZF_VER_STR = L"0.4.0";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -52,6 +52,7 @@ struct {
   tzf::ParameterFloat*   fovy;
   tzf::ParameterFloat*   aspect_ratio;
   tzf::ParameterBool*    aspect_correct_vids;
+  tzf::ParameterBool*    aspect_correction;
 } render;
 
 struct {
@@ -198,6 +199,16 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.Render",
          L"AspectCorrectVideos" );
 
+   render.aspect_correction =
+     static_cast <tzf::ParameterBool *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Aspect Ratio Correct EVERYTHING")
+       );
+   render.aspect_correction->register_to_ini (
+     dll_ini,
+       L"TZFIX.Render",
+         L"AspectCorrection" );
+
 
   steam.allow_broadcasts =
     static_cast <tzf::ParameterBool *>
@@ -269,6 +280,9 @@ TZF_LoadConfig (std::wstring name) {
   if (render.aspect_correct_vids->load ())
     config.render.blackbar_videos = render.aspect_correct_vids->get_value ();
 
+  if (render.aspect_correction->load ())
+    config.render.aspect_correction = render.aspect_correction->get_value ();
+
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
 
@@ -321,6 +335,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   render.aspect_correct_vids->set_value (config.render.blackbar_videos);
   render.aspect_correct_vids->store     ();
+
+  render.aspect_correction->set_value (config.render.aspect_correction);
+  render.aspect_correction->store     ();
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
   steam.allow_broadcasts->store     ();

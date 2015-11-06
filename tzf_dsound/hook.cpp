@@ -25,7 +25,12 @@
 #include "log.h"
 #include "command.h"
 #include "sound.h"
+
 #include "framerate.h"
+#include "render.h"
+
+#include <d3d9.h>
+
 #include "config.h"
 
 #include <mmsystem.h>
@@ -72,12 +77,15 @@ TZF_FindRootWindow (DWORD proc_id)
   return win.root;
 }
 
-class TZF_KeyboardHooker
+class TZF_InputHooker
 {
 private:
-  HANDLE                     hMsgPump;
-  HHOOK                      hHook;
-  static TZF_KeyboardHooker* pKeyboardHook;
+  HANDLE                  hMsgPump;
+  struct hooks_t {
+    HHOOK                 keyboard;
+    HHOOK                 mouse;
+  } hooks;
+  static TZF_InputHooker* pInputHook;
 
   static char                text [16384];
 
@@ -88,15 +96,15 @@ private:
   static std::string result_str;
 
 protected:
-  TZF_KeyboardHooker (void) { }
+  TZF_InputHooker (void) { }
 
 public:
-  static TZF_KeyboardHooker* getInstance (void)
+  static TZF_InputHooker* getInstance (void)
   {
-    if (pKeyboardHook == NULL)
-      pKeyboardHook = new TZF_KeyboardHooker ();
+    if (pInputHook == NULL)
+      pInputHook = new TZF_InputHooker ();
 
-    return pKeyboardHook;
+    return pInputHook;
   }
 
   void Start (void)
@@ -104,8 +112,8 @@ public:
     hMsgPump =
       CreateThread ( NULL,
                        NULL,
-                         TZF_KeyboardHooker::MessagePump,
-                           &hHook,
+                         TZF_InputHooker::MessagePump,
+                           &hooks,
                              NULL,
                                NULL );
   }
@@ -113,7 +121,8 @@ public:
   void End (void)
   {
     TerminateThread     (hMsgPump, 0);
-    UnhookWindowsHookEx (hHook);
+    UnhookWindowsHookEx (hooks.keyboard);
+    UnhookWindowsHookEx (hooks.mouse);
   }
 
   HANDLE GetThread (void)
@@ -125,6 +134,8 @@ public:
   WINAPI
   MessagePump (LPVOID hook_ptr)
   {
+    hooks_t* pHooks = (hooks_t *)hook_ptr;
+
     ZeroMemory (text, 16384);
 
     text [0] = '>';
@@ -141,7 +152,7 @@ public:
     while (true) {
       // Spin until either the soundfix is initialized or 15 seconds elapse;
       //   this delays initialization of the hook and improves compatibility.
-      if ((! tzf::SoundFix::wasapi_init) &&
+      if ((! tzf::SoundFix::wasapi_init) ||
           ((timeGetTime () - dwTime) < 15000)) {
         Sleep (83);
         continue;
@@ -175,10 +186,10 @@ public:
     dwTime = timeGetTime ();
     hits   = 1;
 
-    while (! (*(HHOOK *)hook_ptr = SetWindowsHookEx ( WH_KEYBOARD,
-                                              KeyboardProc,
-                                                hDLLMod,
-                                                  dwThreadId ))) {
+    while (! (pHooks->keyboard = SetWindowsHookEx ( WH_KEYBOARD,
+                                                      KeyboardProc,
+                                                        hDLLMod,
+                                                          dwThreadId ))) {
       _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
       dll_log.Log ( L"  @ SetWindowsHookEx failed: 0x%04X (%s)",
@@ -188,6 +199,27 @@ public:
 
       if (hits >= 5) {
         dll_log.Log ( L"  * Failed to install keyboard hook after %lu tries... "
+          L"bailing out!",
+          hits );
+        return 0;
+      }
+
+      Sleep (1);
+    }
+
+    while (! (pHooks->mouse = SetWindowsHookEx ( WH_MOUSE,
+                                                   MouseProc,
+                                                     hDLLMod,
+                                                       dwThreadId ))) {
+      _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
+      dll_log.Log ( L"  @ SetWindowsHookEx failed: 0x%04X (%s)",
+                    err.WCode (), err.ErrorMessage () );
+
+      ++hits;
+
+      if (hits >= 5) {
+        dll_log.Log ( L"  * Failed to install mouse hook after %lu tries... "
           L"bailing out!",
           hits );
         return 0;
@@ -242,6 +274,47 @@ public:
     }
 
     return 0;
+  }
+
+  static LRESULT
+  CALLBACK
+  MouseProc (int nCode, WPARAM wParam, LPARAM lParam)
+  {
+    MOUSEHOOKSTRUCT* pmh = (MOUSEHOOKSTRUCT *)lParam;
+
+#if 0
+    static bool fudging = false;
+
+    if (tzf::RenderFix::pDevice != nullptr && (! fudging)) {
+      //GetCursorPos (&pmh->pt);
+
+      extern POINT CalcCursorPos (LPPOINT pPos);
+      extern POINT real_cursor;
+
+      POINT adjusted_cursor;
+      adjusted_cursor.x = pmh->pt.x;
+      adjusted_cursor.y = pmh->pt.y;
+
+      real_cursor = CalcCursorPos (&adjusted_cursor);
+
+      pmh->pt.x = adjusted_cursor.x;
+      pmh->pt.y = adjusted_cursor.y;
+
+      //SetCursorPos (adjusted_cursor.x, adjusted_cursor.y);
+
+      //tzf::RenderFix::pDevice->SetCursorPosition (adjusted_cursor.x,
+                                                   //adjusted_cursor.y,
+                                                    //0);//D3DCURSOR_IMMEDIATE_UPDATE);
+      fudging = true;
+      SendMessage (pmh->hwnd, WM_MOUSEMOVE, 0, LOWORD (pmh->pt.x) | HIWORD (pmh->pt.y));
+      return 1;
+    }
+    else {
+      fudging = false;
+    }
+#endif
+
+    return CallNextHookEx (TZF_InputHooker::getInstance ()->hooks.mouse, nCode, wParam, lParam);
   }
 
   static LRESULT
@@ -343,7 +416,7 @@ public:
       }
     }
 
-    return CallNextHookEx (TZF_KeyboardHooker::getInstance ()->hHook, nCode, wParam, lParam);
+    return CallNextHookEx (TZF_InputHooker::getInstance ()->hooks.keyboard, nCode, wParam, lParam);
   };
 };
 
@@ -558,7 +631,7 @@ TZF_Init_MinHook (void)
 
   //TZF_EnableHook (MH_ALL_HOOKS);
 
-  TZF_KeyboardHooker* pHook = TZF_KeyboardHooker::getInstance ();
+  TZF_InputHooker* pHook = TZF_InputHooker::getInstance ();
   pHook->Start ();
 
   return status;
@@ -576,18 +649,18 @@ TZF_UnInit_MinHook (void)
                     MH_StatusToString (status) );
   }
 
-  TZF_KeyboardHooker* pHook = TZF_KeyboardHooker::getInstance ();
+  TZF_InputHooker* pHook = TZF_InputHooker::getInstance ();
   pHook->End ();
 
   return status;
 }
 
 
-TZF_KeyboardHooker* TZF_KeyboardHooker::pKeyboardHook;
-char                TZF_KeyboardHooker::text [16384];
+TZF_InputHooker* TZF_InputHooker::pInputHook;
+char             TZF_InputHooker::text [16384];
 
-BYTE TZF_KeyboardHooker::keys_ [256] = { 0 };
-bool TZF_KeyboardHooker::visible     = false;
+BYTE TZF_InputHooker::keys_ [256] = { 0 };
+bool TZF_InputHooker::visible     = false;
 
-bool TZF_KeyboardHooker::command_issued = false;
-std::string TZF_KeyboardHooker::result_str;
+bool TZF_InputHooker::command_issued = false;
+std::string TZF_InputHooker::result_str;

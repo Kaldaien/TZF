@@ -29,6 +29,8 @@
 #include <d3d9.h>
 #include <d3d9types.h>
 
+IDirect3DDevice9* tzf::RenderFix::pDevice = nullptr;
+
 typedef D3DMATRIX* (WINAPI *D3DXMatrixMultiply_t)(_Inout_    D3DMATRIX *pOut,
                                                   _In_ const D3DMATRIX *pM1,
                                                   _In_ const D3DMATRIX *pM2);
@@ -156,14 +158,7 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
 }
 
 IDirect3DVertexShader9* g_pVS;
-
-typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_t)(
-  IDirect3DDevice9* This,
-  UINT              StartRegister,
-  CONST float*      pConstantData,
-  UINT              Vector4fCount);
-
-SetVertexShaderConstantF_t D3D9SetVertexShaderConstantF_Original = nullptr;
+IDirect3DPixelShader9*  g_pPS;
 
 static uint32_t crc32_tab[] = {
   0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -225,14 +220,15 @@ crc32(uint32_t crc, const void *buf, size_t size)
   return crc ^ ~0U;
 }
 
+#include <map>
+std::unordered_map <LPVOID, uint32_t> vs_checksums;
+std::unordered_map <LPVOID, uint32_t> ps_checksums;
+
 typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
   (IDirect3DDevice9*       This,
    IDirect3DVertexShader9* pShader);
 
 SetVertexShader_t D3D9SetVertexShader_Original = nullptr;
-
-#include <map>
-std::map <LPVOID, uint32_t> vs_checksums;
 
 __declspec (dllexport)
 COM_DECLSPEC_NOTHROW
@@ -258,10 +254,87 @@ D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
   return D3D9SetVertexShader_Original (This, pShader);
 }
 
+
+typedef HRESULT (STDMETHODCALLTYPE *SetPixelShader_t)
+  (IDirect3DDevice9*      This,
+   IDirect3DPixelShader9* pShader);
+
+SetPixelShader_t D3D9SetPixelShader_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetPixelShader_Detour (IDirect3DDevice9*      This,
+                           IDirect3DPixelShader9* pShader)
+{
+  if (g_pPS != pShader) {
+    if (pShader != nullptr) {
+      if (ps_checksums.find (pShader) == ps_checksums.end ()) {
+        UINT len = 8191;
+        char szFunc [8192] = { 0 };
+
+        pShader->GetFunction (szFunc, &len);
+
+        ps_checksums [pShader] = crc32 (0, szFunc, len);
+      }
+    }
+  }
+
+  g_pPS = pShader;
+  return D3D9SetPixelShader_Original (This, pShader);
+}
+
+
 //
 // Bink Video Vertex Shader
 //
-const int VS_CHECKSUM_BINK = -831857998;
+const uint32_t VS_CHECKSUM_BINK = 3463109298UL;
+
+const uint32_t PS_CHECKSUM_UI   =  363447431UL;
+const uint32_t VS_CHECKSUM_UI   =  657093040UL;
+
+
+typedef void (STDMETHODCALLTYPE *BMF_BeginBufferSwap_t)(void);
+BMF_BeginBufferSwap_t BMF_BeginBufferSwap = nullptr;
+
+typedef HRESULT (STDMETHODCALLTYPE *BMF_EndBufferSwap_t)
+  (HRESULT   hr,
+   IUnknown* device);
+BMF_EndBufferSwap_t BMF_EndBufferSwap = nullptr;
+
+// The cursor position before we start screwing with it for aspect ratio
+//   correction ;)
+POINT real_cursor;
+
+// Returns the original cursor position and stores the new one in pPoint
+POINT
+CalcCursorPos (LPPOINT pPoint)
+{
+  return *pPoint;
+}
+
+void
+STDMETHODCALLTYPE
+D3D9EndFrame_Pre (void)
+{
+  return BMF_BeginBufferSwap ();
+}
+
+HRESULT
+STDMETHODCALLTYPE
+D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
+{
+  return BMF_EndBufferSwap (hr, device);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_t)(
+  IDirect3DDevice9* This,
+  UINT              StartRegister,
+  CONST float*      pConstantData,
+  UINT              Vector4fCount);
+
+SetVertexShaderConstantF_t D3D9SetVertexShaderConstantF_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -271,13 +344,14 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
                                      CONST float*      pConstantData,
                                      UINT              Vector4fCount)
 {
-  if (config.render.blackbar_videos) {
+#if 0
   if (Vector4fCount == 5 && StartRegister == 0) {
     if (pConstantData [ 0] == 0.0015625f && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
         pConstantData [ 4] == 0.0f       && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
         pConstantData [ 8] == 0.0f       && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f &&
         pConstantData [12] == 0.0f       && pConstantData [13] == 0.0f          && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
         pConstantData [16] == 1.0f       && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f) {
+
       D3DVIEWPORT9 vp9_orig;
       This->GetViewport (&vp9_orig);
 
@@ -305,6 +379,16 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
         This->SetViewport (&vp9);
       }
 
+     if (height != vp9_orig.Height && (vs_checksums [g_pVS] == VS_CHECKSUM_UI)) {
+       //This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+
+       D3DVIEWPORT9 vp9;
+       vp9.X     = vp9_orig.X;    vp9.Y      = vp9_orig.Y + (vp9_orig.Height - height) / 2;
+       vp9.Width = width;         vp9.Height = height;
+       vp9.MinZ  = vp9_orig.MinZ; vp9.MaxZ   = vp9_orig.MaxZ;
+       This->SetViewport (&vp9);
+     }
+
      // Sidebar Videos
      if (width != vp9_orig.Width && (vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
        This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
@@ -317,6 +401,53 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
      }
     }
   }
+#endif
+
+  if ( g_pPS != nullptr && g_pVS != nullptr && 
+       ( (ps_checksums [g_pPS] == PS_CHECKSUM_UI   && vs_checksums [g_pVS] == VS_CHECKSUM_UI && config.render.aspect_correction) ||
+         (vs_checksums [g_pVS] == VS_CHECKSUM_BINK && config.render.blackbar_videos) ) ) {
+    if (pConstantData [ 0] == 0.0015625f     && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
+        pConstantData [ 4] == 0.0f           && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
+        pConstantData [ 8] == 0.0f           && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f /*&&
+        pConstantData [12] == -0.7937499881f && pConstantData [13] == 0.1555555612f && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
+        pConstantData [16] == 1.0f           && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f*/) {
+      D3DVIEWPORT9 vp9_orig;
+      This->GetViewport (&vp9_orig);
+
+      // Only apply aspect ratio correction as needed!
+      if (vp9_orig.Width == tzf::RenderFix::width &&
+          vp9_orig.Height == tzf::RenderFix::height) {
+      int width = vp9_orig.Width;
+      int height = (9.0f / 16.0f) * vp9_orig.Width;
+
+      // We can't do this, so instead we need to sidebar the stuff
+      if (height > vp9_orig.Height) {
+        width  = (16.0f / 9.0f) * vp9_orig.Height;
+        height = vp9_orig.Height;
+      }
+
+     if (height != vp9_orig.Height) {
+       //This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+
+       D3DVIEWPORT9 vp9;
+       vp9.X     = vp9_orig.X;    vp9.Y      = vp9_orig.Y + (vp9_orig.Height - height) / 2;
+       vp9.Width = width;         vp9.Height = height;
+       vp9.MinZ  = vp9_orig.MinZ; vp9.MaxZ   = vp9_orig.MaxZ;
+       This->SetViewport (&vp9);
+     }
+
+     // Sidebar Videos
+     if (width != vp9_orig.Width) {
+       //This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+
+       D3DVIEWPORT9 vp9;
+       vp9.X     = vp9_orig.X + (vp9_orig.Width - width) / 2; vp9.Y = vp9_orig.Y;
+       vp9.Width = width;                                     vp9.Height = height;
+       vp9.MinZ  = vp9_orig.MinZ;                             vp9.MaxZ   = vp9_orig.MaxZ;
+       This->SetViewport (&vp9);
+     }
+    }
+    }
   }
 
   return D3D9SetVertexShaderConstantF_Original (This, StartRegister, pConstantData, Vector4fCount);
@@ -341,6 +472,52 @@ D3D9SetPixelShaderConstantF_Detour (IDirect3DDevice9* This,
   UINT              Vector4fCount)
 {
   return D3D9SetPixelShaderConstantF_Original (This, StartRegister, pConstantData, Vector4fCount);
+}
+
+
+typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
+  IDirect3DDevice9* This,
+  const RECT*       pRect);
+
+SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
+                     const RECT*             pRect)
+{
+  // If we don't care about aspect ratio, then just early-out
+  if (! config.render.aspect_correction)
+    return D3D9SetScissorRect_Original (This, pRect);
+
+  // Otherwise, fix this because the UI's scissor rectangles are
+  //   completely wrong after we start messing with viewport scaling.
+
+  RECT fixed_scissor;
+  fixed_scissor.bottom = pRect->bottom;
+  fixed_scissor.top    = pRect->top;
+  fixed_scissor.left   = pRect->left;
+  fixed_scissor.right  = pRect->right;
+
+  float rescale = (1.77777778f / config.render.aspect_ratio);
+
+  // Wider
+  if (config.render.aspect_ratio > 1.7777f) {
+    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
+    int x_off = (tzf::RenderFix::width - width) / 2;
+
+    fixed_scissor.left  = pRect->left  * rescale + x_off;
+    fixed_scissor.right = pRect->right * rescale + x_off;
+  } else {
+    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
+    int y_off  = (tzf::RenderFix::height - height) / 2;
+
+    fixed_scissor.top    = pRect->top    / rescale + y_off;
+    fixed_scissor.bottom = pRect->bottom / rescale + y_off;
+  }
+
+  return D3D9SetScissorRect_Original (This, &fixed_scissor);
 }
 
 
@@ -372,6 +549,23 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShader_Override",
                       D3D9SetVertexShader_Detour,
             (LPVOID*)&D3D9SetVertexShader_Original );
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShader_Override",
+                      D3D9SetPixelShader_Detour,
+            (LPVOID*)&D3D9SetPixelShader_Original );
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetScissorRect_Override",
+                      D3D9SetScissorRect_Detour,
+            (LPVOID*)&D3D9SetScissorRect_Original );
+
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_BeginBufferSwap",
+                      D3D9EndFrame_Pre,
+            (LPVOID*)&BMF_BeginBufferSwap );
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_EndBufferSwap",
+                      D3D9EndFrame_Post,
+            (LPVOID*)&BMF_EndBufferSwap );
 
 
   UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
@@ -461,10 +655,13 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   aspect_ratio_ = new eTB_VarStub <float> (&config.render.aspect_ratio, this);
 
   eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool> (&config.render.blackbar_videos);
+  eTB_Variable* aspect_correction   = new eTB_VarStub <bool> (&config.render.aspect_correction);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
   command.AddVariable ("FOVY",                fovy_);
+
   command.AddVariable ("AspectCorrectVideos", aspect_correct_vids);
+  command.AddVariable ("AspectCorrection",    aspect_correction);
 }
 
 bool
@@ -517,3 +714,6 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
 
 
 tzf::RenderFix::CommandProcessor* tzf::RenderFix::CommandProcessor::pCommProc;
+
+uint32_t tzf::RenderFix::width;
+uint32_t tzf::RenderFix::height;

@@ -25,6 +25,8 @@
 
 #include "command.h"
 
+struct IDirect3DDevice9;
+
 namespace tzf
 {
   namespace RenderFix
@@ -53,6 +55,11 @@ namespace tzf
     private:
       static CommandProcessor* pCommProc;
     };
+
+    extern uint32_t          width;
+    extern uint32_t          height;
+
+    extern IDirect3DDevice9* pDevice;
   }
 }
 
