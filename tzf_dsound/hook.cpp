@@ -85,6 +85,7 @@ private:
     HHOOK                 keyboard;
     HHOOK                 mouse;
   } hooks;
+
   static TZF_InputHooker* pInputHook;
 
   static char                text [16384];
@@ -94,6 +95,11 @@ private:
 
   static bool command_issued;
   static std::string result_str;
+
+  struct command_history_t {
+    std::vector <std::string> history;
+    int_fast32_t              idx     = -1;
+  } static commands;
 
 protected:
   TZF_InputHooker (void) { }
@@ -364,6 +370,23 @@ public:
           else
             keys_ [VK_CONTROL] = 0x00;
         }
+        else if ((vkCode == VK_UP) || (vkCode == VK_DOWN)) {
+          if (keyDown) {
+            if (vkCode == VK_UP)
+              commands.idx--;
+            else
+              commands.idx++;
+
+            // Clamp the index
+            if (commands.idx < 0)
+              commands.idx = 0;
+            else if (commands.idx >= commands.history.size ())
+              commands.idx = commands.history.size () - 1;
+
+            strcpy (&text [1], commands.history [commands.idx].c_str ());
+            command_issued = false;
+          }
+        }
         else if (visible && vkCode == VK_RETURN) {
           if (keyDown && LOWORD (lParam) < 2) {
             int len = strlen (text+1);
@@ -372,7 +395,16 @@ public:
               eTB_CommandResult result = command.ProcessCommandLine (text+1);
 
               if (result.getStatus ()) {
+                // Don't repeat the same command over and over
+                if (commands.history.size () == 0 ||
+                    commands.history.back () != &text [1]) {
+                  commands.history.push_back (&text [1]);
+                }
+
+                commands.idx = commands.history.size ();
+
                 text [1] = '\0';
+
                 command_issued = true;
               }
               else {
@@ -664,3 +696,5 @@ bool TZF_InputHooker::visible     = false;
 
 bool TZF_InputHooker::command_issued = false;
 std::string TZF_InputHooker::result_str;
+
+TZF_InputHooker::command_history_t TZF_InputHooker::commands;

@@ -56,6 +56,8 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                     pparams->Windowed ? L"False" :
                                         L"True" );
 
+    dll_log.Log ( L" * Flags=0x%04X", pparams->Flags);
+
     if (config.framerate.stutter_fix) {
       // On NVIDIA hardware, we can setup a framerate limiter at the driver
       //   level to handle windowed mode or improperly setup VSYNC
@@ -162,8 +164,12 @@ Sleep_Detour (DWORD dwMilliseconds)
 {
   last_sleep = dwMilliseconds;
 
-  if (dwMilliseconds != 0 || config.framerate.allow_fake_sleep)
+  if (config.framerate.yield_processor && dwMilliseconds == 0)
+    YieldProcessor ();
+
+  if (dwMilliseconds != 0 || config.framerate.allow_fake_sleep) {
     Sleep_Original (dwMilliseconds);
+  }
 }
 
 typedef BOOL (WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
@@ -219,6 +225,10 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
                      &pfnBMF_SetPresentParamsD3D9 );
 
+  command.AddVariable ("FudgeFactor",    new eTB_VarStub <float> (&config.framerate.fudge_factor));
+  command.AddVariable ("AllowFakeSleep", new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
+  command.AddVariable ("YieldProcessor", new eTB_VarStub <bool>  (&config.framerate.yield_processor));
+
   stutter_fix_installed = true;
 }
 
@@ -231,4 +241,6 @@ tzf::FrameRateFix::Shutdown(void)
   TZF_RemoveHook (pfnQueryPerformanceCounter);
   TZF_RemoveHook (pfnSleep);
   TZF_RemoveHook (pfnBMF_SetPresentParamsD3D9);
+
+  stutter_fix_installed = false;
 }

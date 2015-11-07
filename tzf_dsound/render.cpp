@@ -131,13 +131,16 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
 
     if (Type < 8) {
       //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
+#if 0
       if (Type == D3DSAMP_MIPFILTER) {
         if (Value != D3DTEXF_NONE)
           Value = D3DTEXF_LINEAR;
       }
+#endif
       if (Type == D3DSAMP_MAGFILTER ||
                   D3DSAMP_MINFILTER)
-        Value = D3DTEXF_ANISOTROPIC;
+        if (Value != D3DTEXF_POINT)
+          Value = D3DTEXF_ANISOTROPIC;
     } else {
 #if 0
       float bias = *((float *)(&Value));
@@ -521,6 +524,24 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
 }
 
 
+
+typedef BOOL (WINAPI *SetWindowDisplayAffinity_t)
+  (HWND  hWnd,
+   DWORD dwAffinity);
+
+SetWindowDisplayAffinity_t SetWindowDisplayAffinity_Original = nullptr;
+
+BOOL
+WINAPI
+SetWindowDisplayAffinity_Detour (HWND hWnd, DWORD dwAffinity)
+{
+  // Override attempts to copy-protect the window.
+  SetWindowDisplayAffinity_Original (hWnd, WDA_NONE);
+
+  return TRUE;
+}
+
+
 void
 tzf::RenderFix::Init (void)
 {
@@ -566,6 +587,12 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( L"d3d9.dll", "BMF_EndBufferSwap",
                       D3D9EndFrame_Post,
             (LPVOID*)&BMF_EndBufferSwap );
+
+#if 0
+  TZF_CreateDLLHook ( L"user32.dll", "SetWindowDisplayAffinity",
+                      SetWindowDisplayAffinity_Detour,
+            (LPVOID*)&SetWindowDisplayAffinity_Original );
+#endif
 
 
   UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
@@ -677,9 +704,13 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
          (original == config.render.aspect_ratio))
             && val != nullptr) {
       config.render.aspect_ratio = *(float *)val;
-       dll_log.Log ( L" * Changing Aspect Ratio from %f to %f",
-                        original,
-                         config.render.aspect_ratio );
+      
+      if (original != config.render.aspect_ratio) {
+        dll_log.Log ( L" * Changing Aspect Ratio from %f to %f",
+                         original,
+                          config.render.aspect_ratio );
+       }
+
        *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
     }
     else {

@@ -37,6 +37,7 @@ struct tzf_config_t
   } audio;
 
   struct {
+    bool  yield_processor   = true;
     bool  allow_fake_sleep  = true;
     bool  stutter_fix       = true;
     float fudge_factor      = 1.5f;

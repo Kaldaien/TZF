@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"0.4.0";
+std::wstring TZF_VER_STR = L"0.4.1";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -44,6 +44,7 @@ struct {
   tzf::ParameterBool*    stutter_fix;
   tzf::ParameterFloat*   fudge_factor;
   tzf::ParameterBool*    allow_fake_sleep;
+  tzf::ParameterBool*    yield_processor;
 } framerate;
 
 struct {
@@ -147,6 +148,16 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.FrameRate",
         L"AllowFakeSleep" );
+
+  framerate.yield_processor =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Yield Instead of Sleep")
+      );
+  framerate.yield_processor->register_to_ini (
+    dll_ini,
+      L"TZFIX.FrameRate",
+        L"YieldProcessor" );
 
 
   render.aspect_ratio =
@@ -265,6 +276,9 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.allow_fake_sleep->load ())
     config.framerate.allow_fake_sleep = framerate.allow_fake_sleep->get_value ();
 
+  if (framerate.yield_processor->load ())
+    config.framerate.yield_processor = framerate.yield_processor->get_value ();
+
   if (render.aspect_addr->load ())
     config.render.aspect_addr = render.aspect_addr->get_value ();
 
@@ -320,6 +334,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   framerate.allow_fake_sleep->set_value (config.framerate.allow_fake_sleep);
   framerate.allow_fake_sleep->store     ();
+
+  framerate.yield_processor->set_value (config.framerate.yield_processor);
+  framerate.yield_processor->store     ();
 
   render.aspect_addr->set_value (config.render.aspect_addr);
   render.aspect_addr->store     ();

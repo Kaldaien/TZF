@@ -80,6 +80,7 @@ DllMain (HMODULE hModule,
       config.framerate.stutter_fix      = true;
       config.framerate.fudge_factor     = 1.5f;
       config.framerate.allow_fake_sleep = true;
+      config.framerate.yield_processor  = true;
 
       config.file_io.capture            = false;
 
@@ -97,8 +98,7 @@ DllMain (HMODULE hModule,
       TZF_SaveConfig ();
     }
 
-    command.AddVariable ("FudgeFactor",    new eTB_VarStub <float> (&config.framerate.fudge_factor));
-    command.AddVariable ("AllowFakeSleep", new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
+
 
     CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
   } break;
