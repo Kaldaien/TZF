@@ -371,7 +371,7 @@ public:
             keys_ [VK_CONTROL] = 0x00;
         }
         else if ((vkCode == VK_UP) || (vkCode == VK_DOWN)) {
-          if (keyDown) {
+          if (keyDown && visible) {
             if (vkCode == VK_UP)
               commands.idx--;
             else

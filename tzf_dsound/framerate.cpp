@@ -32,7 +32,6 @@ bool stutter_fix_installed = false;
 
 
 #include <d3d9.h>
-D3DPRESENT_PARAMETERS present_params;
 
 bool tzf::FrameRateFix::fullscreen         = false;
 bool tzf::FrameRateFix::driver_limit_setup = false;
@@ -42,12 +41,16 @@ typedef D3DPRESENT_PARAMETERS* (__stdcall *BMF_SetPresentParamsD3D9_t)
    D3DPRESENT_PARAMETERS* pparams);
 BMF_SetPresentParamsD3D9_t BMF_SetPresentParamsD3D9_Original = nullptr;
 
+COM_DECLSPEC_NOTHROW
 D3DPRESENT_PARAMETERS*
 __stdcall
 BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                                  D3DPRESENT_PARAMETERS* pparams)
 {
-  tzf::RenderFix::pDevice = device;
+  D3DPRESENT_PARAMETERS present_params;
+
+  tzf::RenderFix::pDevice             = device;
+  tzf::RenderFix::pPostProcessSurface = nullptr;
 
   if (pparams != nullptr) {
     memcpy (&present_params, pparams, sizeof D3DPRESENT_PARAMETERS);
@@ -55,8 +58,6 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
     dll_log.Log ( L" %% Caught D3D9 Swapchain :: Fullscreen=%s",
                     pparams->Windowed ? L"False" :
                                         L"True" );
-
-    dll_log.Log ( L" * Flags=0x%04X", pparams->Flags);
 
     if (config.framerate.stutter_fix) {
       // On NVIDIA hardware, we can setup a framerate limiter at the driver

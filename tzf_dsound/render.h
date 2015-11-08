@@ -26,6 +26,7 @@
 #include "command.h"
 
 struct IDirect3DDevice9;
+struct IDirect3DSurface9;
 
 namespace tzf
 {
@@ -56,10 +57,11 @@ namespace tzf
       static CommandProcessor* pCommProc;
     };
 
-    extern uint32_t          width;
-    extern uint32_t          height;
+    extern uint32_t           width;
+    extern uint32_t           height;
 
-    extern IDirect3DDevice9* pDevice;
+    extern IDirect3DSurface9* pPostProcessSurface;
+    extern IDirect3DDevice9*  pDevice;
   }
 }
 

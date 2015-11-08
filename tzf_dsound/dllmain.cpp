@@ -93,6 +93,9 @@ DllMain (HMODULE hModule,
       config.render.fovy_addr           = 0x00D5239C;
       config.render.blackbar_videos     = true;
       config.render.aspect_correction   = false;
+      config.render.complete_mipmaps    = false;
+      config.render.postproc_ratio      =  1.0f;
+      config.render.shadow_rescale      = -2.0f;
 
       // Save a new config if none exists
       TZF_SaveConfig ();

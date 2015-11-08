@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"0.4.1";
+std::wstring TZF_VER_STR = L"0.5.0";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -54,7 +54,11 @@ struct {
   tzf::ParameterFloat*   aspect_ratio;
   tzf::ParameterBool*    aspect_correct_vids;
   tzf::ParameterBool*    aspect_correction;
+  tzf::ParameterBool*    complete_mipmaps;
+  tzf::ParameterInt*     rescale_shadows;
+  tzf::ParameterFloat*   postproc_ratio;
 } render;
+
 
 struct {
   tzf::ParameterBool*    allow_broadcasts;
@@ -220,6 +224,36 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.Render",
          L"AspectCorrection" );
 
+  render.complete_mipmaps =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Force Complete Mipmaps (FULL MipMap Creation)")
+      );
+  render.complete_mipmaps->register_to_ini(
+    dll_ini,
+      L"TZFIX.Render",
+        L"CompleteMipmaps" );
+
+  render.rescale_shadows =
+    static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Shadow Rescale Factor")
+      );
+  render.rescale_shadows->register_to_ini (
+    dll_ini,
+      L"TZFIX.Render",
+        L"RescaleShadows" );
+
+  render.postproc_ratio =
+    static_cast <tzf::ParameterFloat *>
+      (g_ParameterFactory.create_parameter <float> (
+        L"Postprocess Resolution Ratio")
+      );
+  render.postproc_ratio->register_to_ini (
+    dll_ini,
+      L"TZFIX.Render",
+        L"PostProcessRatio" );
+
 
   steam.allow_broadcasts =
     static_cast <tzf::ParameterBool *>
@@ -297,6 +331,9 @@ TZF_LoadConfig (std::wstring name) {
   if (render.aspect_correction->load ())
     config.render.aspect_correction = render.aspect_correction->get_value ();
 
+  if (render.complete_mipmaps->load ())
+    config.render.complete_mipmaps = render.complete_mipmaps->get_value ();
+
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
 
@@ -355,6 +392,15 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   render.aspect_correction->set_value (config.render.aspect_correction);
   render.aspect_correction->store     ();
+
+  render.complete_mipmaps->set_value (config.render.complete_mipmaps);
+  render.complete_mipmaps->store     ();
+
+  render.postproc_ratio->set_value (config.render.postproc_ratio);
+  render.postproc_ratio->store     ();
+
+  render.rescale_shadows->set_value (config.render.shadow_rescale);
+  render.rescale_shadows->store     ();
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
   steam.allow_broadcasts->store     ();

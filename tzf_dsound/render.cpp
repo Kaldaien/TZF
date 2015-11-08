@@ -29,6 +29,25 @@
 #include <d3d9.h>
 #include <d3d9types.h>
 
+
+#include <set>
+
+// Textures that are missing mipmaps
+std::set <IDirect3DBaseTexture9 *> incomplete_textures;
+
+uint32_t
+TZF_MakeShadowBitShift (uint32_t dim)
+{
+  uint32_t shift = abs (config.render.shadow_rescale);
+
+  // If this is 64x64 and we want all shadows the same resolution, then add
+  //   an extra shift.
+  shift += ((config.render.shadow_rescale) < 0L) * (dim == 64UL);
+
+  return shift;
+}
+
+
 IDirect3DDevice9* tzf::RenderFix::pDevice = nullptr;
 
 typedef D3DMATRIX* (WINAPI *D3DXMatrixMultiply_t)(_Inout_    D3DMATRIX *pOut,
@@ -155,8 +174,8 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
   }
   if (Type == D3DSAMP_MAXANISOTROPY)
     Value = 16;
-  //if (Type == D3DSAMP_MAXMIPLEVEL)
-    //Value = 0;
+  if (Type == D3DSAMP_MAXMIPLEVEL)
+    Value = 0;
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 }
 
@@ -297,6 +316,12 @@ const uint32_t VS_CHECKSUM_BINK = 3463109298UL;
 const uint32_t PS_CHECKSUM_UI   =  363447431UL;
 const uint32_t VS_CHECKSUM_UI   =  657093040UL;
 
+//
+// Model Shadow Shaders (primary)
+//
+const uint32_t PS_CHECKSUM_CHAR_SHADOW = 1180797962UL;
+const uint32_t VS_CHECKSUM_CHAR_SHADOW =  446150694UL;
+
 
 typedef void (STDMETHODCALLTYPE *BMF_BeginBufferSwap_t)(void);
 BMF_BeginBufferSwap_t BMF_BeginBufferSwap = nullptr;
@@ -331,6 +356,233 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
   return BMF_EndBufferSwap (hr, device);
 }
 
+typedef HRESULT (STDMETHODCALLTYPE *UpdateTexture_t)
+  (IDirect3DDevice9  *This,
+   IDirect3DBaseTexture9 *pSourceTexture,
+   IDirect3DBaseTexture9 *pDestinationTexture);
+
+UpdateTexture_t D3D9UpdateTexture_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9UpdateTexture_Detour (IDirect3DDevice9      *This,
+                          IDirect3DBaseTexture9 *pSourceTexture,
+                          IDirect3DBaseTexture9 *pDestinationTexture)
+{
+  HRESULT hr = D3D9UpdateTexture_Original (This, pSourceTexture,
+                                                 pDestinationTexture);
+
+  if (SUCCEEDED (hr)) {
+    if ( incomplete_textures.find (pDestinationTexture) != 
+         incomplete_textures.end () ) {
+      dll_log.Log (L" Generating Mipmap LODs for incomplete texture!");
+      (pDestinationTexture->GenerateMipSubLevels ());
+    }
+  }
+
+  return hr;
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateTexture_t)
+  (IDirect3DDevice9   *This,
+   UINT                Width,
+   UINT                Height,
+   UINT                Levels,
+   DWORD               Usage,
+   D3DFORMAT           Format,
+   D3DPOOL             Pool,
+   IDirect3DTexture9 **ppTexture,
+   HANDLE             *pSharedHandle);
+
+CreateTexture_t D3D9CreateTexture_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
+                          UINT                Width,
+                          UINT                Height,
+                          UINT                Levels,
+                          DWORD               Usage,
+                          D3DFORMAT           Format,
+                          D3DPOOL             Pool,
+                          IDirect3DTexture9 **ppTexture,
+                          HANDLE             *pSharedHandle)
+{
+#if 0
+  if (Usage == D3DUSAGE_RENDERTARGET)
+  dll_log.Log (L" [!] IDirect3DDevice9::CreateTexture (%lu, %lu, %lu, %lu, "
+                                                  L"%lu, %lu, %08Xh, %08Xh)",
+                 Width, Height, Levels, Usage, Format, Pool, ppTexture,
+                 pSharedHandle);
+#endif
+
+#if 0
+  bool full_mipmaps = true;
+  if (Levels != 1) {
+    if (Levels < (log2 (max (Width, Height))) + 1) {
+
+      // Restrict to DXT1 or DXT5
+      if (Format == 827611204UL ||
+          Format == 894720068UL) {
+        full_mipmaps = false;
+      }
+    }
+  }
+#endif
+
+  //
+  // Model Shadows
+  //
+  if (Width == Height && (Width == 64 || Width == 128) &&
+                          Usage == D3DUSAGE_RENDERTARGET) {
+    // Assert (Levels == 1)
+    //
+    //   If Levels is not 1, then we've kind of screwed up because now we don't
+    //     have a complete mipchain anymore.
+
+    uint32_t shift = TZF_MakeShadowBitShift (Width);
+
+    Width  <<= shift;
+    Height <<= shift;
+  }
+
+  //
+  // Post-Processing (512x256) - FIXME damnit!
+  //
+  if (Width  == 512 &&
+      Height == 256 && Usage == D3DUSAGE_RENDERTARGET) {
+    if (config.render.postproc_ratio > 0.0f) {
+      Width  = tzf::RenderFix::width  * config.render.postproc_ratio;
+      Height = tzf::RenderFix::height * config.render.postproc_ratio;
+    }
+  }
+
+  int levels = Levels;
+
+  HRESULT hr = 
+    D3D9CreateTexture_Original (This, Width, Height, levels, Usage,
+                                Format, Pool, ppTexture, pSharedHandle);
+
+  return hr;
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateDepthStencilSurface_t)
+  (IDirect3DDevice9     *This,
+   UINT                  Width,
+   UINT                  Height,
+   D3DFORMAT             Format,
+   D3DMULTISAMPLE_TYPE   MultiSample,
+   DWORD                 MultisampleQuality,
+   BOOL                  Discard,
+   IDirect3DSurface9   **ppSurface,
+   HANDLE               *pSharedHandle);
+
+CreateDepthStencilSurface_t D3D9CreateDepthStencilSurface_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateDepthStencilSurface_Detour (IDirect3DDevice9     *This,
+                                      UINT                  Width,
+                                      UINT                  Height,
+                                      D3DFORMAT             Format,
+                                      D3DMULTISAMPLE_TYPE   MultiSample,
+                                      DWORD                 MultisampleQuality,
+                                      BOOL                  Discard,
+                                      IDirect3DSurface9   **ppSurface,
+                                      HANDLE               *pSharedHandle)
+{
+  dll_log.Log (L" [!] IDirect3DDevice9::CreateDepthStencilSurface (%lu, %lu, "
+                      L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
+                 Width, Height, Format, MultiSample, MultisampleQuality,
+                 Discard, ppSurface, pSharedHandle);
+
+  return D3D9CreateDepthStencilSurface_Original (This, Width, Height, Format,
+                                                 MultiSample, MultisampleQuality,
+                                                 Discard, ppSurface, pSharedHandle);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateRenderTarget_t)
+  (IDirect3DDevice9     *This,
+   UINT                  Width,
+   UINT                  Height,
+   D3DFORMAT             Format,
+   D3DMULTISAMPLE_TYPE   MultiSample,
+   DWORD                 MultisampleQuality,
+   BOOL                  Lockable,
+   IDirect3DSurface9   **ppSurface,
+   HANDLE               *pSharedHandle);
+
+CreateRenderTarget_t D3D9CreateRenderTarget_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateRenderTarget_Detour (IDirect3DDevice9     *This,
+                               UINT                  Width,
+                               UINT                  Height,
+                               D3DFORMAT             Format,
+                               D3DMULTISAMPLE_TYPE   MultiSample,
+                               DWORD                 MultisampleQuality,
+                               BOOL                  Lockable,
+                               IDirect3DSurface9   **ppSurface,
+                               HANDLE               *pSharedHandle)
+{
+  dll_log.Log (L" [!] IDirect3DDevice9::CreateRenderTarget (%lu, %lu, "
+                      L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
+                 Width, Height, Format, MultiSample, MultisampleQuality,
+                 Lockable, ppSurface, pSharedHandle);
+
+  return D3D9CreateRenderTarget_Original (This, Width, Height, Format,
+                                          MultiSample, MultisampleQuality,
+                                          Lockable, ppSurface, pSharedHandle);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *SetViewport_t)(
+        IDirect3DDevice9* This,
+  CONST D3DVIEWPORT9*     pViewport);
+
+SetViewport_t D3D9SetViewport_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetViewport_Detour (IDirect3DDevice9* This,
+                  CONST D3DVIEWPORT9*     pViewport)
+{
+  //
+  // Adjust Character Drop Shadows
+  //
+  if (pViewport->Width == pViewport->Height &&
+     (pViewport->Width == 64 || pViewport->Width == 128)) {
+    D3DVIEWPORT9 rescaled_shadow = *pViewport;
+
+    uint32_t shift = TZF_MakeShadowBitShift (pViewport->Width);
+
+    rescaled_shadow.Width  <<= shift;
+    rescaled_shadow.Height <<= shift;
+
+    return D3D9SetViewport_Original (This, &rescaled_shadow);
+  }
+
+  //
+  // Adjust Post-Processing
+  //
+  if (pViewport->Width  == 512 &&
+      pViewport->Height == 256 && config.render.postproc_ratio > 0.0f) {
+    D3DVIEWPORT9 rescaled_post_proc = *pViewport;
+
+    rescaled_post_proc.Width  = tzf::RenderFix::width  * config.render.postproc_ratio;
+    rescaled_post_proc.Height = tzf::RenderFix::height * config.render.postproc_ratio;
+
+    return D3D9SetViewport_Original (This, &rescaled_post_proc);
+  }
+
+  return D3D9SetViewport_Original (This, pViewport);
+}
+
 typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_t)(
   IDirect3DDevice9* This,
   UINT              StartRegister,
@@ -347,65 +599,112 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
                                      CONST float*      pConstantData,
                                      UINT              Vector4fCount)
 {
-#if 0
-  if (Vector4fCount == 5 && StartRegister == 0) {
-    if (pConstantData [ 0] == 0.0015625f && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
-        pConstantData [ 4] == 0.0f       && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
-        pConstantData [ 8] == 0.0f       && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f &&
-        pConstantData [12] == 0.0f       && pConstantData [13] == 0.0f          && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
-        pConstantData [16] == 1.0f       && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f) {
+  //
+  // Model Shadows
+  //
+  if (StartRegister == 240 && Vector4fCount == 1) {
+    uint32_t shift;
+    uint32_t dim = 0;
 
-      D3DVIEWPORT9 vp9_orig;
-      This->GetViewport (&vp9_orig);
+    if (pConstantData [0] == -1.0f / 64.0f) {
+      dim = 64UL;
+      //dll_log.Log (L" 64x64 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+    }
 
-      int width = vp9_orig.Width;
-      int height = (9.0f / 16.0f) * vp9_orig.Width;
+    if (pConstantData [0] == -1.0f / 128.0f) {
+      dim = 128UL;
+      //dll_log.Log (L" 128x128 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+    }
 
-      // We can't do this, so instead we need to sidebar the stuff
-      if (height > vp9_orig.Height) {
-        width  = (16.0f / 9.0f) * vp9_orig.Height;
-        height = vp9_orig.Height;
+    shift = TZF_MakeShadowBitShift (dim);
+
+    float newData [4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    newData [0] = -1.0f / (dim << shift);
+    newData [1] =  1.0f / (dim << shift);
+
+    if (dim != 0)
+      return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
+  }
+
+
+  //
+  // Model Shadows and Post-Processing
+  //
+  if (StartRegister == 0 && (Vector4fCount == 2 || Vector4fCount == 3)) {
+    IDirect3DSurface9* pSurf = nullptr;
+
+    if (This == tzf::RenderFix::pDevice && SUCCEEDED (This->GetRenderTarget (0, &pSurf)) && pSurf != nullptr) {
+      D3DSURFACE_DESC desc;
+      pSurf->GetDesc (&desc);
+      pSurf->Release ();
+
+      //
+      // Post-Processing
+      //
+      if (config.render.postproc_ratio > 0.0f) {
+        if (desc.Width  == tzf::RenderFix::width &&
+            desc.Height == tzf::RenderFix::height) {
+          if (pSurf == tzf::RenderFix::pPostProcessSurface) {
+            float newData [12];
+
+            float rescale_x = 512.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
+            float rescale_y = 256.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
+
+            for (int i = 0; i < 8; i += 2) {
+              newData [i] = pConstantData [i] * rescale_x;
+            }
+
+            for (int i = 1; i < 8; i += 2) {
+              newData [i] = pConstantData [i] * rescale_y;
+            }
+
+            return D3D9SetVertexShaderConstantF_Original (This, 0, newData, Vector4fCount);
+          }
+        }
       }
 
-      //dll_log.Log (L"checksum: %d", vs_crc32);
-      //dll_log.Log (L" Viewport: (%dx%d) -> (%dx%d)", vp9_orig.Width, vp9_orig.Height,
-                                                     //width, height);
+      //
+      // Model Shadows
+      //
+      if (desc.Width == desc.Height) {
+        float newData [12];
 
-     // Letterbox Videos
-     if (height != vp9_orig.Height && (vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
-        This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+        uint32_t shift = TZF_MakeShadowBitShift (desc.Width);
 
-        D3DVIEWPORT9 vp9;
-        vp9.X     = vp9_orig.X;    vp9.Y      = vp9_orig.Y + (vp9_orig.Height - height) / 2;
-        vp9.Width = width;         vp9.Height = height;
-        vp9.MinZ  = vp9_orig.MinZ; vp9.MaxZ   = vp9_orig.MaxZ;
-        This->SetViewport (&vp9);
+        for (int i = 0; i < Vector4fCount * 4; i++) {
+          newData [i] = pConstantData [i] / (float)(1 << shift);
+        }
+
+        return D3D9SetVertexShaderConstantF_Original (This, 0, newData, Vector4fCount);
       }
-
-     if (height != vp9_orig.Height && (vs_checksums [g_pVS] == VS_CHECKSUM_UI)) {
-       //This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
-
-       D3DVIEWPORT9 vp9;
-       vp9.X     = vp9_orig.X;    vp9.Y      = vp9_orig.Y + (vp9_orig.Height - height) / 2;
-       vp9.Width = width;         vp9.Height = height;
-       vp9.MinZ  = vp9_orig.MinZ; vp9.MaxZ   = vp9_orig.MaxZ;
-       This->SetViewport (&vp9);
-     }
-
-     // Sidebar Videos
-     if (width != vp9_orig.Width && (vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
-       This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
-
-       D3DVIEWPORT9 vp9;
-       vp9.X     = vp9_orig.X + (vp9_orig.Width - width) / 2; vp9.Y = vp9_orig.Y;
-       vp9.Width = width;                                     vp9.Height = height;
-       vp9.MinZ  = vp9_orig.MinZ;                             vp9.MaxZ   = vp9_orig.MaxZ;
-       This->SetViewport (&vp9);
-     }
     }
   }
-#endif
 
+
+  //
+  // Post-Processing
+  //
+  if (StartRegister == 240 &&
+      Vector4fCount == 1   &&
+      pConstantData [0] == -1.0f / 512.0f &&
+      pConstantData [1] ==  1.0f / 256.0f &&
+      config.render.postproc_ratio > 0.0f) {
+    if (SUCCEEDED (This->GetRenderTarget (0, &tzf::RenderFix::pPostProcessSurface)))
+      tzf::RenderFix::pPostProcessSurface->Release ();
+
+    float newData [4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    newData [0] = -1.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
+    newData [1] =  1.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
+
+    return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
+  }
+
+
+  //
+  // Bink Video or UI
+  //
   if ( g_pPS != nullptr && g_pVS != nullptr && 
        ( (ps_checksums [g_pPS] == PS_CHECKSUM_UI   && vs_checksums [g_pVS] == VS_CHECKSUM_UI && config.render.aspect_correction) ||
          (vs_checksums [g_pVS] == VS_CHECKSUM_BINK && config.render.blackbar_videos) ) ) {
@@ -418,7 +717,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       This->GetViewport (&vp9_orig);
 
       // Only apply aspect ratio correction as needed!
-      if (vp9_orig.Width == tzf::RenderFix::width &&
+      if (vp9_orig.Width  == tzf::RenderFix::width &&
           vp9_orig.Height == tzf::RenderFix::height) {
       int width = vp9_orig.Width;
       int height = (9.0f / 16.0f) * vp9_orig.Width;
@@ -542,6 +841,69 @@ SetWindowDisplayAffinity_Detour (HWND hWnd, DWORD dwAffinity)
 }
 
 
+
+#define D3DX_DEFAULT ((UINT) -1)
+struct D3DXIMAGE_INFO;
+
+typedef HRESULT (STDMETHODCALLTYPE *D3DXCreateTextureFromFileInMemoryEx_t)
+(
+  _In_    LPDIRECT3DDEVICE9  pDevice,
+  _In_    LPCVOID            pSrcData,
+  _In_    UINT               SrcDataSize,
+  _In_    UINT               Width,
+  _In_    UINT               Height,
+  _In_    UINT               MipLevels,
+  _In_    DWORD              Usage,
+  _In_    D3DFORMAT          Format,
+  _In_    D3DPOOL            Pool,
+  _In_    DWORD              Filter,
+  _In_    DWORD              MipFilter,
+  _In_    D3DCOLOR           ColorKey,
+  _Inout_ D3DXIMAGE_INFO     *pSrcInfo,
+  _Out_   PALETTEENTRY       *pPalette,
+  _Out_   LPDIRECT3DTEXTURE9 *ppTexture
+  );
+
+D3DXCreateTextureFromFileInMemoryEx_t
+  D3DXCreateTextureFromFileInMemoryEx_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3DXCreateTextureFromFileInMemoryEx_Detour (
+  _In_    LPDIRECT3DDEVICE9  pDevice,
+  _In_    LPCVOID            pSrcData,
+  _In_    UINT               SrcDataSize,
+  _In_    UINT               Width,
+  _In_    UINT               Height,
+  _In_    UINT               MipLevels,
+  _In_    DWORD              Usage,
+  _In_    D3DFORMAT          Format,
+  _In_    D3DPOOL            Pool,
+  _In_    DWORD              Filter,
+  _In_    DWORD              MipFilter,
+  _In_    D3DCOLOR           ColorKey,
+  _Inout_ D3DXIMAGE_INFO     *pSrcInfo,
+  _Out_   PALETTEENTRY       *pPalette,
+  _Out_   LPDIRECT3DTEXTURE9 *ppTexture
+)
+{
+  UINT Levels = MipLevels;
+
+  // Forcefully complete mipmap chains?
+  if (config.render.complete_mipmaps && Levels > 1)
+    Levels = D3DX_DEFAULT;
+
+  HRESULT hr =
+    D3DXCreateTextureFromFileInMemoryEx_Original (
+      pDevice, pSrcData, SrcDataSize, Width, Height,
+      Levels, Usage, Format, Pool,
+      Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
+
+  return hr;
+}
+
+
 void
 tzf::RenderFix::Init (void)
 {
@@ -551,16 +913,23 @@ tzf::RenderFix::Init (void)
            (LPVOID *)&D3DXMatrixMultiply_Original );
 #endif
 
+#if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetSamplerState_Override",
                       D3D9SetSamplerState_Detour,
             (LPVOID*)&D3D9SetSamplerState_Original,
                      &SetSamplerState );
+#endif
 
 #if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShaderConstantF_Override",
                       D3D9SetPixelShaderConstantF_Detour,
             (LPVOID*)&D3D9SetPixelShaderConstantF_Original );
 #endif
+
+  // Needed for shadow re-scaling
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetViewport_Override",
+                      D3D9SetViewport_Detour,
+            (LPVOID*)&D3D9SetViewport_Original );
 
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShaderConstantF_Override",
                       D3D9SetVertexShaderConstantF_Detour,
@@ -575,9 +944,35 @@ tzf::RenderFix::Init (void)
                       D3D9SetPixelShader_Detour,
             (LPVOID*)&D3D9SetPixelShader_Original );
 
+  // Needed for UI re-scaling
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetScissorRect_Override",
                       D3D9SetScissorRect_Detour,
             (LPVOID*)&D3D9SetScissorRect_Original );
+
+  // Needed for shadow re-scaling
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateTexture_Override",
+                      D3D9CreateTexture_Detour,
+            (LPVOID*)&D3D9CreateTexture_Original );
+
+#if 0
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateRenderTarget_Override",
+                      D3D9CreateRenderTarget_Detour,
+            (LPVOID*)&D3D9CreateRenderTarget_Original );
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateDepthStencilSurface_Override",
+                      D3D9CreateDepthStencilSurface_Detour,
+            (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9UpdateTexture_Override",
+                      D3D9UpdateTexture_Detour,
+            (LPVOID*)&D3D9UpdateTexture_Original );
+#endif
+
+
+  // Needed for mipmap completeness
+  TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXCreateTextureFromFileInMemoryEx",
+                      D3DXCreateTextureFromFileInMemoryEx_Detour,
+           (LPVOID *)&D3DXCreateTextureFromFileInMemoryEx_Original );
 
 
   TZF_CreateDLLHook ( L"d3d9.dll", "BMF_BeginBufferSwap",
@@ -673,7 +1068,7 @@ tzf::RenderFix::Init (void)
 void
 tzf::RenderFix::Shutdown (void)
 {
-  TZF_RemoveHook (SetSamplerState);
+  //TZF_RemoveHook (SetSamplerState);
 }
 
 tzf::RenderFix::CommandProcessor::CommandProcessor (void)
@@ -681,14 +1076,21 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   fovy_         = new eTB_VarStub <float> (&config.render.fovy,         this);
   aspect_ratio_ = new eTB_VarStub <float> (&config.render.aspect_ratio, this);
 
-  eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool> (&config.render.blackbar_videos);
-  eTB_Variable* aspect_correction   = new eTB_VarStub <bool> (&config.render.aspect_correction);
+  eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool>  (&config.render.blackbar_videos);
+  eTB_Variable* aspect_correction   = new eTB_VarStub <bool>  (&config.render.aspect_correction);
+
+  eTB_Variable* complete_mipmaps    = new eTB_VarStub <bool>  (&config.render.complete_mipmaps);
+  eTB_Variable* rescale_shadows     = new eTB_VarStub <int>   (&config.render.shadow_rescale);
+  eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
   command.AddVariable ("FOVY",                fovy_);
 
   command.AddVariable ("AspectCorrectVideos", aspect_correct_vids);
   command.AddVariable ("AspectCorrection",    aspect_correction);
+  command.AddVariable ("CompleteMipmaps",     complete_mipmaps);
+  command.AddVariable ("RescaleShadows",      rescale_shadows);
+  command.AddVariable ("PostProcessRatio",    postproc_ratio);
 }
 
 bool
@@ -748,3 +1150,5 @@ tzf::RenderFix::CommandProcessor* tzf::RenderFix::CommandProcessor::pCommProc;
 
 uint32_t tzf::RenderFix::width;
 uint32_t tzf::RenderFix::height;
+
+IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
