@@ -623,6 +623,11 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
     newData [0] = -1.0f / (dim << shift);
     newData [1] =  1.0f / (dim << shift);
 
+    if (pConstantData [2] != 0.0f || 
+        pConstantData [3] != 0.0f) {
+      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+    }
+
     if (dim != 0)
       return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
   }
@@ -698,6 +703,11 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
     newData [0] = -1.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
     newData [1] =  1.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
 
+    if (pConstantData [2] != 0.0f || 
+        pConstantData [3] != 0.0f) {
+      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+    }
+
     return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
   }
 
@@ -705,7 +715,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
   //
   // Bink Video or UI
   //
-  if ( g_pPS != nullptr && g_pVS != nullptr && 
+  if ( Vector4fCount == 5 && g_pPS != nullptr && g_pVS != nullptr && 
        ( (ps_checksums [g_pPS] == PS_CHECKSUM_UI   && vs_checksums [g_pVS] == VS_CHECKSUM_UI && config.render.aspect_correction) ||
          (vs_checksums [g_pVS] == VS_CHECKSUM_BINK && config.render.blackbar_videos) ) ) {
     if (pConstantData [ 0] == 0.0015625f     && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&

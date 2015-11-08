@@ -348,6 +348,12 @@ TZF_LoadConfig (std::wstring name) {
   if (render.complete_mipmaps->load ())
     config.render.complete_mipmaps = render.complete_mipmaps->get_value ();
 
+  if (render.postproc_ratio->load ())
+     config.render.postproc_ratio = render.postproc_ratio->get_value ();
+
+  if (render.rescale_shadows->load ())
+    config.render.shadow_rescale = render.rescale_shadows->get_value ();
+
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
 
