@@ -183,7 +183,8 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
   BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
 
   if (last_sleep != 0 || (! (tzf::FrameRateFix::fullscreen ||
-                             tzf::FrameRateFix::driver_limit_setup))) {
+                             tzf::FrameRateFix::driver_limit_setup ||
+                             config.framerate.allow_windowed_mode))) {
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
     return ret;
   } else {
@@ -226,9 +227,10 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
                      &pfnBMF_SetPresentParamsD3D9 );
 
-  command.AddVariable ("FudgeFactor",    new eTB_VarStub <float> (&config.framerate.fudge_factor));
-  command.AddVariable ("AllowFakeSleep", new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
-  command.AddVariable ("YieldProcessor", new eTB_VarStub <bool>  (&config.framerate.yield_processor));
+  command.AddVariable ("FudgeFactor",       new eTB_VarStub <float> (&config.framerate.fudge_factor));
+  command.AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
+  command.AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
+  command.AddVariable ("AllowWindowedMode", new eTB_VarStub <bool>  (&config.framerate.allow_windowed_mode));
 
   stutter_fix_installed = true;
 }

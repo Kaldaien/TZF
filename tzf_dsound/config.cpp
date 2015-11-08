@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"0.5.0";
+std::wstring TZF_VER_STR = L"0.5.1";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -45,6 +45,7 @@ struct {
   tzf::ParameterFloat*   fudge_factor;
   tzf::ParameterBool*    allow_fake_sleep;
   tzf::ParameterBool*    yield_processor;
+  tzf::ParameterBool*    allow_windowed_mode;
 } framerate;
 
 struct {
@@ -162,6 +163,16 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.FrameRate",
         L"YieldProcessor" );
+
+  framerate.allow_windowed_mode =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Allow Windowed Mode")
+      );
+  framerate.allow_windowed_mode->register_to_ini (
+    dll_ini,
+      L"TZFIX.FrameRate",
+        L"AllowWindowedMode" );
 
 
   render.aspect_ratio =
@@ -313,6 +324,9 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.yield_processor->load ())
     config.framerate.yield_processor = framerate.yield_processor->get_value ();
 
+  if (framerate.allow_windowed_mode->load ())
+    config.framerate.allow_windowed_mode = framerate.allow_windowed_mode->get_value ();
+
   if (render.aspect_addr->load ())
     config.render.aspect_addr = render.aspect_addr->get_value ();
 
@@ -374,6 +388,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   framerate.yield_processor->set_value (config.framerate.yield_processor);
   framerate.yield_processor->store     ();
+
+  framerate.allow_windowed_mode->set_value (config.framerate.allow_windowed_mode);
+  framerate.allow_windowed_mode->store     ();
 
   render.aspect_addr->set_value (config.render.aspect_addr);
   render.aspect_addr->store     ();

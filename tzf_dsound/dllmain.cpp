@@ -78,9 +78,10 @@ DllMain (HMODULE hModule,
       config.audio.enable_fix           = true;
 
       config.framerate.stutter_fix      = true;
-      config.framerate.fudge_factor     = 1.5f;
-      config.framerate.allow_fake_sleep = true;
+      config.framerate.fudge_factor     = 1.666f;
+      config.framerate.allow_fake_sleep = false;
       config.framerate.yield_processor  = true;
+      
 
       config.file_io.capture            = false;
 
