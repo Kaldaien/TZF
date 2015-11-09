@@ -209,6 +209,11 @@ LPVOID pfnBMF_SetPresentParamsD3D9 = nullptr;
 void
 tzf::FrameRateFix::Init (void)
 {
+  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
+                      BMF_SetPresentParamsD3D9_Detour, 
+           (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
+                     &pfnBMF_SetPresentParamsD3D9 );
+
   if (! config.framerate.stutter_fix)
     return;
 
@@ -222,15 +227,11 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&Sleep_Original,
            (LPVOID *)&pfnSleep );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
-                      BMF_SetPresentParamsD3D9_Detour, 
-           (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
-                     &pfnBMF_SetPresentParamsD3D9 );
-
   command.AddVariable ("FudgeFactor",       new eTB_VarStub <float> (&config.framerate.fudge_factor));
   command.AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
   command.AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
   command.AddVariable ("AllowWindowedMode", new eTB_VarStub <bool>  (&config.framerate.allow_windowed_mode));
+  command.AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
 
   stutter_fix_installed = true;
 }

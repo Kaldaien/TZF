@@ -81,7 +81,7 @@ DllMain (HMODULE hModule,
       config.framerate.fudge_factor     = 1.666f;
       config.framerate.allow_fake_sleep = false;
       config.framerate.yield_processor  = true;
-      
+      config.framerate.minimize_latency = false;
 
       config.file_io.capture            = false;
 
@@ -97,6 +97,7 @@ DllMain (HMODULE hModule,
       config.render.complete_mipmaps    = false;
       config.render.postproc_ratio      =  1.0f;
       config.render.shadow_rescale      = -2.0f;
+      config.render.disable_scissor     = false;
 
       // Save a new config if none exists
       TZF_SaveConfig ();

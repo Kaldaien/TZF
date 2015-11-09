@@ -349,11 +349,62 @@ D3D9EndFrame_Pre (void)
   return BMF_BeginBufferSwap ();
 }
 
+COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
 D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 {
-  return BMF_EndBufferSwap (hr, device);
+  hr = BMF_EndBufferSwap (hr, device);
+
+  // Don't do the silly stuff below if this option is not enabled
+  if (! config.framerate.minimize_latency)
+    return hr;
+
+  if (SUCCEEDED (hr) && device != nullptr) {
+    IDirect3DSurface9*   pBackBuffer = nullptr;
+    IDirect3DDevice9*    pDev        = nullptr;
+
+    if (SUCCEEDED (device->QueryInterface ( __uuidof (IDirect3DDevice9),
+                                              (void **)&pDev )))
+    {
+      if (SUCCEEDED ( pDev->GetBackBuffer ( 0,
+                                              0,
+                                                D3DBACKBUFFER_TYPE_MONO,
+                                                  &pBackBuffer ) ))
+      {
+        D3DLOCKED_RECT lock;
+
+        //
+        // This will block and stall the pipeline; effectively enforcing a
+        //   pre-rendered frame limit of 1 without using any vendor-specific
+        //     driver settings. 
+        //
+        //   Huzzah!
+        //
+        //DWORD dwTime = timeGetTime ();
+
+        if (SUCCEEDED ( pBackBuffer->LockRect ( &lock,
+                                                  nullptr,
+                                                    D3DLOCK_NO_DIRTY_UPDATE |
+                                                      D3DLOCK_READONLY      |
+                                                        D3DLOCK_NOSYSLOCK )))
+          pBackBuffer->UnlockRect ();
+
+#if 0
+        DWORD dwWait = timeGetTime () - dwTime;
+        if (dwWait > 0) {
+          dll_log.Log (L"Locked Backbuffer and waited %lu ms", dwWait);
+        }
+#endif
+
+        pBackBuffer->Release ();
+      }
+
+      pDev->Release ();
+    }
+  }
+
+  return hr;
 }
 
 typedef HRESULT (STDMETHODCALLTYPE *UpdateTexture_t)
@@ -829,7 +880,10 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
     fixed_scissor.bottom = pRect->bottom / rescale + y_off;
   }
 
-  return D3D9SetScissorRect_Original (This, &fixed_scissor);
+  if (! config.render.disable_scissor)
+    return D3D9SetScissorRect_Original (This, &fixed_scissor);
+  else
+    return S_OK;
 }
 
 
@@ -1092,6 +1146,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   eTB_Variable* complete_mipmaps    = new eTB_VarStub <bool>  (&config.render.complete_mipmaps);
   eTB_Variable* rescale_shadows     = new eTB_VarStub <int>   (&config.render.shadow_rescale);
   eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
+  eTB_Variable* disable_scissor     = new eTB_VarStub <bool>  (&config.render.disable_scissor);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
   command.AddVariable ("FOVY",                fovy_);
@@ -1101,6 +1156,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("CompleteMipmaps",     complete_mipmaps);
   command.AddVariable ("RescaleShadows",      rescale_shadows);
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
+  command.AddVariable ("DisableScissor",      disable_scissor);
 }
 
 bool

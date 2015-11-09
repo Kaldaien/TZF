@@ -42,6 +42,7 @@ struct tzf_config_t
     bool  stutter_fix         = true;
     float fudge_factor        = 1.666f;
     bool  allow_windowed_mode = false;
+    bool  minimize_latency    = false;
   } framerate;
 
   struct {
@@ -62,6 +63,7 @@ struct tzf_config_t
     bool    complete_mipmaps  = false;
     int32_t shadow_rescale    = -2;
     float   postproc_ratio    =  1.0f;
+    bool    disable_scissor   = false;
   } render;
 
   struct {

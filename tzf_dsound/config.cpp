@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"0.5.1";
+std::wstring TZF_VER_STR = L"0.5.2";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -46,6 +46,7 @@ struct {
   tzf::ParameterBool*    allow_fake_sleep;
   tzf::ParameterBool*    yield_processor;
   tzf::ParameterBool*    allow_windowed_mode;
+  tzf::ParameterBool*    minimize_latency;
 } framerate;
 
 struct {
@@ -58,6 +59,7 @@ struct {
   tzf::ParameterBool*    complete_mipmaps;
   tzf::ParameterInt*     rescale_shadows;
   tzf::ParameterFloat*   postproc_ratio;
+  tzf::ParameterBool*    disable_scissor;
 } render;
 
 
@@ -174,6 +176,16 @@ TZF_LoadConfig (std::wstring name) {
       L"TZFIX.FrameRate",
         L"AllowWindowedMode" );
 
+  framerate.minimize_latency =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Minimize Input Latency")
+      );
+  framerate.minimize_latency->register_to_ini (
+    dll_ini,
+      L"TZFIX.FrameRate",
+        L"MinimizeLatency" );
+
 
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>
@@ -240,7 +252,7 @@ TZF_LoadConfig (std::wstring name) {
       (g_ParameterFactory.create_parameter <bool> (
         L"Force Complete Mipmaps (FULL MipMap Creation)")
       );
-  render.complete_mipmaps->register_to_ini(
+  render.complete_mipmaps->register_to_ini (
     dll_ini,
       L"TZFIX.Render",
         L"CompleteMipmaps" );
@@ -264,6 +276,16 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.Render",
         L"PostProcessRatio" );
+
+  render.disable_scissor =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Disable Scissor Rectangle")
+      );
+  render.disable_scissor->register_to_ini (
+    dll_ini,
+      L"TZFIX.Render",
+        L"DisableScissor" );
 
 
   steam.allow_broadcasts =
@@ -327,6 +349,11 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.allow_windowed_mode->load ())
     config.framerate.allow_windowed_mode = framerate.allow_windowed_mode->get_value ();
 
+  if (framerate.minimize_latency->load ())
+    config.framerate.minimize_latency = framerate.minimize_latency->get_value ();
+
+
+
   if (render.aspect_addr->load ())
     config.render.aspect_addr = render.aspect_addr->get_value ();
 
@@ -353,6 +380,10 @@ TZF_LoadConfig (std::wstring name) {
 
   if (render.rescale_shadows->load ())
     config.render.shadow_rescale = render.rescale_shadows->get_value ();
+
+  if (render.disable_scissor->load ())
+    config.render.disable_scissor = render.disable_scissor->get_value ();
+
 
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
@@ -383,6 +414,7 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   audio.enable_fix->set_value (config.audio.enable_fix);
   audio.enable_fix->store     ();
 
+
   framerate.stutter_fix->set_value (config.framerate.stutter_fix);
   framerate.stutter_fix->store     ();
 
@@ -397,6 +429,10 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   framerate.allow_windowed_mode->set_value (config.framerate.allow_windowed_mode);
   framerate.allow_windowed_mode->store     ();
+
+  framerate.minimize_latency->set_value (config.framerate.minimize_latency);
+  framerate.minimize_latency->store     ();
+
 
   render.aspect_addr->set_value (config.render.aspect_addr);
   render.aspect_addr->store     ();
@@ -424,6 +460,11 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   render.rescale_shadows->set_value (config.render.shadow_rescale);
   render.rescale_shadows->store     ();
+
+  render.disable_scissor->set_value (config.render.disable_scissor);
+  render.disable_scissor->store     ();
+
+
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
   steam.allow_broadcasts->store     ();
