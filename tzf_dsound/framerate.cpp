@@ -32,6 +32,7 @@ bool stutter_fix_installed = false;
 bool half_speed_installed  = false;
 // TODO get this from BMF
 DWORD target_fps           =    60;
+byte old_speed_reset_code2[7];
 
 
 #include <d3d9.h>
@@ -227,9 +228,9 @@ tzf::FrameRateFix::Init (void)
     //
     // original code:
     //
-    // lea esi, [eax+0000428C]
-    // lea edi, [ebx+0000428C]
-    // mov ecx, 11
+    // >> lea esi, [eax+0000428C]
+    // >> lea edi, [ebx+0000428C]
+    // >> mov ecx, 11
     // rep movsd
     // 
     // we want to skip the first two dwords
@@ -240,10 +241,32 @@ tzf::FrameRateFix::Init (void)
     *((DWORD *)(config.framerate.speedresetcode_addr + 13)) -= 2;
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
 
-    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, PAGE_READWRITE, &dwOld);
-    *((DWORD *)(config.framerate.speed_addr)) = 1;
-    *((DWORD *)(config.framerate.speed_addr + 4)) = 1;
-    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, dwOld, &dwOld);
+    //
+    // original code:
+    //
+    // ...
+    // cmp [ebx+28], eax
+    // >> jz after_set
+    // >> cmp eax, 2
+    // >> jl after_set
+    // mov 0217B3D4, eax
+    // mov 0217B3D8, eax
+    // mov [ebx+28], eax
+    // after_set:
+    // ...
+    //
+    // we just want this to be 1 always
+    //
+    // new code:
+    // mov eax, 01
+    // nop
+    // nop
+    //
+    byte new_code[7] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x90 };
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
+    memcpy(&old_speed_reset_code2, &new_code, 7);
+    memcpy((LPVOID)config.framerate.speedresetcode2_addr, &new_code, 7);
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
 
     half_speed_installed = true;
   }
@@ -283,10 +306,9 @@ tzf::FrameRateFix::Shutdown(void)
     *((DWORD *)(config.framerate.speedresetcode_addr + 13)) += 2;
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
 
-    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, PAGE_READWRITE, &dwOld);
-    *((DWORD *)(config.framerate.speed_addr)) = 2;
-    *((DWORD *)(config.framerate.speed_addr + 4)) = 2;
-    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, dwOld, &dwOld);
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
+    memcpy((LPVOID)config.framerate.speedresetcode2_addr, &old_speed_reset_code2, 7);
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
 
     half_speed_installed = false;
   }
