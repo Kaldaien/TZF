@@ -391,7 +391,7 @@ TZF_LoadConfig (std::wstring name) {
       config.framerate.speedresetcode2_addr = framerate.speedresetcode2_addr->get_value();
 
   if (framerate.speedresetcode3_addr->load())
-      config.framerate.speedresetcode3_addr = framerate.speedresetcode_addr->get_value();
+      config.framerate.speedresetcode3_addr = framerate.speedresetcode3_addr->get_value();
 
 
 
