@@ -47,6 +47,8 @@ struct {
   tzf::ParameterBool*    yield_processor;
   tzf::ParameterBool*    allow_windowed_mode;
   tzf::ParameterBool*    minimize_latency;
+  tzf::ParameterInt*     speed_addr;
+  tzf::ParameterInt*     speedresetcode_addr;
 } framerate;
 
 struct {
@@ -185,6 +187,26 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.FrameRate",
         L"MinimizeLatency" );
+
+  framerate.speed_addr =
+      static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int>(
+          L"Simulation Speed Memory Address")
+          );
+  framerate.speed_addr->register_to_ini(
+      dll_ini,
+      L"TZFIX.FrameRate",
+      L"Speed_Address");
+
+  framerate.speedresetcode_addr =
+      static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int>(
+          L"Simulation Speed Reset Code Memory Address")
+          );
+  framerate.speedresetcode_addr->register_to_ini(
+      dll_ini,
+      L"TZFIX.FrameRate",
+      L"SpeedResetCode_Address");
 
 
   render.aspect_ratio =
@@ -352,6 +374,12 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.minimize_latency->load ())
     config.framerate.minimize_latency = framerate.minimize_latency->get_value ();
 
+  if (framerate.speed_addr->load())
+      config.framerate.speed_addr = framerate.speed_addr->get_value();
+
+  if (framerate.speedresetcode_addr->load())
+      config.framerate.speedresetcode_addr = framerate.speedresetcode_addr->get_value();
+
 
 
   if (render.aspect_addr->load ())
@@ -432,6 +460,14 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   framerate.minimize_latency->set_value (config.framerate.minimize_latency);
   framerate.minimize_latency->store     ();
+
+  framerate.speed_addr->set_value(config.framerate.speed_addr);
+  framerate.speed_addr->store();
+
+  framerate.speedresetcode_addr->set_value(config.framerate.speedresetcode_addr);
+  framerate.speedresetcode_addr->store();
+
+
 
 
   render.aspect_addr->set_value (config.render.aspect_addr);

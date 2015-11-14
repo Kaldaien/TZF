@@ -29,6 +29,9 @@
 
 
 bool stutter_fix_installed = false;
+bool half_speed_installed  = false;
+// TODO get this from BMF
+DWORD target_fps           =    60;
 
 
 #include <d3d9.h>
@@ -194,7 +197,7 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 
     // Mess with the numbers slightly to prevent hiccups
     lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
-                                     fudge_factor/* * freq.QuadPart*/;
+                                     fudge_factor * ((float)target_fps / 30.0)/* * freq.QuadPart*/;
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
 
     return ret;
@@ -213,6 +216,38 @@ tzf::FrameRateFix::Init (void)
                       BMF_SetPresentParamsD3D9_Detour, 
            (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
                      &pfnBMF_SetPresentParamsD3D9 );
+
+
+  if (target_fps >= 45) {
+    dll_log.Log(L" * Target FPS is %lu, halving simulation speed to compensate...",
+        target_fps);
+
+    DWORD dwOld;
+
+    //
+    // original code:
+    //
+    // lea esi, [eax+0000428C]
+    // lea edi, [ebx+0000428C]
+    // mov ecx, 11
+    // rep movsd
+    // 
+    // we want to skip the first two dwords
+    //
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)(config.framerate.speedresetcode_addr + 2)) += 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 8)) += 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 13)) -= 2;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
+
+    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, PAGE_READWRITE, &dwOld);
+    *((DWORD *)(config.framerate.speed_addr)) = 1;
+    *((DWORD *)(config.framerate.speed_addr + 4)) = 1;
+    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, dwOld, &dwOld);
+
+    half_speed_installed = true;
+  }
+
 
   if (! config.framerate.stutter_fix)
     return;
@@ -239,6 +274,23 @@ tzf::FrameRateFix::Init (void)
 void
 tzf::FrameRateFix::Shutdown(void)
 {
+  if (half_speed_installed) {
+    DWORD dwOld;
+
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)(config.framerate.speedresetcode_addr + 2)) -= 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 8)) -= 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 13)) += 2;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
+
+    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, PAGE_READWRITE, &dwOld);
+    *((DWORD *)(config.framerate.speed_addr)) = 2;
+    *((DWORD *)(config.framerate.speed_addr + 4)) = 2;
+    VirtualProtect((LPVOID)config.framerate.speed_addr, 8, dwOld, &dwOld);
+
+    half_speed_installed = false;
+  }
+
   if (! config.framerate.stutter_fix)
     return;
 

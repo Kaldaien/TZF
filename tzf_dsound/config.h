@@ -43,6 +43,8 @@ struct tzf_config_t
     float fudge_factor        = 1.666f;
     bool  allow_windowed_mode = false;
     bool  minimize_latency    = false;
+    DWORD speed_addr          = 0x0217B3D4;
+    DWORD speedresetcode_addr = 0x0046C529;
   } framerate;
 
   struct {
