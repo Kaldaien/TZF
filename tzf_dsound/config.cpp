@@ -49,6 +49,7 @@ struct {
   tzf::ParameterBool*    minimize_latency;
   tzf::ParameterInt*     speedresetcode_addr;
   tzf::ParameterInt*     speedresetcode2_addr;
+  tzf::ParameterInt*     speedresetcode3_addr;
 } framerate;
 
 struct {
@@ -207,6 +208,16 @@ TZF_LoadConfig (std::wstring name) {
       dll_ini,
       L"TZFIX.FrameRate",
       L"SpeedResetCode2_Address");
+
+  framerate.speedresetcode3_addr =
+      static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int>(
+          L"Simulation Speed Reset Code 3 Memory Address")
+          );
+  framerate.speedresetcode3_addr->register_to_ini(
+      dll_ini,
+      L"TZFIX.FrameRate",
+      L"SpeedResetCode3_Address");
 
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>
@@ -379,6 +390,9 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.speedresetcode2_addr->load())
       config.framerate.speedresetcode2_addr = framerate.speedresetcode2_addr->get_value();
 
+  if (framerate.speedresetcode3_addr->load())
+      config.framerate.speedresetcode3_addr = framerate.speedresetcode_addr->get_value();
+
 
 
   if (render.aspect_addr->load ())
@@ -465,6 +479,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   framerate.speedresetcode2_addr->set_value(config.framerate.speedresetcode2_addr);
   framerate.speedresetcode2_addr->store();
+
+  framerate.speedresetcode3_addr->set_value(config.framerate.speedresetcode3_addr);
+  framerate.speedresetcode3_addr->store();
 
 
 

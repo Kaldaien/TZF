@@ -268,6 +268,11 @@ tzf::FrameRateFix::Init (void)
     memcpy((LPVOID)config.framerate.speedresetcode2_addr, &new_code, 7);
     VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
 
+    // mov eax, 02 to mov eax, 01
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)config.framerate.speedresetcode3_addr) = 1;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+
     half_speed_installed = true;
   }
 
@@ -309,6 +314,10 @@ tzf::FrameRateFix::Shutdown(void)
     VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
     memcpy((LPVOID)config.framerate.speedresetcode2_addr, &old_speed_reset_code2, 7);
     VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
+
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)config.framerate.speedresetcode3_addr) = 2;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
 
     half_speed_installed = false;
   }

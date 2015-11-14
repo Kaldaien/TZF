@@ -45,6 +45,7 @@ struct tzf_config_t
     bool  minimize_latency     = false;
     DWORD speedresetcode_addr  = 0x0046C529;
     DWORD speedresetcode2_addr = 0x0056E441;
+    DWORD speedresetcode3_addr = 0x0056D93F;
   } framerate;
 
   struct {
