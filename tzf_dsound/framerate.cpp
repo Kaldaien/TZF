@@ -29,6 +29,10 @@
 
 
 bool stutter_fix_installed = false;
+bool half_speed_installed  = false;
+// TODO get this from BMF
+DWORD target_fps           =    60;
+byte old_speed_reset_code2[7];
 
 
 #include <d3d9.h>
@@ -194,7 +198,7 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 
     // Mess with the numbers slightly to prevent hiccups
     lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
-                                     fudge_factor/* * freq.QuadPart*/;
+                                     fudge_factor * ((float)target_fps / 30.0)/* * freq.QuadPart*/;
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
 
     return ret;
@@ -213,6 +217,65 @@ tzf::FrameRateFix::Init (void)
                       BMF_SetPresentParamsD3D9_Detour, 
            (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
                      &pfnBMF_SetPresentParamsD3D9 );
+
+
+  if (target_fps >= 45) {
+    dll_log.Log(L" * Target FPS is %lu, halving simulation speed to compensate...",
+        target_fps);
+
+    DWORD dwOld;
+
+    //
+    // original code:
+    //
+    // >> lea esi, [eax+0000428C]
+    // >> lea edi, [ebx+0000428C]
+    // >> mov ecx, 11
+    // rep movsd
+    // 
+    // we want to skip the first two dwords
+    //
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)(config.framerate.speedresetcode_addr + 2)) += 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 8)) += 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 13)) -= 2;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
+
+    //
+    // original code:
+    //
+    // ...
+    // cmp [ebx+28], eax
+    // >> jz after_set
+    // >> cmp eax, 2
+    // >> jl after_set
+    // mov 0217B3D4, eax
+    // mov 0217B3D8, eax
+    // mov [ebx+28], eax
+    // after_set:
+    // ...
+    //
+    // we just want this to be 1 always
+    //
+    // new code:
+    // mov eax, 01
+    // nop
+    // nop
+    //
+    byte new_code[7] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x90 };
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
+    memcpy(&old_speed_reset_code2, &new_code, 7);
+    memcpy((LPVOID)config.framerate.speedresetcode2_addr, &new_code, 7);
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
+
+    // mov eax, 02 to mov eax, 01
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)config.framerate.speedresetcode3_addr) = 1;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+
+    half_speed_installed = true;
+  }
+
 
   if (! config.framerate.stutter_fix)
     return;
@@ -239,6 +302,26 @@ tzf::FrameRateFix::Init (void)
 void
 tzf::FrameRateFix::Shutdown(void)
 {
+  if (half_speed_installed) {
+    DWORD dwOld;
+
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)(config.framerate.speedresetcode_addr + 2)) -= 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 8)) -= 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr + 13)) += 2;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
+
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
+    memcpy((LPVOID)config.framerate.speedresetcode2_addr, &old_speed_reset_code2, 7);
+    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
+
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)config.framerate.speedresetcode3_addr) = 2;
+    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+
+    half_speed_installed = false;
+  }
+
   if (! config.framerate.stutter_fix)
     return;
 
