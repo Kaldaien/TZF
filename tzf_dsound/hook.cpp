@@ -156,10 +156,8 @@ public:
     DWORD dwTime = timeGetTime ();
 
     while (true) {
-      // Spin until either the soundfix is initialized or 15 seconds elapse;
-      //   this delays initialization of the hook and improves compatibility.
-      if ((! tzf::SoundFix::wasapi_init) ||
-          ((timeGetTime () - dwTime) < 15000)) {
+      // Spin until the game has a render window setup
+      if (! tzf::RenderFix::pDevice) {
         Sleep (83);
         continue;
       }
@@ -561,8 +559,7 @@ TZF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
                       pwszModule,
                         MH_StatusToString (status) );
   }
-
-  if (ppFuncAddr != nullptr)
+  else if (ppFuncAddr != nullptr)
     *ppFuncAddr = pFuncAddr;
 
   return status;
