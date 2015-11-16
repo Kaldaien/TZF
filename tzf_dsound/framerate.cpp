@@ -62,7 +62,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
     if (config.framerate.stutter_fix) {
       // On NVIDIA hardware, we can setup a framerate limiter at the driver
       //   level to handle windowed mode or improperly setup VSYNC
-      static HMODULE hD3D9 = LoadLibrary (L"d3d9.dll");
+      static HMODULE hD3D9 = GetModuleHandle (L"d3d9.dll");
 
       typedef BOOL (__stdcall *BMF_NvAPI_IsInit_t)
         (void);
@@ -84,7 +84,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
       if ((! tzf::FrameRateFix::driver_limit_setup) && BMF_NvAPI_IsInit ()) {
         BMF_NvAPI_SetAppFriendlyName (L"Tales of Zestiria");
 
-        if (! BMF_NvAPI_SetFramerateLimit (30UL)) {
+        if (! BMF_NvAPI_SetFramerateLimit (0UL)) {
           MessageBox ( NULL,
                          L"Stutter Fix:\t\t"
                          L"Optimal NVIDIA Driver Framerate Limit Setup",
@@ -173,28 +173,46 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
   DWORD&         last_sleep     = per_thread_sleep     [GetCurrentThreadId ()];
   LARGE_INTEGER& last_perfCount = per_thread_perfCount [GetCurrentThreadId ()];
 
-  if (last_sleep != 0 || (! (tzf::FrameRateFix::fullscreen ||
-                             tzf::FrameRateFix::driver_limit_setup ||
-                             config.framerate.allow_windowed_mode))) {
-    memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
-    
-    return ret;
-  }
+  DWORD dwThreadId = GetCurrentThreadId ();
 
-  // A Sleep (0) call always precedes timing issues that were causing stuttering.
-  else {
-    const float fudge_factor = config.framerate.fudge_factor;
-
-    last_sleep = -1;
-
-    // Mess with the numbers slightly to prevent hiccups
-    lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
-                                     fudge_factor *
-                             ((float)tzf::FrameRateFix::target_fps / 30.0f);
+  //
+  // Handle threads that aren't render-related NORMALLY as well as the render
+  //   thread when it DID NOT just voluntarily relinquish its scheduling
+  //     timeslice
+  //
+  if (dwThreadId != tzf::RenderFix::dwRenderThreadID || last_sleep != 0 ||
+                              (! (tzf::FrameRateFix::fullscreen         ||
+                                  tzf::FrameRateFix::driver_limit_setup ||
+                                  config.framerate.allow_windowed_mode))) {
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
 
     return ret;
   }
+
+  //
+  // At this point, we're fixing up the thread that throttles the swapchain.
+  //
+  const float fudge_factor = config.framerate.fudge_factor;
+
+  last_sleep = -1;
+
+  LARGE_INTEGER freq;
+  QueryPerformanceFrequency (&freq);
+
+#if 0
+  lpPerformanceCount->QuadPart += freq.QuadPart;
+#else
+  // Add enough time so that the driver waits, rather than the game's stupid
+  //   framerate limiter.
+  //lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) + ((float)tzf::FrameRateFix::target_fps / 10000.0) * freq.QuadPart;
+  // Mess with the numbers slightly to prevent hiccups
+  lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
+    fudge_factor *
+    ((float)tzf::FrameRateFix::target_fps / 30.0f);
+  memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
+#endif
+
+  return ret;
 }
 
 
@@ -205,9 +223,14 @@ LPVOID pfnBMF_SetPresentParamsD3D9 = nullptr;
 void
 tzf::FrameRateFix::Init (void)
 {
+  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
+                      BMF_SetPresentParamsD3D9_Detour, 
+           (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
+                     &pfnBMF_SetPresentParamsD3D9 );
+
   // Poke a hole in the BMF design and hackishly query the TargetFPS ...
   //   this needs to be re-designed pronto.
-  static HMODULE hD3D9 = LoadLibrary (L"d3d9.dll");
+  static HMODULE hD3D9 = GetModuleHandle (L"d3d9.dll");
 
   typedef uint32_t (__stdcall *BMF_Config_GetTargetFPS_t)(void);
   static BMF_Config_GetTargetFPS_t BMF_Config_GetTargetFPS =
@@ -215,13 +238,6 @@ tzf::FrameRateFix::Init (void)
                                                   "BMF_Config_GetTargetFPS" );
 
   target_fps = BMF_Config_GetTargetFPS ();
-
-
-  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
-                      BMF_SetPresentParamsD3D9_Detour, 
-           (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
-                     &pfnBMF_SetPresentParamsD3D9 );
-
 
   if (target_fps >= 45) {
     dll_log.Log (L" * Target FPS is %lu, halving simulation speed to compensate...",

@@ -190,34 +190,34 @@ TZF_LoadConfig (std::wstring name) {
         L"MinimizeLatency" );
 
   framerate.speedresetcode_addr =
-      static_cast <tzf::ParameterInt *>
-      (g_ParameterFactory.create_parameter <int>(
-          L"Simulation Speed Reset Code Memory Address")
-          );
-  framerate.speedresetcode_addr->register_to_ini(
-      dll_ini,
+    static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Simulation Speed Reset Code Memory Address")
+      );
+  framerate.speedresetcode_addr->register_to_ini (
+    dll_ini,
       L"TZFIX.FrameRate",
-      L"SpeedResetCode_Address");
+        L"SpeedResetCode_Address" );
 
   framerate.speedresetcode2_addr =
-      static_cast <tzf::ParameterInt *>
-      (g_ParameterFactory.create_parameter <int>(
-          L"Simulation Speed Reset Code 2 Memory Address")
-          );
-  framerate.speedresetcode2_addr->register_to_ini(
-      dll_ini,
+    static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Simulation Speed Reset Code 2 Memory Address")
+      );
+  framerate.speedresetcode2_addr->register_to_ini (
+    dll_ini,
       L"TZFIX.FrameRate",
-      L"SpeedResetCode2_Address");
+        L"SpeedResetCode2_Address" );
 
   framerate.speedresetcode3_addr =
-      static_cast <tzf::ParameterInt *>
-      (g_ParameterFactory.create_parameter <int>(
-          L"Simulation Speed Reset Code 3 Memory Address")
-          );
-  framerate.speedresetcode3_addr->register_to_ini(
-      dll_ini,
+    static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Simulation Speed Reset Code 3 Memory Address")
+      );
+  framerate.speedresetcode3_addr->register_to_ini (
+    dll_ini,
       L"TZFIX.FrameRate",
-      L"SpeedResetCode3_Address");
+        L"SpeedResetCode3_Address" );
 
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>

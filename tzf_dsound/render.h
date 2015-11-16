@@ -62,6 +62,8 @@ namespace tzf
 
     extern IDirect3DSurface9* pPostProcessSurface;
     extern IDirect3DDevice9*  pDevice;
+
+    extern uint32_t           dwRenderThreadID;
   }
 }
 

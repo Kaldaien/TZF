@@ -346,6 +346,8 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
+  tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
+
   return BMF_BeginBufferSwap ();
 }
 
@@ -1216,5 +1218,6 @@ tzf::RenderFix::CommandProcessor* tzf::RenderFix::CommandProcessor::pCommProc;
 
 uint32_t tzf::RenderFix::width;
 uint32_t tzf::RenderFix::height;
+uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
 
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;

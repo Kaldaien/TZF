@@ -183,7 +183,7 @@ public:
     typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
 
     static HMODULE               hMod =
-      LoadLibrary (L"d3d9.dll");
+      GetModuleHandle (L"d3d9.dll");
     static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
       =
       (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
@@ -330,7 +330,7 @@ public:
     typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
 
     static HMODULE               hMod =
-      LoadLibrary (L"d3d9.dll");
+      GetModuleHandle (L"d3d9.dll");
     static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
                                       =
       (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
@@ -447,9 +447,7 @@ public:
           keys_ [vkCode] = 0x00;
         }
 
-        if (visible && vkCode != VK_CONTROL &&
-                       vkCode != VK_SHIFT   &&
-                       vkCode != VK_TAB)
+        if (visible)
           return 1;
       }
     }
