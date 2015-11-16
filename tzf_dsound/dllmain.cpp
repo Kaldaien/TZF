@@ -96,7 +96,7 @@ DllMain (HMODULE hModule,
       config.render.aspect_correction   = false;
       config.render.complete_mipmaps    = false;
       config.render.postproc_ratio      =  1.0f;
-      config.render.shadow_rescale      = -2.0f;
+      config.render.shadow_rescale      = -2;
       config.render.disable_scissor     = false;
 
       // Save a new config if none exists

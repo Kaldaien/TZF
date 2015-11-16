@@ -25,6 +25,7 @@
 #include "log.h"
 #include "command.h"
 #include "sound.h"
+#include "steam.h"
 
 #include "framerate.h"
 #include "render.h"
@@ -336,14 +337,14 @@ public:
 
     if (nCode >= 0) {
       if (true) {
-        DWORD   vkCode   = LOWORD (wParam);
-        DWORD   scanCode = HIWORD (lParam) & 0x7F;
+        BYTE    vkCode   = LOWORD (wParam) & 0xFF;
+        BYTE    scanCode = HIWORD (lParam) & 0x7F;
         bool    repeated = LOWORD (lParam);
         bool    keyDown  = ! (lParam & 0x80000000);
 
         if (visible && vkCode == VK_BACK) {
           if (keyDown) {
-            int len = strlen (text);
+            size_t len = strlen (text);
             len--;
             if (len < 1)
               len = 1;
@@ -382,13 +383,15 @@ public:
             else if (commands.idx >= commands.history.size ())
               commands.idx = commands.history.size () - 1;
 
-            strcpy (&text [1], commands.history [commands.idx].c_str ());
-            command_issued = false;
+            if (commands.history.size ()) {
+              strcpy (&text [1], commands.history [commands.idx].c_str ());
+              command_issued = false;
+            }
           }
         }
         else if (visible && vkCode == VK_RETURN) {
           if (keyDown && LOWORD (lParam) < 2) {
-            int len = strlen (text+1);
+            size_t len = strlen (text+1);
             // Don't process empty or pure whitespace command lines
             if (len > 0 && strspn (text+1, " ") != len) {
               eTB_CommandResult result = command.ProcessCommandLine (text+1);
@@ -410,9 +413,9 @@ public:
                 command_issued = false;
               }
 
-              result_str     = result.getWord () + std::string (" ")   +
-                               result.getArgs () + std::string (":  ") +
-                               result.getResult ();
+              result_str = result.getWord   () + std::string (" ")   +
+                           result.getArgs   () + std::string (":  ") +
+                           result.getResult ();
             }
           }
         }
@@ -423,6 +426,8 @@ public:
 
           if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
             visible = ! visible;
+
+          tzf::SteamFix::SetOverlayState (visible);
 
           if (visible) {
             char key_str [2];
@@ -442,7 +447,9 @@ public:
           keys_ [vkCode] = 0x00;
         }
 
-        if (visible)
+        if (visible && vkCode != VK_CONTROL &&
+                       vkCode != VK_SHIFT   &&
+                       vkCode != VK_TAB)
           return 1;
       }
     }

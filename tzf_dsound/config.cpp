@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"0.5.2";
+std::wstring TZF_VER_STR = L"1.0.0";
 
 static tzf::INI::File*  dll_ini = nullptr;
 

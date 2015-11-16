@@ -22,6 +22,8 @@
 #ifndef __TZF__FRAMERATE_H__
 #define __TZF__FRAMERATE_H__
 
+#include <stdint.h>
+
 namespace tzf
 {
   namespace FrameRateFix
@@ -34,6 +36,9 @@ namespace tzf
 
     // True if the game is being framerate limited by the DRIVER
     extern bool driver_limit_setup;
+
+    // This is actually setup in the BMF DLL that loads this one
+    extern uint32_t target_fps;
   }
 }
 
