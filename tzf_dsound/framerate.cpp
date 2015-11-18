@@ -446,12 +446,12 @@ tzf::FrameRateFix::Allow60FPS (void)
   if (half_speed_installed) {
     DWORD dwOld;
 
-    //VirtualProtect ((LPVOID)0x0217B3D4, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-    //VirtualProtect ((LPVOID)0x0217B3D8, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-                  //*((DWORD *)0x0217B3D4) = 1;
-                  //*((DWORD *)0x0217B3D8) = 1;
-    //VirtualProtect ((LPVOID)0x0217B3D4, 4, dwOld, &dwOld);
-    //VirtualProtect ((LPVOID)0x0217B3D8, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+                  *((DWORD *)0x0217B3D4) = 1;
+                  *((DWORD *)0x0217B3D8) = 1;
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, dwOld, &dwOld);
   }
 
   LeaveCriticalSection (&half_speed_cs);
