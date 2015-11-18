@@ -26,19 +26,18 @@
 #include "hook.h"
 
 #include "render.h"
-
+#include <d3d9.h>
 
 bool stutter_fix_installed = false;
 bool half_speed_installed  = false;
-// TODO get this from BMF
-DWORD target_fps           =    60;
-byte old_speed_reset_code2[7];
+byte old_speed_reset_code2   [7];
+byte old_limiter_instruction [6];
 
+CRITICAL_SECTION half_speed_cs = { 0 };
 
-#include <d3d9.h>
-
-bool tzf::FrameRateFix::fullscreen         = false;
-bool tzf::FrameRateFix::driver_limit_setup = false;
+bool     tzf::FrameRateFix::fullscreen         = false;
+bool     tzf::FrameRateFix::driver_limit_setup = false;
+uint32_t tzf::FrameRateFix::target_fps         = 30;
 
 typedef D3DPRESENT_PARAMETERS* (__stdcall *BMF_SetPresentParamsD3D9_t)
   (IDirect3DDevice9*      device,
@@ -63,17 +62,18 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                     pparams->Windowed ? L"False" :
                                         L"True" );
 
+#if 0
     if (config.framerate.stutter_fix) {
       // On NVIDIA hardware, we can setup a framerate limiter at the driver
       //   level to handle windowed mode or improperly setup VSYNC
-      static HMODULE hD3D9 = LoadLibrary (L"d3d9.dll");
+      static HMODULE hD3D9 = GetModuleHandle (L"d3d9.dll");
 
       typedef BOOL (__stdcall *BMF_NvAPI_IsInit_t)
         (void);
       typedef void (__stdcall *BMF_NvAPI_SetAppFriendlyName_t)
         (const wchar_t* wszFriendlyName);
       typedef BOOL (__stdcall *BMF_NvAPI_SetFramerateLimit_t)
-        (const wchar_t* wszName, uint32_t limit);
+        (uint32_t limit);
 
       static BMF_NvAPI_IsInit_t             BMF_NvAPI_IsInit             =
         (BMF_NvAPI_IsInit_t)GetProcAddress
@@ -88,22 +88,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
       if ((! tzf::FrameRateFix::driver_limit_setup) && BMF_NvAPI_IsInit ()) {
         BMF_NvAPI_SetAppFriendlyName (L"Tales of Zestiria");
 
-        DWORD   dwProcessSize = MAX_PATH;
-        wchar_t wszProcessName [MAX_PATH];
-
-        HANDLE hProc = GetCurrentProcess ();
-
-        QueryFullProcessImageName (hProc, 0, wszProcessName, &dwProcessSize);
-
-        // Shorten the name of the .exe, fully-qualified paths are known to
-        //   create NvAPI errors, but just the .exe by itself works well.
-        wchar_t* pwszShortName = wszProcessName + lstrlenW (wszProcessName);
-
-        while (  pwszShortName      >  wszProcessName &&
-          *(pwszShortName - 1) != L'\\')
-          --pwszShortName;
-
-        if (! BMF_NvAPI_SetFramerateLimit (pwszShortName, 30UL)) {
+        if (! BMF_NvAPI_SetFramerateLimit (0UL)) {
           MessageBox ( NULL,
                          L"Stutter Fix:\t\t"
                          L"Optimal NVIDIA Driver Framerate Limit Setup",
@@ -116,6 +101,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
         tzf::FrameRateFix::driver_limit_setup = true;
       }
     }
+#endif
 
     if (! pparams->Windowed)
       tzf::FrameRateFix::fullscreen = true;
@@ -137,10 +123,6 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
 }
 
 
-static __declspec (thread) int           last_sleep     =   1;
-static __declspec (thread) LARGE_INTEGER last_perfCount = { 0 };
-
-
 typedef MMRESULT (WINAPI *timeBeginPeriod_t)(UINT uPeriod);
 timeBeginPeriod_t timeBeginPeriod_Original = nullptr;
 
@@ -153,21 +135,25 @@ timeBeginPeriod_Detour (UINT uPeriod)
                   uPeriod,
                     GetCurrentThreadId () );
 
-
   return timeBeginPeriod_Original (uPeriod);
 }
 
-// We need to use TLS for this, I would imagine...
-
-
 typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
 Sleep_t Sleep_Original = nullptr;
+
+bool          render_sleep0  = false;
+LARGE_INTEGER last_perfCount = { 0 };
 
 void
 WINAPI
 Sleep_Detour (DWORD dwMilliseconds)
 {
-  last_sleep = dwMilliseconds;
+  if (GetCurrentThreadId () == tzf::RenderFix::dwRenderThreadID) {
+    if (dwMilliseconds == 0)
+      render_sleep0 = true;
+    else
+      render_sleep0 = false;
+  }
 
   if (config.framerate.yield_processor && dwMilliseconds == 0)
     YieldProcessor ();
@@ -186,23 +172,70 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 {
   BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
 
-  if (last_sleep != 0 || (! (tzf::FrameRateFix::fullscreen ||
-                             tzf::FrameRateFix::driver_limit_setup ||
-                             config.framerate.allow_windowed_mode))) {
-    memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
-    return ret;
-  } else {
-    const float fudge_factor = config.framerate.fudge_factor;
+  DWORD dwThreadId = GetCurrentThreadId ();
 
-    last_sleep = -1;
+  //
+  // Handle threads that aren't render-related NORMALLY as well as the render
+  //   thread when it DID NOT just voluntarily relinquish its scheduling
+  //     timeslice
+  //
+  if (dwThreadId != tzf::RenderFix::dwRenderThreadID || (! render_sleep0) ||
+                              (! (tzf::FrameRateFix::fullscreen           ||
+                                  tzf::FrameRateFix::driver_limit_setup   ||
+                                  config.framerate.allow_windowed_mode))) {
 
-    // Mess with the numbers slightly to prevent hiccups
-    lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
-                                     fudge_factor * ((float)target_fps / 30.0)/* * freq.QuadPart*/;
-    memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
+    if (dwThreadId == tzf::RenderFix::dwRenderThreadID)
+      memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
 
     return ret;
   }
+
+  //
+  // At this point, we're fixing up the thread that throttles the swapchain.
+  //
+  const float fudge_factor = config.framerate.fudge_factor;
+
+  render_sleep0 = false;
+
+  LARGE_INTEGER freq;
+  QueryPerformanceFrequency (&freq);
+
+  // Mess with the numbers slightly to prevent scheduling from wreaking havoc
+  lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
+    fudge_factor *
+    ((float)tzf::FrameRateFix::target_fps / 30.0f);
+  memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
+
+  return ret;
+}
+
+typedef void (__stdcall *BinkOpen_t)(DWORD unknown0, DWORD unknown1);
+BinkOpen_t BinkOpen_Original = nullptr;
+
+void
+__stdcall
+BinkOpen_Detour ( DWORD unknown0,
+                  DWORD unknown1 )
+{
+  dll_log.Log (L" * Disabling 60 FPS -- Bink Video Opened");
+
+  tzf::FrameRateFix::Disallow60FPS ();
+
+  return BinkOpen_Original (unknown0, unknown1);
+}
+
+typedef void (__stdcall *BinkClose_t)(DWORD unknown);
+BinkClose_t BinkClose_Original = nullptr;
+
+void
+__stdcall
+BinkClose_Detour (DWORD unknown)
+{
+  dll_log.Log (L" * Restoring 60 FPS -- Bink Video Closed");
+
+  tzf::FrameRateFix::Allow60FPS ();
+
+  return BinkClose_Original (unknown);
 }
 
 
@@ -210,17 +243,48 @@ LPVOID pfnQueryPerformanceCounter  = nullptr;
 LPVOID pfnSleep                    = nullptr;
 LPVOID pfnBMF_SetPresentParamsD3D9 = nullptr;
 
+// Hook these to properly synch audio subtitles during FMVs
+LPVOID pfnBinkOpen                 = nullptr;
+LPVOID pfnBinkClose                = nullptr;
+
 void
 tzf::FrameRateFix::Init (void)
 {
+  // Poke a hole in the BMF design and hackishly query the TargetFPS ...
+  //   this needs to be re-designed pronto.
+  static HMODULE hD3D9 = GetModuleHandle (L"d3d9.dll");
+
+  typedef uint32_t (__stdcall *BMF_Config_GetTargetFPS_t)(void);
+  static BMF_Config_GetTargetFPS_t BMF_Config_GetTargetFPS =
+    (BMF_Config_GetTargetFPS_t)GetProcAddress ( hD3D9,
+                                                  "BMF_Config_GetTargetFPS" );
+
+  target_fps = BMF_Config_GetTargetFPS ();
+
   TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
                       BMF_SetPresentParamsD3D9_Detour, 
            (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
                      &pfnBMF_SetPresentParamsD3D9 );
 
+  TZF_CreateDLLHook ( L"bink2w32.dll", "_BinkOpen@8",
+                      BinkOpen_Detour, 
+           (LPVOID *)&BinkOpen_Original,
+                     &pfnBinkOpen );
+
+  TZF_CreateDLLHook ( L"bink2w32.dll", "_BinkClose@4",
+                      BinkClose_Detour, 
+           (LPVOID *)&BinkClose_Original,
+                     &pfnBinkClose );
+
+  TZF_EnableHook (pfnBMF_SetPresentParamsD3D9);
+
+  TZF_EnableHook (pfnBinkOpen);
+  TZF_EnableHook (pfnBinkClose);
+
+  InitializeCriticalSectionAndSpinCount (&half_speed_cs, 1000UL);
 
   if (target_fps >= 45) {
-    dll_log.Log(L" * Target FPS is %lu, halving simulation speed to compensate...",
+    dll_log.Log (L" * Target FPS is %lu, halving simulation speed to compensate...",
         target_fps);
 
     DWORD dwOld;
@@ -236,8 +300,8 @@ tzf::FrameRateFix::Init (void)
     // we want to skip the first two dwords
     //
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
-    *((DWORD *)(config.framerate.speedresetcode_addr + 2)) += 8;
-    *((DWORD *)(config.framerate.speedresetcode_addr + 8)) += 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr +  2)) += 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr +  8)) += 8;
     *((DWORD *)(config.framerate.speedresetcode_addr + 13)) -= 2;
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
 
@@ -262,21 +326,47 @@ tzf::FrameRateFix::Init (void)
     // nop
     // nop
     //
-    byte new_code[7] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x90 };
-    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
-    memcpy(&old_speed_reset_code2, &new_code, 7);
-    memcpy((LPVOID)config.framerate.speedresetcode2_addr, &new_code, 7);
-    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
+    byte new_code [7] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x90 };
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
+    memcpy (&old_speed_reset_code2, &new_code, 7);
+    memcpy ((LPVOID)config.framerate.speedresetcode2_addr, &new_code, 7);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
 
     // mov eax, 02 to mov eax, 01
-    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
     *((DWORD *)config.framerate.speedresetcode3_addr) = 1;
-    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
 
     half_speed_installed = true;
   }
 
+  if (config.framerate.disable_limiter) {
+    DWORD dwOld;
 
+    // Replace the original jump with an unconditional jump
+    byte new_code [6] = { 0xE9, 0x8B, 0x00, 0x00, 0x00, 0x90 };
+
+    VirtualProtect ((LPVOID)config.framerate.limiter_branch_addr, 6, PAGE_EXECUTE_READWRITE, &dwOld);
+            memcpy ((LPVOID)config.framerate.limiter_branch_addr, &new_code, 6);
+    VirtualProtect ((LPVOID)config.framerate.limiter_branch_addr, 6, dwOld, &dwOld);
+  }
+
+  // No matter which technique we use, these things need to be options
+  command.AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
+  command.AddVariable ("AllowWindowedMode", new eTB_VarStub <bool>  (&config.framerate.allow_windowed_mode));
+
+  // Hook this no matter what, because it lowers the _REPORTED_ CPU usage,
+  //   and some people would object if we suddenly changed this behavior :P
+  TZF_CreateDLLHook ( L"kernel32.dll", "Sleep",
+                      Sleep_Detour, 
+           (LPVOID *)&Sleep_Original,
+           (LPVOID *)&pfnSleep );
+  TZF_EnableHook (pfnSleep);
+
+  command.AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
+  command.AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
+
+  // Stuff below here is ONLY needed for the hacky frame pacing fix
   if (! config.framerate.stutter_fix)
     return;
 
@@ -284,50 +374,85 @@ tzf::FrameRateFix::Init (void)
                       QueryPerformanceCounter_Detour, 
            (LPVOID *)&QueryPerformanceCounter_Original,
            (LPVOID *)&pfnQueryPerformanceCounter );
+  TZF_EnableHook (pfnQueryPerformanceCounter);
 
-  TZF_CreateDLLHook ( L"kernel32.dll", "Sleep",
-                      Sleep_Detour, 
-           (LPVOID *)&Sleep_Original,
-           (LPVOID *)&pfnSleep );
-
+  // Only make these in-game options if the stutter fix code is enabled
   command.AddVariable ("FudgeFactor",       new eTB_VarStub <float> (&config.framerate.fudge_factor));
-  command.AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
-  command.AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
-  command.AddVariable ("AllowWindowedMode", new eTB_VarStub <bool>  (&config.framerate.allow_windowed_mode));
-  command.AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
 
   stutter_fix_installed = true;
 }
 
 void
-tzf::FrameRateFix::Shutdown(void)
+tzf::FrameRateFix::Shutdown (void)
 {
+  TZF_RemoveHook (pfnBMF_SetPresentParamsD3D9);
+
   if (half_speed_installed) {
     DWORD dwOld;
 
-    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
-    *((DWORD *)(config.framerate.speedresetcode_addr + 2)) -= 8;
-    *((DWORD *)(config.framerate.speedresetcode_addr + 8)) -= 8;
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
+    *((DWORD *)(config.framerate.speedresetcode_addr +  2)) -= 8;
+    *((DWORD *)(config.framerate.speedresetcode_addr +  8)) -= 8;
     *((DWORD *)(config.framerate.speedresetcode_addr + 13)) += 2;
-    VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
 
-    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
-    memcpy((LPVOID)config.framerate.speedresetcode2_addr, &old_speed_reset_code2, 7);
-    VirtualProtect((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
+    memcpy ((LPVOID)config.framerate.speedresetcode2_addr, &old_speed_reset_code2, 7);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
 
-    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
     *((DWORD *)config.framerate.speedresetcode3_addr) = 2;
-    VirtualProtect((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
 
     half_speed_installed = false;
   }
+
+  TZF_RemoveHook (pfnSleep);
 
   if (! config.framerate.stutter_fix)
     return;
 
   TZF_RemoveHook (pfnQueryPerformanceCounter);
-  TZF_RemoveHook (pfnSleep);
-  TZF_RemoveHook (pfnBMF_SetPresentParamsD3D9);
 
   stutter_fix_installed = false;
+}
+
+void
+tzf::FrameRateFix::Disallow60FPS (void)
+{
+  // This entire thing should be atomic and it's probably completely unnecessary
+  //   to do this, but ... this gives me peace of mind.
+  EnterCriticalSection (&half_speed_cs);
+
+  if (half_speed_installed) {
+    DWORD dwOld;
+
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+                 *((DWORD *)0x0217B3D4) = 2;
+                 *((DWORD *)0x0217B3D8) = 2;
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, dwOld, &dwOld);
+  }
+
+  LeaveCriticalSection (&half_speed_cs);
+}
+
+void
+tzf::FrameRateFix::Allow60FPS (void)
+{
+  EnterCriticalSection (&half_speed_cs);
+
+  if (half_speed_installed) {
+    DWORD dwOld;
+
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+                  *((DWORD *)0x0217B3D4) = 1;
+                  *((DWORD *)0x0217B3D8) = 1;
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, dwOld, &dwOld);
+  }
+
+  LeaveCriticalSection (&half_speed_cs);
 }

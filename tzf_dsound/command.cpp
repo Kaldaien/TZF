@@ -1,11 +1,5 @@
 #include "command.h"
 
-//#include "states.h"
-//#include "cli_parse/module.h"
-//#include "cli_parse/states.h"
-
-#include "console.h"
-
 template <>
 str_hash_compare <std::string, std::less <std::string> >::size_type
 str_hash_compare <std::string, std::less <std::string> >::hash_string (const std::string& _Keyval) const

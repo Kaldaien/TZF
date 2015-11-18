@@ -692,23 +692,6 @@ IMMDevice_Activate_Detour (IMMDevice    *This,
       // Stop listening to device enumeration and so forth after the first
       //   audio session is created... this is behavior specific to this game.
       if (new_session) {
-#if 0
-        TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf", 
-                        sprintf_Detour,
-             (LPVOID *)&sprintf_Original );
-
-       TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf_s", 
-                        sprintf_s_Detour,
-             (LPVOID *)&sprintf_s_Original );
-
-       TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf", 
-                        _snprintf_Detour,
-             (LPVOID *)&_snprintf_Original );
-
-       TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf_s", 
-                        _snprintf_s_Detour,
-             (LPVOID *)&_snprintf_s_Original );
-#endif
         tzf::SoundFix::wasapi_init = true;
       }
     }
@@ -740,12 +723,12 @@ CoCreateInstance_Detour (_In_     REFCLSID    rclsid,
     // ------------
     // 3 Activate
 
-    if (SUCCEEDED (hr2)) {
+    if (SUCCEEDED (hr2) && pDev != nullptr) {
       DSOUND_VIRTUAL_OVERRIDE ( (void **)&pDev, 3, "IMMDevice::Activate",
                                 IMMDevice_Activate_Detour,
                                 IMMDevice_Activate_Original,
                                 IMMDevice_Activate_t );
-      //pDev->Release ();
+      pDev->Release ();
     }
 
     // vtbl (ppEnum)
@@ -770,6 +753,24 @@ tzf::SoundFix::Init (void)
 {
   CommandProcessor* pCmdProc = CommandProcessor::getInstance ();
 
+#if 0
+  TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf", 
+    sprintf_Detour,
+    (LPVOID *)&sprintf_Original );
+
+  TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf_s", 
+    sprintf_s_Detour,
+    (LPVOID *)&sprintf_s_Original );
+
+  TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf", 
+    _snprintf_Detour,
+    (LPVOID *)&_snprintf_Original );
+
+  TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf_s", 
+    _snprintf_s_Detour,
+    (LPVOID *)&_snprintf_s_Original );
+#endif
+
   if (! config.audio.enable_fix)
     return;
 
@@ -780,6 +781,8 @@ tzf::SoundFix::Init (void)
                       DirectSoundCreate_Detour,
            (LPVOID *)&DirectSoundCreate_Original,
            (LPVOID *)&pfnDirectSoundCreate );
+
+  TZF_EnableHook (pfnDirectSoundCreate);
 
   // We need DSSCL_EXCLUSIVE for Bink to work, or at least we did
   //   when the code was originally written -- test this in the future.
@@ -792,6 +795,8 @@ tzf::SoundFix::Init (void)
                       CoCreateInstance_Detour,
            (LPVOID *)&CoCreateInstance_Original,
            (LPVOID *)&pfnCoCreateInstance );
+
+  TZF_EnableHook (pfnCoCreateInstance);
 }
 
 void

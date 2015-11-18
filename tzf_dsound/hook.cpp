@@ -25,6 +25,7 @@
 #include "log.h"
 #include "command.h"
 #include "sound.h"
+#include "steam.h"
 
 #include "framerate.h"
 #include "render.h"
@@ -156,10 +157,8 @@ public:
     DWORD dwTime = timeGetTime ();
 
     while (true) {
-      // Spin until either the soundfix is initialized or 15 seconds elapse;
-      //   this delays initialization of the hook and improves compatibility.
-      if ((! tzf::SoundFix::wasapi_init) ||
-          ((timeGetTime () - dwTime) < 15000)) {
+      // Spin until the game has a render window setup
+      if (! tzf::RenderFix::pDevice) {
         Sleep (83);
         continue;
       }
@@ -184,7 +183,7 @@ public:
     typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
 
     static HMODULE               hMod =
-      LoadLibrary (L"d3d9.dll");
+      GetModuleHandle (L"d3d9.dll");
     static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
       =
       (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
@@ -331,21 +330,21 @@ public:
     typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
 
     static HMODULE               hMod =
-      LoadLibrary (L"d3d9.dll");
+      GetModuleHandle (L"d3d9.dll");
     static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
                                       =
       (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
 
     if (nCode >= 0) {
       if (true) {
-        DWORD   vkCode   = LOWORD (wParam);
-        DWORD   scanCode = HIWORD (lParam) & 0x7F;
+        BYTE    vkCode   = LOWORD (wParam) & 0xFF;
+        BYTE    scanCode = HIWORD (lParam) & 0x7F;
         bool    repeated = LOWORD (lParam);
         bool    keyDown  = ! (lParam & 0x80000000);
 
         if (visible && vkCode == VK_BACK) {
           if (keyDown) {
-            int len = strlen (text);
+            size_t len = strlen (text);
             len--;
             if (len < 1)
               len = 1;
@@ -384,13 +383,15 @@ public:
             else if (commands.idx >= commands.history.size ())
               commands.idx = commands.history.size () - 1;
 
-            strcpy (&text [1], commands.history [commands.idx].c_str ());
-            command_issued = false;
+            if (commands.history.size ()) {
+              strcpy (&text [1], commands.history [commands.idx].c_str ());
+              command_issued = false;
+            }
           }
         }
         else if (visible && vkCode == VK_RETURN) {
           if (keyDown && LOWORD (lParam) < 2) {
-            int len = strlen (text+1);
+            size_t len = strlen (text+1);
             // Don't process empty or pure whitespace command lines
             if (len > 0 && strspn (text+1, " ") != len) {
               eTB_CommandResult result = command.ProcessCommandLine (text+1);
@@ -412,9 +413,9 @@ public:
                 command_issued = false;
               }
 
-              result_str     = result.getWord () + std::string (" ")   +
-                               result.getArgs () + std::string (":  ") +
-                               result.getResult ();
+              result_str = result.getWord   () + std::string (" ")   +
+                           result.getArgs   () + std::string (":  ") +
+                           result.getResult ();
             }
           }
         }
@@ -425,6 +426,8 @@ public:
 
           if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
             visible = ! visible;
+
+          tzf::SteamFix::SetOverlayState (visible);
 
           if (visible) {
             char key_str [2];
@@ -561,9 +564,13 @@ TZF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
                       pwszModule,
                         MH_StatusToString (status) );
   }
-
-  if (ppFuncAddr != nullptr)
+  else if (ppFuncAddr != nullptr)
     *ppFuncAddr = pFuncAddr;
+  else {
+    // I will probably come to regret this later, but what about automagically
+    //   enabling any hook where the funcaddr parameter is nullptr?
+    TZF_EnableHook (pFuncAddr);
+  }
 
   return status;
 }

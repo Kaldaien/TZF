@@ -31,6 +31,8 @@ namespace tzf
     void Init     (void);
     void Shutdown (void);
 
+    void SetOverlayState (bool active);
+
     class CommandProcessor : public eTB_iVariableListener {
     public:
       CommandProcessor (void);

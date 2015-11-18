@@ -39,13 +39,15 @@ struct tzf_config_t
   struct {
     bool  yield_processor      = true;
     bool  allow_fake_sleep     = false;
-    bool  stutter_fix          = true;
+    bool  stutter_fix          = false;
     float fudge_factor         = 1.666f;
     bool  allow_windowed_mode  = false;
     bool  minimize_latency     = false;
     DWORD speedresetcode_addr  = 0x0046C529;
     DWORD speedresetcode2_addr = 0x0056E441;
     DWORD speedresetcode3_addr = 0x0056D93F;
+    DWORD limiter_branch_addr  = 0x00990873;
+    bool  disable_limiter      = true;
   } framerate;
 
   struct {
