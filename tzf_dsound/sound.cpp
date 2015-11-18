@@ -782,6 +782,8 @@ tzf::SoundFix::Init (void)
            (LPVOID *)&DirectSoundCreate_Original,
            (LPVOID *)&pfnDirectSoundCreate );
 
+  TZF_EnableHook (pfnDirectSoundCreate);
+
   // We need DSSCL_EXCLUSIVE for Bink to work, or at least we did
   //   when the code was originally written -- test this in the future.
   DirectSoundCreate_Detour   (NULL, &g_pDS, NULL);
@@ -793,6 +795,8 @@ tzf::SoundFix::Init (void)
                       CoCreateInstance_Detour,
            (LPVOID *)&CoCreateInstance_Original,
            (LPVOID *)&pfnCoCreateInstance );
+
+  TZF_EnableHook (pfnCoCreateInstance);
 }
 
 void

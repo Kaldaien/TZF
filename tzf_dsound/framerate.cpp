@@ -427,9 +427,12 @@ tzf::FrameRateFix::Disallow60FPS (void)
   if (half_speed_installed) {
     DWORD dwOld;
 
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-                 *((DWORD *)config.framerate.speedresetcode3_addr) = 1;
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+                 *((DWORD *)0x0217B3D4) = 2;
+                 *((DWORD *)0x0217B3D8) = 2;
+    VirtualProtect ((LPVOID)0x0217B3D4, 4, dwOld, &dwOld);
+    VirtualProtect ((LPVOID)0x0217B3D8, 4, dwOld, &dwOld);
   }
 
   LeaveCriticalSection (&half_speed_cs);
@@ -443,9 +446,12 @@ tzf::FrameRateFix::Allow60FPS (void)
   if (half_speed_installed) {
     DWORD dwOld;
 
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-                 *((DWORD *)config.framerate.speedresetcode3_addr) = 2;
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+    //VirtualProtect ((LPVOID)0x0217B3D4, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    //VirtualProtect ((LPVOID)0x0217B3D8, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+                  //*((DWORD *)0x0217B3D4) = 1;
+                  //*((DWORD *)0x0217B3D8) = 1;
+    //VirtualProtect ((LPVOID)0x0217B3D4, 4, dwOld, &dwOld);
+    //VirtualProtect ((LPVOID)0x0217B3D8, 4, dwOld, &dwOld);
   }
 
   LeaveCriticalSection (&half_speed_cs);

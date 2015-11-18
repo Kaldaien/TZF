@@ -231,6 +231,16 @@ TZF_LoadConfig (std::wstring name) {
       L"TZFIX.FrameRate",
         L"LimiterBranch_Address" );
 
+   framerate.disable_limiter =
+     static_cast <tzf::ParameterBool *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Disable Namco's Limiter")
+       );
+   framerate.disable_limiter->register_to_ini (
+     dll_ini,
+       L"TZFIX.FrameRate",
+         L"DisableNamcoLimiter" );
+
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>
       (g_ParameterFactory.create_parameter <float> (
@@ -396,14 +406,20 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.minimize_latency->load ())
     config.framerate.minimize_latency = framerate.minimize_latency->get_value ();
 
-  if (framerate.speedresetcode_addr->load())
-      config.framerate.speedresetcode_addr = framerate.speedresetcode_addr->get_value();
+  if (framerate.speedresetcode_addr->load ())
+    config.framerate.speedresetcode_addr = framerate.speedresetcode_addr->get_value ();
 
-  if (framerate.speedresetcode2_addr->load())
-      config.framerate.speedresetcode2_addr = framerate.speedresetcode2_addr->get_value();
+  if (framerate.speedresetcode2_addr->load ())
+    config.framerate.speedresetcode2_addr = framerate.speedresetcode2_addr->get_value ();
 
-  if (framerate.speedresetcode3_addr->load())
-      config.framerate.speedresetcode3_addr = framerate.speedresetcode3_addr->get_value();
+  if (framerate.speedresetcode3_addr->load ())
+    config.framerate.speedresetcode3_addr = framerate.speedresetcode3_addr->get_value ();
+
+  if (framerate.limiter_branch_addr->load ())
+    config.framerate.limiter_branch_addr = framerate.limiter_branch_addr->get_value ();
+
+  if (framerate.disable_limiter->load ())
+    config.framerate.disable_limiter = framerate.disable_limiter->get_value ();
 
 
 
@@ -486,16 +502,20 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   framerate.minimize_latency->set_value (config.framerate.minimize_latency);
   framerate.minimize_latency->store     ();
 
-  framerate.speedresetcode_addr->set_value(config.framerate.speedresetcode_addr);
-  framerate.speedresetcode_addr->store();
+  framerate.speedresetcode_addr->set_value (config.framerate.speedresetcode_addr);
+  framerate.speedresetcode_addr->store     ();
 
-  framerate.speedresetcode2_addr->set_value(config.framerate.speedresetcode2_addr);
-  framerate.speedresetcode2_addr->store();
+  framerate.speedresetcode2_addr->set_value (config.framerate.speedresetcode2_addr);
+  framerate.speedresetcode2_addr->store     ();
 
-  framerate.speedresetcode3_addr->set_value(config.framerate.speedresetcode3_addr);
-  framerate.speedresetcode3_addr->store();
+  framerate.speedresetcode3_addr->set_value (config.framerate.speedresetcode3_addr);
+  framerate.speedresetcode3_addr->store     ();
 
+  framerate.limiter_branch_addr->set_value (config.framerate.limiter_branch_addr);
+  framerate.limiter_branch_addr->store     ();
 
+  framerate.disable_limiter->set_value (config.framerate.disable_limiter);
+  framerate.disable_limiter->store     ();
 
 
   render.aspect_addr->set_value (config.render.aspect_addr);

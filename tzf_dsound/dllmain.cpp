@@ -35,21 +35,12 @@
 
 #include "hook.h"
 
-CRITICAL_SECTION init_cs = { 0 };
-volatile bool init = false;
-
 #pragma comment (lib, "kernel32.lib")
 
 DWORD
 WINAPI
 DllThread (LPVOID user)
 {
-  EnterCriticalSection (&init_cs);
-
-  // WTF? Why did we load the DLL twice?!
-  if (init)
-    return 1;
-
   if (TZF_Init_MinHook () == MH_OK) {
     tzf::SoundFix::Init     ();
     tzf::FileIO::Init       ();
@@ -57,10 +48,6 @@ DllThread (LPVOID user)
     tzf::RenderFix::Init    ();
     tzf::FrameRateFix::Init ();
   }
-
-  init = true;
-
-  LeaveCriticalSection (&init_cs);
 
   return 0;
 }
@@ -119,11 +106,10 @@ DllMain (HMODULE hModule,
       TZF_SaveConfig ();
     }
 
-    InitializeCriticalSectionAndSpinCount (&init_cs, 100UL);
-
     CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
 
-    Sleep (500UL);
+    // Initialization delay
+    Sleep (250UL);
   } break;
 
   case DLL_THREAD_ATTACH:
