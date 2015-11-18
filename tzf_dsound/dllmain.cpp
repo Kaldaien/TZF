@@ -35,24 +35,35 @@
 
 #include "hook.h"
 
+CRITICAL_SECTION init_cs = { 0 };
+volatile bool init = false;
+
 #pragma comment (lib, "kernel32.lib")
 
 DWORD
-WINAPI DllThread (LPVOID user)
+WINAPI
+DllThread (LPVOID user)
 {
-  if (TZF_Init_MinHook() == MH_OK) {
+  EnterCriticalSection (&init_cs);
+
+  // WTF? Why did we load the DLL twice?!
+  if (init)
+    return 1;
+
+  if (TZF_Init_MinHook () == MH_OK) {
     tzf::SoundFix::Init     ();
     tzf::FileIO::Init       ();
     tzf::SteamFix::Init     ();
     tzf::RenderFix::Init    ();
     tzf::FrameRateFix::Init ();
-
-    TZF_EnableHook (MH_ALL_HOOKS);
   }
+
+  init = true;
+
+  LeaveCriticalSection (&init_cs);
 
   return 0;
 }
-
 
 HMODULE hDLLMod = { 0 };
 
@@ -77,7 +88,7 @@ DllMain (HMODULE hModule,
       config.audio.compatibility            = false;
       config.audio.enable_fix               = true;
 
-      config.framerate.stutter_fix          = true;
+      config.framerate.stutter_fix          = false; // OBSOLETE
       config.framerate.fudge_factor         = 1.666f;
       config.framerate.allow_fake_sleep     = false;
       config.framerate.yield_processor      = true;
@@ -85,6 +96,8 @@ DllMain (HMODULE hModule,
       config.framerate.speedresetcode_addr  = 0x0046C529;
       config.framerate.speedresetcode2_addr = 0x0056E441;
       config.framerate.speedresetcode3_addr = 0x0056D93F;
+      config.framerate.limiter_branch_addr  = 0x00990873;
+      config.framerate.disable_limiter      = true;
 
       config.file_io.capture                = false;
 
@@ -106,7 +119,11 @@ DllMain (HMODULE hModule,
       TZF_SaveConfig ();
     }
 
+    InitializeCriticalSectionAndSpinCount (&init_cs, 100UL);
+
     CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
+
+    Sleep (500UL);
   } break;
 
   case DLL_THREAD_ATTACH:

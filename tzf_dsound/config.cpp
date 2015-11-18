@@ -1,4 +1,4 @@
-/**
+/*
  * This file is part of Tales of Zestiria "Fix".
  *
  * Tales of Zestiria "Fix" is free software : you can redistribute it
@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.0.0";
+std::wstring TZF_VER_STR = L"1.0.2";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -50,6 +50,8 @@ struct {
   tzf::ParameterInt*     speedresetcode_addr;
   tzf::ParameterInt*     speedresetcode2_addr;
   tzf::ParameterInt*     speedresetcode3_addr;
+  tzf::ParameterInt*     limiter_branch_addr;
+  tzf::ParameterBool*    disable_limiter;
 } framerate;
 
 struct {
@@ -218,6 +220,16 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.FrameRate",
         L"SpeedResetCode3_Address" );
+
+  framerate.limiter_branch_addr =
+    static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Framerate Limiter Branch Instruction")
+      );
+  framerate.limiter_branch_addr->register_to_ini (
+    dll_ini,
+      L"TZFIX.FrameRate",
+        L"LimiterBranch_Address" );
 
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>

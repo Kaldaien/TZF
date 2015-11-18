@@ -64,6 +64,16 @@ namespace tzf
     extern IDirect3DDevice9*  pDevice;
 
     extern uint32_t           dwRenderThreadID;
+
+    // We will enable/disable framerate fudging code when
+    //   1/3 of the frames in a second (8) are Bink.
+    //
+    //   In the very unlikely event that some other system
+    //     shares the same vertex shader as Bink, this shoud
+    //       keep us from repeatedly turning the limiter on/off.
+    extern uint32_t           bink_frames;
+    extern bool               bink_state;
+    const  uint32_t           bink_threshold = 8UL;
   }
 }
 

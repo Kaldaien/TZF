@@ -39,6 +39,15 @@ namespace tzf
 
     // This is actually setup in the BMF DLL that loads this one
     extern uint32_t target_fps;
+
+
+    //
+    // At key points during the game, we need to disable the code that
+    //  cuts timing in half. These places will be wrapped by calls to
+    //    these.
+    //
+    void Disallow60FPS (void);
+    void Allow60FPS    (void);
   }
 }
 

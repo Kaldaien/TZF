@@ -21,6 +21,7 @@
 **/
 
 #include "render.h"
+#include "framerate.h"
 #include "config.h"
 #include "log.h"
 
@@ -62,63 +63,6 @@ D3DXMatrixMultiply_Detour (_Inout_       D3DMATRIX *pOut,
                            _In_          D3DMATRIX *pM1,
                            _In_          D3DMATRIX *pM2)
 {
-  if (pM1->_11 == 2.0f/1920.0f &&
-      pM1->_22 == 2.0f/1080.0f &&
-      pM1->_44 == 1.0f)
-    dll_log.Log (L"Ortho Matrix (1)");
-
-  if (pM2->_11 == 2.0f/1920.0f &&
-      pM2->_22 == 2.0f/1080.0f &&
-      pM2->_44 == 1.0f)
-    dll_log.Log (L"Ortho Matrix (2)");
-
-#if 0
-//  if (pM2->_44 == 0.0f ||
-      //pM1->_44 == 0.0f) {
-//    dll_log.Log (L" [!] D3DMatrixMultiply (...) ");
-
-    if (pM2->_44 == 0.0f &&
-        pM2->_34 == -1.0f) {
-      dll_log.Log (L"Right-Handed Perspective Projection Matrix(R) Detected: FOVY=%f\n",
-                   tan (pM2->_22 * 2.0f));
-    }
-
-    if (pM2->_44 == 0.0f &&
-        pM2->_34 == 1.0f) {
-      dll_log.Log (L"Left-Handed Perspective Projection Matrix(R) Detected: FOVY=%f\n",
-                   tan (pM2->_22 * 2.0f));
-    }
-
-    if (pM1->_44 == 0.0f &&
-        pM1->_34 == -1.0f) {
-      dll_log.Log (L"Right-Handed Perspective Projection Matrix(L) Detected: FOVY=%f\n",
-                   tan (pM1->_22 * 2.0f));
-    }
-
-    if (pM1->_44 == 0.0f &&
-        pM1->_34 == 1.0f) {
-      dll_log.Log (L"Left-Handed Perspective Projection Matrix(L) Detected: FOVY=%f\n",
-                   tan (pM1->_22 * 2.0f));
-    }
-
-
-    //if (tan (pM1->_22 * 2.0f) > 52.5f &&
-        //tan (pM1->_22 * 2.0f) < 53.0f) {
-    float fovy = tan ((pM1->_22 * 2.0f))  * (3.14159265f / 2.0f);
-    if (fovy > 104 && fovy < 107)
-      fovy = 70;
-
-    pM1->_22 = atan (fovy / 2.0f * 2.0f * 3.14159265f);
-    //dll_log.Log (L"FOVY1=%f\n",
-                 //);
-#endif
-
-    //::tanpM1->_22 * 2.0f
-  //}
-//    dll_log.Log (L"FOVY2=%f\n",
-//                 tan ((pM2->_22 * 2.0f)) * (3.14159265f / 2.0f));
-  //}
-
   return D3DXMatrixMultiply_Original (pOut, pM1, pM2);
 }
 
@@ -142,6 +86,8 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
   D3DSAMPLERSTATETYPE Type,
   DWORD               Value)
 {
+// Pending removal - these are not configurable tweaks and not particularly useful
+#if 0
   if (Type == D3DSAMP_MIPFILTER ||
       Type == D3DSAMP_MINFILTER ||
       Type == D3DSAMP_MAGFILTER ||
@@ -176,6 +122,8 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
     Value = 16;
   if (Type == D3DSAMP_MAXMIPLEVEL)
     Value = 0;
+#endif
+
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 }
 
@@ -342,11 +290,25 @@ CalcCursorPos (LPPOINT pPoint)
   return *pPoint;
 }
 
+COM_DECLSPEC_NOTHROW
 void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
   tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
+
+  if (tzf::RenderFix::bink_state && tzf::RenderFix::bink_frames < 24)
+    ++tzf::RenderFix::bink_frames;
+  else if (tzf::RenderFix::bink_frames > 0)
+    --tzf::RenderFix::bink_frames;
+
+  if (tzf::RenderFix::bink_frames > tzf::RenderFix::bink_threshold) {
+    tzf::FrameRateFix::Disallow60FPS ();
+  } else if (tzf::RenderFix::bink_frames < 24 - tzf::RenderFix::bink_threshold) {
+    tzf::FrameRateFix::Allow60FPS ();
+  }
+
+  tzf::RenderFix::bink_state = false;
 
   return BMF_BeginBufferSwap ();
 }
@@ -410,7 +372,7 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 }
 
 typedef HRESULT (STDMETHODCALLTYPE *UpdateTexture_t)
-  (IDirect3DDevice9  *This,
+  (IDirect3DDevice9      *This,
    IDirect3DBaseTexture9 *pSourceTexture,
    IDirect3DBaseTexture9 *pDestinationTexture);
 
@@ -1076,37 +1038,6 @@ tzf::RenderFix::Init (void)
 #endif
 
 #if 0
-    float* fTest = ((float *)addr);
-    while (true) {
-      if (*fTest == 960.0f)
-        dll_log.Log (L"%p, 960", fTest);
-
-      if (*fTest == 540.0f)
-        dll_log.Log (L"%p, 540", fTest);
-
-      fTest++;
-    }
-#endif
-
-#if 0
-    while (true) {
-      if (*(float *)addr == 1920.0f) {
-        dll_log.Log (L"1920f: %08Xh", addr);
-      }
-      if (*(int *)addr == 1920) {
-        dll_log.Log (L"1920lu: %08Xh", addr);
-      }
-      if (*(float *)addr == 1080.0f) {
-        dll_log.Log (L"1080f: %08Xh", addr);
-      }
-      if (*(int *)addr == 1080) {
-        dll_log.Log (L"1080lu: %08Xh", addr);
-      }
-      addr++;
-    }
-#endif
-
-#if 0
     float* fTest = (float *)0x00D93690;
 
     for (int i = 0; i < 1000; fTest++) {
@@ -1221,3 +1152,6 @@ uint32_t tzf::RenderFix::height;
 uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
 
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
+
+uint32_t tzf::RenderFix::bink_frames = 0;
+bool     tzf::RenderFix::bink_state  = false;

@@ -566,6 +566,11 @@ TZF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
   }
   else if (ppFuncAddr != nullptr)
     *ppFuncAddr = pFuncAddr;
+  else {
+    // I will probably come to regret this later, but what about automagically
+    //   enabling any hook where the funcaddr parameter is nullptr?
+    TZF_EnableHook (pFuncAddr);
+  }
 
   return status;
 }
