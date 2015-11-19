@@ -62,7 +62,6 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                     pparams->Windowed ? L"False" :
                                         L"True" );
 
-#if 0
     if (config.framerate.stutter_fix) {
       // On NVIDIA hardware, we can setup a framerate limiter at the driver
       //   level to handle windowed mode or improperly setup VSYNC
@@ -101,7 +100,6 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
         tzf::FrameRateFix::driver_limit_setup = true;
       }
     }
-#endif
 
     if (! pparams->Windowed)
       tzf::FrameRateFix::fullscreen = true;
@@ -231,11 +229,11 @@ void
 __stdcall
 BinkClose_Detour (DWORD unknown)
 {
+  BinkClose_Original (unknown);
+
   dll_log.Log (L" * Restoring 60 FPS -- Bink Video Closed");
 
   tzf::FrameRateFix::Allow60FPS ();
-
-  return BinkClose_Original (unknown);
 }
 
 

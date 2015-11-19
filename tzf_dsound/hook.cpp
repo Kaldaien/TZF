@@ -336,120 +336,119 @@ public:
       (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
 
     if (nCode >= 0) {
-      if (true) {
-        BYTE    vkCode   = LOWORD (wParam) & 0xFF;
-        BYTE    scanCode = HIWORD (lParam) & 0x7F;
-        bool    repeated = LOWORD (lParam);
-        bool    keyDown  = ! (lParam & 0x80000000);
+      BYTE    vkCode   = LOWORD (wParam) & 0xFF;
+      BYTE    scanCode = HIWORD (lParam) & 0x7F;
+      bool    repeated = LOWORD (lParam);
+      bool    keyDown  = ! (lParam & 0x80000000);
 
-        if (visible && vkCode == VK_BACK) {
-          if (keyDown) {
-            size_t len = strlen (text);
-            len--;
-            if (len < 1)
-              len = 1;
-            text [len] = '\0';
-          }
-        } else if ((vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT)) {
-          if (keyDown)
-            keys_ [VK_SHIFT] = 0x81;
-          else
-            keys_ [VK_SHIFT] = 0x00;
+      if (visible && vkCode == VK_BACK) {
+        if (keyDown) {
+          size_t len = strlen (text);
+          len--;
+          if (len < 1)
+            len = 1;
+          text [len] = '\0';
         }
-        else if ((!repeated) && vkCode == VK_CAPITAL) {
-          if (keyDown) {
-            if (keys_ [VK_CAPITAL] == 0x00)
-              keys_ [VK_CAPITAL] = 0x81;
-            else
-              keys_ [VK_CAPITAL] = 0x00;
-          }
-        }
-        else if ((vkCode == VK_CONTROL || vkCode == VK_LCONTROL || vkCode == VK_RCONTROL)) {
-          if (keyDown)
-            keys_ [VK_CONTROL] = 0x81;
-          else
-            keys_ [VK_CONTROL] = 0x00;
-        }
-        else if ((vkCode == VK_UP) || (vkCode == VK_DOWN)) {
-          if (keyDown && visible) {
-            if (vkCode == VK_UP)
-              commands.idx--;
-            else
-              commands.idx++;
-
-            // Clamp the index
-            if (commands.idx < 0)
-              commands.idx = 0;
-            else if (commands.idx >= commands.history.size ())
-              commands.idx = commands.history.size () - 1;
-
-            if (commands.history.size ()) {
-              strcpy (&text [1], commands.history [commands.idx].c_str ());
-              command_issued = false;
-            }
-          }
-        }
-        else if (visible && vkCode == VK_RETURN) {
-          if (keyDown && LOWORD (lParam) < 2) {
-            size_t len = strlen (text+1);
-            // Don't process empty or pure whitespace command lines
-            if (len > 0 && strspn (text+1, " ") != len) {
-              eTB_CommandResult result = command.ProcessCommandLine (text+1);
-
-              if (result.getStatus ()) {
-                // Don't repeat the same command over and over
-                if (commands.history.size () == 0 ||
-                    commands.history.back () != &text [1]) {
-                  commands.history.push_back (&text [1]);
-                }
-
-                commands.idx = commands.history.size ();
-
-                text [1] = '\0';
-
-                command_issued = true;
-              }
-              else {
-                command_issued = false;
-              }
-
-              result_str = result.getWord   () + std::string (" ")   +
-                           result.getArgs   () + std::string (":  ") +
-                           result.getResult ();
-            }
-          }
-        }
-        else if (keyDown) {
-          bool new_press = keys_ [vkCode] != 0x81;
-
-          keys_ [vkCode] = 0x81;
-
-          if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
-            visible = ! visible;
-
-          tzf::SteamFix::SetOverlayState (visible);
-
-          if (visible) {
-            char key_str [2];
-            key_str [1] = '\0';
-
-            if (1 == ToAsciiEx ( vkCode,
-                                 scanCode,
-                                 keys_,
-                                (LPWORD)key_str,
-                                 0,
-                                 GetKeyboardLayout (0) )) {
-              strncat (text, key_str, 1);
-              command_issued = false;
-            }
-          }
-        } else if ((! keyDown)) {
-          keys_ [vkCode] = 0x00;
-        }
-
-        if (visible)
-          return 1;
+      } else if ((vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT)) {
+        if (keyDown)
+          keys_ [VK_SHIFT] = 0x81;
+        else
+          keys_ [VK_SHIFT] = 0x00;
       }
+      else if ((!repeated) && vkCode == VK_CAPITAL) {
+        if (keyDown) {
+          if (keys_ [VK_CAPITAL] == 0x00)
+            keys_ [VK_CAPITAL] = 0x81;
+          else
+            keys_ [VK_CAPITAL] = 0x00;
+        }
+      }
+      else if ((vkCode == VK_CONTROL || vkCode == VK_LCONTROL || vkCode == VK_RCONTROL)) {
+        if (keyDown)
+          keys_ [VK_CONTROL] = 0x81;
+        else
+          keys_ [VK_CONTROL] = 0x00;
+      }
+      else if ((vkCode == VK_UP) || (vkCode == VK_DOWN)) {
+        if (keyDown && visible) {
+          if (vkCode == VK_UP)
+            commands.idx--;
+          else
+            commands.idx++;
+
+          // Clamp the index
+          if (commands.idx < 0)
+            commands.idx = 0;
+          else if (commands.idx >= commands.history.size ())
+            commands.idx = commands.history.size () - 1;
+
+          if (commands.history.size ()) {
+            strcpy (&text [1], commands.history [commands.idx].c_str ());
+            command_issued = false;
+          }
+        }
+      }
+      else if (visible && vkCode == VK_RETURN) {
+        if (keyDown && LOWORD (lParam) < 2) {
+          size_t len = strlen (text+1);
+          // Don't process empty or pure whitespace command lines
+          if (len > 0 && strspn (text+1, " ") != len) {
+            eTB_CommandResult result = command.ProcessCommandLine (text+1);
+
+            if (result.getStatus ()) {
+              // Don't repeat the same command over and over
+              if (commands.history.size () == 0 ||
+                  commands.history.back () != &text [1]) {
+                commands.history.push_back (&text [1]);
+              }
+
+              commands.idx = commands.history.size ();
+
+              text [1] = '\0';
+
+              command_issued = true;
+            }
+            else {
+              command_issued = false;
+            }
+
+            result_str = result.getWord   () + std::string (" ")   +
+                          result.getArgs   () + std::string (":  ") +
+                          result.getResult ();
+          }
+        }
+      }
+
+      else if (keyDown) {
+        bool new_press = keys_ [vkCode] != 0x81;
+
+        keys_ [vkCode] = 0x81;
+
+        if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
+          visible = ! visible;
+
+        tzf::SteamFix::SetOverlayState (visible);
+
+        if (visible) {
+          char key_str [2];
+          key_str [1] = '\0';
+
+          if (1 == ToAsciiEx ( vkCode,
+                                scanCode,
+                                keys_,
+                              (LPWORD)key_str,
+                                0,
+                                GetKeyboardLayout (0) )) {
+            strncat (text, key_str, 1);
+            command_issued = false;
+          }
+        }
+      } else if ((! keyDown)) {
+        keys_ [vkCode] = 0x00;
+      }
+
+      if (visible)
+        return 1;
     }
 
     return CallNextHookEx (TZF_InputHooker::getInstance ()->hooks.keyboard, nCode, wParam, lParam);

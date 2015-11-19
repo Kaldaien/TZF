@@ -297,19 +297,6 @@ D3D9EndFrame_Pre (void)
 {
   tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
 
-  if (tzf::RenderFix::bink_state && tzf::RenderFix::bink_frames < 24)
-    ++tzf::RenderFix::bink_frames;
-  else if (tzf::RenderFix::bink_frames > 0)
-    --tzf::RenderFix::bink_frames;
-
-  if (tzf::RenderFix::bink_frames > tzf::RenderFix::bink_threshold) {
-    tzf::FrameRateFix::Disallow60FPS ();
-  } else if (tzf::RenderFix::bink_frames < 24 - tzf::RenderFix::bink_threshold) {
-    tzf::FrameRateFix::Allow60FPS ();
-  }
-
-  tzf::RenderFix::bink_state = false;
-
   return BMF_BeginBufferSwap ();
 }
 
@@ -1152,6 +1139,3 @@ uint32_t tzf::RenderFix::height;
 uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
 
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
-
-uint32_t tzf::RenderFix::bink_frames = 0;
-bool     tzf::RenderFix::bink_state  = false;
