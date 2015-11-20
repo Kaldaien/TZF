@@ -23,6 +23,9 @@
 #define __TZF__FRAMERATE_H__
 
 #include <stdint.h>
+#include <Windows.h>
+
+#include "command.h"
 
 namespace tzf
 {
@@ -31,14 +34,9 @@ namespace tzf
     void Init     (void);
     void Shutdown (void);
 
-    // True if the game is running in fullscreen
-    extern bool fullscreen;
 
-    // True if the game is being framerate limited by the DRIVER
-    extern bool driver_limit_setup;
-
-    // This is actually setup in the BMF DLL that loads this one
-    extern uint32_t target_fps;
+    // Called whenever the engine finishes a frame
+    void RenderTick (void);
 
 
     //
@@ -48,6 +46,55 @@ namespace tzf
     //
     void Disallow60FPS (void);
     void Allow60FPS    (void);
+
+
+    class CommandProcessor : public eTB_iVariableListener {
+    public:
+      CommandProcessor (void);
+
+      virtual bool OnVarChange (eTB_Variable* var, void* val = NULL);
+
+      static CommandProcessor* getInstance (void)
+      {
+        if (pCommProc == NULL)
+          pCommProc = new CommandProcessor ();
+
+        return pCommProc;
+      }
+
+    protected:
+      eTB_Variable* tick_scale_;
+
+    private:
+      static CommandProcessor* pCommProc;
+    };
+
+
+    // True if the game is running in fullscreen
+    extern bool             fullscreen;
+
+    // True if the game is being framerate limited by the DRIVER
+    extern bool             driver_limit_setup;
+
+    // True if the frame pacing hack is setup
+    extern bool             stutter_fix_installed;
+
+    // True if the executable has been modified (at run-time) to allow 60 FPS
+    extern bool             variable_speed_installed;
+
+    // This is actually setup in the BMF DLL that loads this one
+    extern uint32_t         target_fps;
+
+    // Store the original unmodifed game instructions
+    extern uint8_t          old_speed_reset_code2   [7];
+    extern uint8_t          old_limiter_instruction [6];
+
+    // Cache the game's tick scale for timing -- this can be changed without
+    //   our knowledge, so this is more or less a hint rather than a rule
+    extern int32_t          tick_scale;
+
+    // Prevent mult-threaded shenanigans
+    extern CRITICAL_SECTION alter_speed_cs;
   }
 }
 

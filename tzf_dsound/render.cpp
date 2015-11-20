@@ -295,6 +295,8 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
+  tzf::FrameRateFix::RenderTick ();
+
   tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
 
   return BMF_BeginBufferSwap ();
