@@ -25,6 +25,9 @@
 #pragma comment (lib, "MinHook/lib/libMinHook.x86.lib")
 #include "MinHook/include/MinHook.h"
 
+void
+TZF_DrawCommandConsole (void);
+
 MH_STATUS
 WINAPI
 TZF_CreateFuncHook ( LPCWSTR pwszFuncName,

@@ -78,6 +78,8 @@ TZF_FindRootWindow (DWORD proc_id)
   return win.root;
 }
 
+HWND hDeviceWindow;
+
 class TZF_InputHooker
 {
 private:
@@ -132,6 +134,50 @@ public:
     UnhookWindowsHookEx (hooks.mouse);
   }
 
+  void Draw (void)
+  {
+    typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
+
+    static HMODULE               hMod =
+      GetModuleHandle (L"d3d9.dll");
+    static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
+      =
+      (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
+
+    std::string output;
+
+    if (config.framerate.stutter_fix && (! (tzf::FrameRateFix::fullscreen ||
+      tzf::FrameRateFix::driver_limit_setup ||
+      config.framerate.allow_windowed_mode))) {
+      output += "<Run Game in Fullscreen Mode or Disable Stutter Fix!>\n";
+    }
+
+    static DWORD last_time = timeGetTime ();
+    static bool  carret    = true;
+
+    if (visible) {
+      output += text;
+
+      // Blink the Carret
+      if (timeGetTime () - last_time > 333) {
+        carret = ! carret;
+
+        last_time = timeGetTime ();
+      }
+
+      if (carret)
+        output += "-";
+
+      // Show Command Results
+      if (command_issued) {
+        output += "\n";
+        output += result_str;
+      }
+    }
+
+    BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
+  }
+
   HANDLE GetThread (void)
   {
     return hMsgPump;
@@ -149,7 +195,6 @@ public:
 
     extern    HMODULE hDLLMod;
 
-    HWND  hWndForeground;
     DWORD dwThreadId;
 
     int hits = 0;
@@ -163,15 +208,7 @@ public:
         continue;
       }
 
-      hWndForeground = GetForegroundWindow ();
-
-      if ((! hWndForeground) ||
-             hWndForeground != TZF_FindRootWindow (GetCurrentProcessId ())) {
-        Sleep (83);
-        continue;
-      }
-
-      dwThreadId = GetWindowThreadProcessId (hWndForeground, nullptr);
+      dwThreadId = GetWindowThreadProcessId (hDeviceWindow, nullptr);
 
       break;
     }
@@ -179,14 +216,6 @@ public:
     dll_log.Log ( L"  # Found window in %03.01f seconds, "
                      L"installing keyboard hook...",
                    (float)(timeGetTime () - dwTime) / 1000.0f );
-
-    typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
-
-    static HMODULE               hMod =
-      GetModuleHandle (L"d3d9.dll");
-    static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
-      =
-      (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
 
     dwTime = timeGetTime ();
     hits   = 1;
@@ -239,45 +268,10 @@ public:
                     hits > 1 ? L"tries" : L"try",
                       timeGetTime () - dwTime );
 
-    DWORD last_time = timeGetTime ();
-    bool  carret    = true;
-
-    //193 - 199
-
-    while (true)
-    {
-      std::string output;
-
-      if (config.framerate.stutter_fix && (! (tzf::FrameRateFix::fullscreen ||
-                                              tzf::FrameRateFix::driver_limit_setup ||
-                                              config.framerate.allow_windowed_mode))) {
-        output += "<Run Game in Fullscreen Mode or Disable Stutter Fix!>\n";
-      }
-
-      if (visible) {
-        output += text;
-
-        // Blink the Carret
-        if (timeGetTime () - last_time > 333) {
-          carret = ! carret;
-
-          last_time = timeGetTime ();
-        }
-
-        if (carret)
-          output += "-";
-
-        // Show Command Results
-        if (command_issued) {
-          output += "\n";
-          output += result_str;
-        }
-      }
-
-      BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
-
-      Sleep (16);
+    while (true) {
+      Sleep (10);
     }
+    //193 - 199
 
     return 0;
   }
@@ -424,10 +418,10 @@ public:
 
         keys_ [vkCode] = 0x81;
 
-        if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
+        if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press) {
           visible = ! visible;
-
-        tzf::SteamFix::SetOverlayState (visible);
+          tzf::SteamFix::SetOverlayState (visible);
+        }
 
         if (visible) {
           char key_str [2];
@@ -692,6 +686,19 @@ TZF_UnInit_MinHook (void)
   pHook->End ();
 
   return status;
+}
+
+void
+TZF_DrawCommandConsole (void)
+{
+  static int draws = 0;
+
+  // Skip the first frame, so that the console appears below the
+  //  other OSD.
+  if (draws++ > 0) {
+    TZF_InputHooker* pHook = TZF_InputHooker::getInstance ();
+    pHook->Draw ();
+  }
 }
 
 

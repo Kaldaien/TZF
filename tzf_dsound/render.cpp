@@ -82,12 +82,16 @@ COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
 D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
-  DWORD               Sampler,
-  D3DSAMPLERSTATETYPE Type,
-  DWORD               Value)
+                            DWORD               Sampler,
+                            D3DSAMPLERSTATETYPE Type,
+                            DWORD               Value)
 {
-// Pending removal - these are not configurable tweaks and not particularly useful
-#if 0
+  static int aniso = 1;
+
+  //dll_log.Log ( L" [!] IDirect3DDevice9::SetSamplerState (%lu, %lu, %lu)",
+                  //Sampler, Type, Value );
+
+  // Pending removal - these are not configurable tweaks and not particularly useful
   if (Type == D3DSAMP_MIPFILTER ||
       Type == D3DSAMP_MINFILTER ||
       Type == D3DSAMP_MAGFILTER ||
@@ -95,13 +99,14 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
     //dll_log.Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
 
     if (Type < 8) {
+      if (Value != D3DTEXF_ANISOTROPIC)
+        D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
+
       //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
-#if 0
       if (Type == D3DSAMP_MIPFILTER) {
         if (Value != D3DTEXF_NONE)
-          Value = D3DTEXF_LINEAR;
+          Value = D3DTEXF_ANISOTROPIC;
       }
-#endif
       if (Type == D3DSAMP_MAGFILTER ||
                   D3DSAMP_MINFILTER)
         if (Value != D3DTEXF_POINT)
@@ -115,14 +120,22 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
         bias = -3.0f;
       Value = *((LPDWORD)(&bias));
 #endif
-      //dll_log.Log (L" Mip Bias: %f", (float)Value);
+      float bias = *(float *)&Value;
+
+      // Bad game, bad! Negative LOD Bias is UGLY AS HELL!
+      if (bias < 0.0f)
+        bias = 0.0f;
+
+      Value = *(DWORD *)&bias;
+      //dll_log.Log (L" Mip Bias: %f", (double)*(float *)&Value);
     }
   }
-  if (Type == D3DSAMP_MAXANISOTROPY)
-    Value = 16;
-  if (Type == D3DSAMP_MAXMIPLEVEL)
-    Value = 0;
-#endif
+  if (Type == D3DSAMP_MAXANISOTROPY) {
+    aniso = Value;
+    //Value = 16;
+  }
+  //if (Type == D3DSAMP_MAXMIPLEVEL)
+    //Value = 0;
 
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 }
@@ -295,8 +308,6 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
-  tzf::FrameRateFix::RenderTick ();
-
   tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
 
   return BMF_BeginBufferSwap ();
@@ -307,15 +318,19 @@ HRESULT
 STDMETHODCALLTYPE
 D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 {
+  TZF_DrawCommandConsole ();
+
   hr = BMF_EndBufferSwap (hr, device);
 
   // Don't do the silly stuff below if this option is not enabled
-  if (! config.framerate.minimize_latency)
+  if (! config.framerate.minimize_latency) {
+    tzf::FrameRateFix::RenderTick ();
     return hr;
+  }
 
   if (SUCCEEDED (hr) && device != nullptr) {
-    IDirect3DSurface9*   pBackBuffer = nullptr;
-    IDirect3DDevice9*    pDev        = nullptr;
+    IDirect3DSurface9* pBackBuffer = nullptr;
+    IDirect3DDevice9*  pDev        = nullptr;
 
     if (SUCCEEDED (device->QueryInterface ( __uuidof (IDirect3DDevice9),
                                               (void **)&pDev )))
@@ -356,6 +371,8 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
       pDev->Release ();
     }
   }
+
+  tzf::FrameRateFix::RenderTick ();
 
   return hr;
 }
@@ -463,6 +480,15 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
     }
   }
 
+ if (Usage == D3DUSAGE_DEPTHSTENCIL) {
+    if (Width == 512 || Width == 1024 || Width == 2048) {
+      uint32_t shift = config.render.env_shadow_rescale;
+
+      Width  <<= shift;
+      Height <<= shift;
+    }
+  }
+
   int levels = Levels;
 
   HRESULT hr = 
@@ -544,6 +570,56 @@ D3D9CreateRenderTarget_Detour (IDirect3DDevice9     *This,
                                           Lockable, ppSurface, pSharedHandle);
 }
 
+typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
+  IDirect3DDevice9* This,
+  const RECT*       pRect);
+
+SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
+                     const RECT*             pRect)
+{
+  // If we don't care about aspect ratio, then just early-out
+  if (! config.render.aspect_correction)
+    return D3D9SetScissorRect_Original (This, pRect);
+
+  // Otherwise, fix this because the UI's scissor rectangles are
+  //   completely wrong after we start messing with viewport scaling.
+
+  RECT fixed_scissor;
+  fixed_scissor.bottom = pRect->bottom;
+  fixed_scissor.top    = pRect->top;
+  fixed_scissor.left   = pRect->left;
+  fixed_scissor.right  = pRect->right;
+
+  float rescale = (1.77777778f / config.render.aspect_ratio);
+
+  // Wider
+  if (config.render.aspect_ratio > 1.7777f) {
+    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
+    int x_off = (tzf::RenderFix::width - width) / 2;
+
+    fixed_scissor.left  = pRect->left  * rescale + x_off;
+    fixed_scissor.right = pRect->right * rescale + x_off;
+  } else {
+    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
+    int y_off  = (tzf::RenderFix::height - height) / 2;
+
+    fixed_scissor.top    = pRect->top    / rescale + y_off;
+    fixed_scissor.bottom = pRect->bottom / rescale + y_off;
+  }
+
+  if (! config.render.disable_scissor)
+    return D3D9SetScissorRect_Original (This, &fixed_scissor);
+  else {
+    This->SetRenderState (D3DRS_SCISSORTESTENABLE, FALSE);
+    return S_OK;
+  }
+}
+
 typedef HRESULT (STDMETHODCALLTYPE *SetViewport_t)(
         IDirect3DDevice9* This,
   CONST D3DVIEWPORT9*     pViewport);
@@ -570,6 +646,20 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
 
     return D3D9SetViewport_Original (This, &rescaled_shadow);
   }
+
+#if 0
+  //
+  // Environmental Shadows
+  //
+  if (pViewport->Width == pViewport->Height) {
+    D3DVIEWPORT9 rescaled_shadow = *pViewport;
+
+    rescaled_shadow.Width  <<= 2;
+    rescaled_shadow.Height <<= 2;
+
+    return D3D9SetViewport_Original (This, &rescaled_shadow);
+  }
+#endif
 
   //
   // Adjust Post-Processing
@@ -634,6 +724,46 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (dim != 0)
       return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
+  }
+
+  //
+  // Env Shadow
+  //
+  if (StartRegister == 240 && Vector4fCount == 1) {
+    uint32_t shift;
+    uint32_t dim = 0;
+
+    if (pConstantData [0] == -1.0f / 512.0f) {
+      dim = 512UL;
+      //dll_log.Log (L" 512x512 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+    }
+
+    if (pConstantData [0] == -1.0f / 1024.0f) {
+      dim = 1024UL;
+      //dll_log.Log (L" 1024x1024 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+    }
+
+    if (pConstantData [0] == -1.0f / 2048.0f) {
+      dim = 2048UL;
+      //dll_log.Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+    }
+
+    shift = config.render.env_shadow_rescale;
+
+    float newData [4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    newData [0] = -1.0f / (dim << 2);
+    newData [1] =  1.0f / (dim << 2);
+
+    if (pConstantData [2] != 0.0f || 
+        pConstantData [3] != 0.0f) {
+      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+    }
+
+    if (dim != 0) {
+      shadows = true;
+      return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
+    }
   }
 
 
@@ -715,18 +845,13 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
     return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
   }
 
-
   //
   // Bink Video or UI
   //
   if ( Vector4fCount == 5 && g_pPS != nullptr && g_pVS != nullptr && 
        ( (ps_checksums [g_pPS] == PS_CHECKSUM_UI   && vs_checksums [g_pVS] == VS_CHECKSUM_UI && config.render.aspect_correction) ||
-         (vs_checksums [g_pVS] == VS_CHECKSUM_BINK && config.render.blackbar_videos) ) ) {
-    if (pConstantData [ 0] == 0.0015625f     && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
-        pConstantData [ 4] == 0.0f           && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
-        pConstantData [ 8] == 0.0f           && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f /*&&
-        pConstantData [12] == -0.7937499881f && pConstantData [13] == 0.1555555612f && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
-        pConstantData [16] == 1.0f           && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f*/) {
+         (vs_checksums [g_pVS] == VS_CHECKSUM_BINK && tzf::RenderFix::bink && config.render.blackbar_videos) ) ) {
+   {
       D3DVIEWPORT9 vp9_orig;
       This->GetViewport (&vp9_orig);
 
@@ -743,7 +868,27 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       }
 
      if (height != vp9_orig.Height) {
-       //This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+#if 0
+       RECT top;
+       top.top    = 0;
+       top.left   = 0;
+       top.right  = vp9_orig.Width;
+       top.bottom = top.top + (vp9_orig.Height - height) / 2;
+       D3D9SetScissorRect_Original (This, &top);
+       This->SetRenderState (D3DRS_SCISSORTESTENABLE, 1);
+
+       if (! shadows)
+         This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+
+       RECT bottom;
+       bottom.top    = vp9_orig.Height - (vp9_orig.Height - height) / 2;
+       bottom.left   = 0;
+       bottom.right  = vp9_orig.Width;
+       bottom.bottom = vp9_orig.Height;
+       D3D9SetScissorRect_Original (This, &bottom);
+       if (! shadows)
+         This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
+#endif
 
        D3DVIEWPORT9 vp9;
        vp9.X     = vp9_orig.X;    vp9.Y      = vp9_orig.Y + (vp9_orig.Height - height) / 2;
@@ -788,55 +933,6 @@ D3D9SetPixelShaderConstantF_Detour (IDirect3DDevice9* This,
   UINT              Vector4fCount)
 {
   return D3D9SetPixelShaderConstantF_Original (This, StartRegister, pConstantData, Vector4fCount);
-}
-
-
-typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
-  IDirect3DDevice9* This,
-  const RECT*       pRect);
-
-SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
-
-COM_DECLSPEC_NOTHROW
-HRESULT
-STDMETHODCALLTYPE
-D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
-                     const RECT*             pRect)
-{
-  // If we don't care about aspect ratio, then just early-out
-  if (! config.render.aspect_correction)
-    return D3D9SetScissorRect_Original (This, pRect);
-
-  // Otherwise, fix this because the UI's scissor rectangles are
-  //   completely wrong after we start messing with viewport scaling.
-
-  RECT fixed_scissor;
-  fixed_scissor.bottom = pRect->bottom;
-  fixed_scissor.top    = pRect->top;
-  fixed_scissor.left   = pRect->left;
-  fixed_scissor.right  = pRect->right;
-
-  float rescale = (1.77777778f / config.render.aspect_ratio);
-
-  // Wider
-  if (config.render.aspect_ratio > 1.7777f) {
-    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
-    int x_off = (tzf::RenderFix::width - width) / 2;
-
-    fixed_scissor.left  = pRect->left  * rescale + x_off;
-    fixed_scissor.right = pRect->right * rescale + x_off;
-  } else {
-    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
-    int y_off  = (tzf::RenderFix::height - height) / 2;
-
-    fixed_scissor.top    = pRect->top    / rescale + y_off;
-    fixed_scissor.bottom = pRect->bottom / rescale + y_off;
-  }
-
-  if (! config.render.disable_scissor)
-    return D3D9SetScissorRect_Original (This, &fixed_scissor);
-  else
-    return S_OK;
 }
 
 
@@ -930,12 +1026,12 @@ tzf::RenderFix::Init (void)
            (LPVOID *)&D3DXMatrixMultiply_Original );
 #endif
 
-#if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetSamplerState_Override",
                       D3D9SetSamplerState_Detour,
             (LPVOID*)&D3D9SetSamplerState_Original,
                      &SetSamplerState );
-#endif
+
+  TZF_EnableHook (SetSamplerState);
 
 #if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShaderConstantF_Override",
@@ -1007,12 +1103,16 @@ tzf::RenderFix::Init (void)
 #endif
 
 
+#if 0
   UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
   HANDLE hProc = GetCurrentProcess ();
 
-#if 0
   float* fTest = (float *)addr;
   while (true) {
+    if (*fTest < (1.0 / 60.0) + 0.0001 && *fTest > (1.0 / 60.0) - 0.0001)
+      dll_log.Log (L"Frame Delta: Address=%08Xh",
+                     //fTest);
+#if 0
     if (*fTest < 1.777778f + 0.001f && *fTest > 1.777778f - 0.001f) {
       dll_log.Log (L"Aspect Ratio: Address=%08Xh",
                    fTest);
@@ -1022,6 +1122,7 @@ tzf::RenderFix::Init (void)
       dll_log.Log (L"FOVY: Address=%08Xh",
                    fTest);
     }
+#endif
     ++fTest;
   }
 #endif
@@ -1141,3 +1242,4 @@ uint32_t tzf::RenderFix::height;
 uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
 
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
+bool tzf::RenderFix::bink = false;

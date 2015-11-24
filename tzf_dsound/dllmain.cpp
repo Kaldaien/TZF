@@ -75,9 +75,10 @@ DllMain (HMODULE hModule,
       config.audio.compatibility            = false;
       config.audio.enable_fix               = true;
 
-      config.framerate.stutter_fix          = false; // OBSOLETE
-      config.framerate.fudge_factor         = 1.666f;
+      config.framerate.stutter_fix          = false;  // OBSOLETE - 1.0.3
+      config.framerate.fudge_factor         = 1.666f; // OBSOLETE - 1.0.3
       config.framerate.allow_fake_sleep     = false;
+      config.framerate.allow_windowed_mode  = true;   // OBSOLETE - 1.1.0
       config.framerate.yield_processor      = true;
       config.framerate.minimize_latency     = false;
       config.framerate.speedresetcode_addr  = 0x0046C529;
@@ -85,6 +86,7 @@ DllMain (HMODULE hModule,
       config.framerate.speedresetcode3_addr = 0x0056D93F;
       config.framerate.limiter_branch_addr  = 0x00990873;
       config.framerate.disable_limiter      = true;
+      config.framerate.auto_adjust          = true;
 
       config.file_io.capture                = false;
 
@@ -100,6 +102,7 @@ DllMain (HMODULE hModule,
       config.render.complete_mipmaps        = false;
       config.render.postproc_ratio          =  1.0f;
       config.render.shadow_rescale          = -2;
+      config.render.env_shadow_rescale      =  0;
       config.render.disable_scissor         = false;
 
       // Save a new config if none exists

@@ -48,6 +48,7 @@ struct tzf_config_t
     DWORD speedresetcode3_addr = 0x0056D93F;
     DWORD limiter_branch_addr  = 0x00990873;
     bool  disable_limiter      = true;
+    bool  auto_adjust          = true;
   } framerate;
 
   struct {
@@ -59,16 +60,17 @@ struct tzf_config_t
   } steam;
 
   struct {
-    float   fovy              = 0.785398f;
-    float   aspect_ratio      = 1.777778f;
-    DWORD   aspect_addr       = 0x00D52398;
-    DWORD   fovy_addr         = 0x00D5239C;
-    bool    blackbar_videos   = true;
-    bool    aspect_correction = false;
-    bool    complete_mipmaps  = false;
-    int32_t shadow_rescale    = -2;
-    float   postproc_ratio    =  1.0f;
-    bool    disable_scissor   = false;
+    float    fovy               = 0.785398f;
+    float    aspect_ratio       = 1.777778f;
+    DWORD    aspect_addr        = 0x00D52398;
+    DWORD    fovy_addr          = 0x00D5239C;
+    bool     blackbar_videos    = true;
+    bool     aspect_correction  = false;
+    bool     complete_mipmaps   = false;
+    int32_t  shadow_rescale     = -2;
+    float    postproc_ratio     =  1.0f;
+    bool     disable_scissor    = false;
+    uint32_t env_shadow_rescale = 0;
   } render;
 
   struct {

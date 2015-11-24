@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.0.3";
+std::wstring TZF_VER_STR = L"1.1.0";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -52,6 +52,7 @@ struct {
   tzf::ParameterInt*     speedresetcode3_addr;
   tzf::ParameterInt*     limiter_branch_addr;
   tzf::ParameterBool*    disable_limiter;
+  tzf::ParameterBool*    auto_adjust;
 } framerate;
 
 struct {
@@ -63,6 +64,7 @@ struct {
   tzf::ParameterBool*    aspect_correction;
   tzf::ParameterBool*    complete_mipmaps;
   tzf::ParameterInt*     rescale_shadows;
+  tzf::ParameterInt*     rescale_env_shadows;
   tzf::ParameterFloat*   postproc_ratio;
   tzf::ParameterBool*    disable_scissor;
 } render;
@@ -241,6 +243,17 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.FrameRate",
          L"DisableNamcoLimiter" );
 
+   framerate.auto_adjust =
+     static_cast <tzf::ParameterBool *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Automatically Adjust TickScale")
+       );
+   framerate.auto_adjust->register_to_ini (
+     dll_ini,
+       L"TZFIX.FrameRate",
+         L"AutoAdjust" );
+
+
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>
       (g_ParameterFactory.create_parameter <float> (
@@ -341,6 +354,16 @@ TZF_LoadConfig (std::wstring name) {
       L"TZFIX.Render",
         L"DisableScissor" );
 
+   render.rescale_env_shadows =
+     static_cast <tzf::ParameterInt *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Rescale Enviornmental Shadows")
+       );
+   render.rescale_env_shadows->register_to_ini (
+     dll_ini,
+       L"TZFIX.Render",
+         L"RescaleEnvShadows" );
+
 
   steam.allow_broadcasts =
     static_cast <tzf::ParameterBool *>
@@ -421,6 +444,9 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.disable_limiter->load ())
     config.framerate.disable_limiter = framerate.disable_limiter->get_value ();
 
+  if (framerate.auto_adjust->load ())
+    config.framerate.auto_adjust = framerate.auto_adjust->get_value ();
+
 
 
   if (render.aspect_addr->load ())
@@ -452,6 +478,9 @@ TZF_LoadConfig (std::wstring name) {
 
   if (render.disable_scissor->load ())
     config.render.disable_scissor = render.disable_scissor->get_value ();
+
+  if (render.rescale_env_shadows->load ())
+    config.render.env_shadow_rescale = render.rescale_env_shadows->get_value ();
 
 
   if (steam.allow_broadcasts->load ())
@@ -517,6 +546,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   framerate.disable_limiter->set_value (config.framerate.disable_limiter);
   framerate.disable_limiter->store     ();
 
+  framerate.auto_adjust->set_value (config.framerate.auto_adjust);
+  framerate.auto_adjust->store     ();
+
 
   render.aspect_addr->set_value (config.render.aspect_addr);
   render.aspect_addr->store     ();
@@ -547,6 +579,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   render.disable_scissor->set_value (config.render.disable_scissor);
   render.disable_scissor->store     ();
+
+  render.rescale_env_shadows->set_value (config.render.env_shadow_rescale);
+  render.rescale_env_shadows->store     ();
 
 
 

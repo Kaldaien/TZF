@@ -26,6 +26,7 @@
 #include <windows.h>
 
 #include "ini.h"
+#include "log.h"
 #include <string>
 
 std::wstring
@@ -36,34 +37,28 @@ ErrorMessage (errno_t        err,
               const char*    function_name,
               const char*    file_name)
 {
-  wchar_t wszFile           [256];
-  wchar_t wszFunction       [256];
-  wchar_t wszArgs           [256];
   wchar_t wszFormattedError [1024];
 
-  MultiByteToWideChar (CP_OEMCP, 0, file_name,     -1, wszFile,     256);
-  MultiByteToWideChar (CP_OEMCP, 0, function_name, -1, wszFunction, 256);
-  MultiByteToWideChar (CP_OEMCP, 0, args,          -1, wszArgs,     256);
   *wszFormattedError = L'\0';
 
-  swprintf (wszFormattedError, 1024,
-    L"Line %u of %s (in %s (...)):\n"
-    L"------------------------\n\n"
-    L"%s\n\n  File: %s\n\n"
-    L"\t>> %s <<",
-    line_no,
-    wszFile,
-    wszFunction,
-    wszArgs,
-    ini_name,
-    _wcserror (err));
+  swprintf ( wszFormattedError, 1024,
+             L"\n"
+             L"Line %u of %hs (in %hs (...)):\n"
+             L"------------------------\n\n"
+             L"%hs\n\n  File: %s\n\n"
+             L"\t>> %s <<",
+               line_no,
+                 file_name,
+                   function_name,
+                     args,
+                       ini_name,
+                         _wcserror (err) );
 
   return wszFormattedError;
 }
 
-#define TRY_FILE_IO(x,y,z) { (z) = ##x; } //if ((z) != 0) \
-//TZF_MessageBox (ErrorMessage ((z), #x, (y), __LINE__, __FUNCTION__, __FILE__),\
-//L"File I/O Error", MB_OK | MB_ICONSTOP ); }
+#define TRY_FILE_IO(x,y,z) { (z) = ##x; if ((z) != 0) \
+dll_log.Log (L"%ws", ErrorMessage ((z), #x, (y), __LINE__, __FUNCTION__, __FILE__)); }
 
 tzf::INI::File::File (wchar_t* filename)
 {

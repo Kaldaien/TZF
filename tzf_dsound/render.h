@@ -64,6 +64,7 @@ namespace tzf
     extern IDirect3DDevice9*  pDevice;
 
     extern uint32_t           dwRenderThreadID;
+    extern bool               bink; // True if a bink video is playing
   }
 }
 

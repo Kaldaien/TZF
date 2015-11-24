@@ -67,6 +67,9 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                     pparams->Windowed ? L"False" :
                                         L"True" );
 
+    extern HWND hDeviceWindow;
+    hDeviceWindow = pparams->hDeviceWindow;
+
     if (config.framerate.stutter_fix) {
       // On NVIDIA hardware, we can setup a framerate limiter at the driver
       //   level to handle windowed mode or improperly setup VSYNC
@@ -222,6 +225,7 @@ BinkOpen_Detour ( DWORD unknown0,
 {
   dll_log.Log (L" * Disabling 60 FPS -- Bink Video Opened");
 
+  tzf::RenderFix::bink = true;
   tzf::FrameRateFix::Disallow60FPS ();
 
   return BinkOpen_Original (unknown0, unknown1);
@@ -238,6 +242,7 @@ BinkClose_Detour (DWORD unknown)
 
   dll_log.Log (L" * Restoring 60 FPS -- Bink Video Closed");
 
+  tzf::RenderFix::bink = false;
   tzf::FrameRateFix::Allow60FPS ();
 }
 
@@ -288,9 +293,8 @@ tzf::FrameRateFix::Init (void)
 
   InitializeCriticalSectionAndSpinCount (&alter_speed_cs, 1000UL);
 
-  if (target_fps >= 45) {
-    dll_log.Log (L" * Target FPS is %lu, halving simulation speed to compensate...",
-        target_fps);
+  if (true) {//target_fps != 30) {
+    dll_log.LogEx (true, L" * Installing variable rate simulation... ");
 
     DWORD dwOld;
 
@@ -337,11 +341,26 @@ tzf::FrameRateFix::Init (void)
             memcpy ((LPVOID)config.framerate.speedresetcode2_addr, &new_code, 7);
     VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
 
+    //VirtualProtect ((LPVOID)0x005638F5, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    //memcpy ((LPVOID)0x005638F5, "\x90\x90\x90\x90", 4);
+    //VirtualProtect ((LPVOID)0x005638F5, 4, dwOld, &dwOld);
+
+
+    // Use a constant tick rate for scripted actions
+    VirtualProtect ((LPVOID)0x5638E0, 6, PAGE_EXECUTE_READWRITE, &dwOld);
+            memcpy ((LPVOID)0x5638E0, "\xBE\xFF\xFF\xFF\xFF\x90", 6);
+    VirtualProtect ((LPVOID)0x5638E0, 6, dwOld, &dwOld);
+
     // mov eax, 02 to mov eax, 01
     command.ProcessCommandLine ("TickScale 1");
 
     variable_speed_installed = true;
+
+    dll_log.LogEx (false, L" Target=%lu FPS\n",
+      target_fps);
   }
+
+  variable_speed_installed = true;
 
   if (config.framerate.disable_limiter) {
     DWORD dwOld;
@@ -353,6 +372,8 @@ tzf::FrameRateFix::Init (void)
             memcpy ((LPVOID)config.framerate.limiter_branch_addr, &new_code, 6);
     VirtualProtect ((LPVOID)config.framerate.limiter_branch_addr, 6, dwOld, &dwOld);
   }
+
+  command.AddVariable ("TargetFPS", new eTB_VarStub <int> ((int *)&target_fps));
 
   // No matter which technique we use, these things need to be options
   command.AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
@@ -368,6 +389,8 @@ tzf::FrameRateFix::Init (void)
 
   command.AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
   command.AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
+
+  command.AddVariable ("AutoAdjust", new eTB_VarStub <bool> (&config.framerate.auto_adjust));
 
   // Stuff below here is ONLY needed for the hacky frame pacing fix
   if (! config.framerate.stutter_fix)
@@ -461,31 +484,42 @@ tzf::FrameRateFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
   DWORD dwOld;
 
   if (var == tick_scale_) {
+    EnterCriticalSection (&alter_speed_cs);
+
     VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, PAGE_READWRITE, &dwOld);
 
     int32_t original0 = *((int32_t *)(TICK_ADDR_BASE    ));
     int32_t original1 = *((int32_t *)(TICK_ADDR_BASE + 4));
 
     if (val != nullptr) {
-      if (original0 != *(int32_t *)val) {
+      if (variable_speed_installed) {
+        // mov eax, 02 to mov eax, 01
+        VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+                     *((DWORD *)config.framerate.speedresetcode3_addr) = *(int32_t *)val;
+        VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+      }
+
+      if (original0 != *(int32_t *)val && variable_speed_installed) {
         //dll_log.Log ( L" * Changing Tick Scale {0} from %li to %li",
-                        //original0,
-                          //*(int32_t *)val );
+        //original0,
+        //*(int32_t *)val );
         *(int32_t *)(TICK_ADDR_BASE) = *(int32_t *)val;
       }
 
-      if (original1 != *(int32_t *)val) {
+      if (original1 != *(int32_t *)val && variable_speed_installed) {
         //dll_log.Log ( L" * Changing Tick Scale {1} from %lu to %lu",
-                        //original1,
-                          //*(int32_t *)val );
+        //original1,
+        //*(int32_t *)val );
         *(int32_t *)(TICK_ADDR_BASE + 4) = *(int32_t *)val;
       }
 
-      *(int32_t *)val = *(int32_t *)TICK_ADDR_BASE;
+      *(int32_t *)val = *((DWORD *)config.framerate.speedresetcode3_addr);
       tick_scale      = *(int32_t *)val;
     }
 
     VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, dwOld, &dwOld);
+
+    LeaveCriticalSection (&alter_speed_cs);
   }
 
   return true;
@@ -499,37 +533,41 @@ tzf::FrameRateFix::RenderTick (void)
   static LARGE_INTEGER last_time = { 0 };
   static LARGE_INTEGER freq      = { 0 };
 
-  static int last_scale  = 0;
-  static int frames_same = 0;
-
-  static bool need_reset = false;
-
   LARGE_INTEGER time;
 
   QueryPerformanceFrequency (&freq);
   QueryPerformanceCounter   (&time);
 
-  // Clamp times betwen 16 ms (60 FPS) and 96 (180 FPS)
-  int scale = min (max (round ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0), 1), 6);
+  const double inv_rate = 1.0 / tzf::FrameRateFix::target_fps;
+  const double epsilon  = 0.0;
 
-  if (scale == last_scale)
-    ++frames_same;
-  else {
-    frames_same = 0;
-    need_reset  = true;
+  // Busy-wait because we are rendering too fast...
+  while (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon)) {
+    YieldProcessor ();
+    QueryPerformanceCounter (&time);
   }
 
-  last_scale = scale;
+  double  dt = ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0);
 
-  // We don't want to do this constantly with single frame timing variations;
-  //   that would be horrific... instead only do it when framerate changes over
-  //     an extended period of time.
-  if (frames_same > 3 && need_reset) {
+#if 0
+  static double accum = 0.0;
+
+  accum +=  dt - floor (dt);
+  dt    -= (dt - floor (dt));
+
+  if (accum >= 1.0) {
+    dt    +=  accum - (accum - floor (accum));
+    accum -=  accum - (accum - floor (accum));
+  }
+#endif
+
+  long scale = min (max (dt, 1), 60);
+
+  if (config.framerate.auto_adjust) {
     char rescale [32];
     sprintf (rescale, "TickScale %li", scale);
     command.ProcessCommandLine (rescale);
-    need_reset = false;
   }
 
-  QueryPerformanceCounter (&last_time);
+  last_time.QuadPart = time.QuadPart;
 }
