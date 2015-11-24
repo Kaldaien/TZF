@@ -35,6 +35,7 @@
 
 // Textures that are missing mipmaps
 std::set <IDirect3DBaseTexture9 *> incomplete_textures;
+bool shadows = false;
 
 uint32_t
 TZF_MakeShadowBitShift (uint32_t dim)
