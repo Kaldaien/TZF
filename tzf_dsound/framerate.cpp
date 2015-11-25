@@ -57,15 +57,43 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
 {
   D3DPRESENT_PARAMETERS present_params;
 
+#if 0
+  // Ignore D3D9Ex devices, I don't know what they are even for, but they will
+  //   totally screw things up if we don't.
+  IDirect3DDevice9Ex* pDeviceEx = nullptr;
+  if ( SUCCEEDED ( device->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
+                                              (void **)&pDeviceEx )
+                 ) 
+     ) {
+    pDeviceEx->Release ();
+    return BMF_SetPresentParamsD3D9_Original (device, pparams);
+  }
+#endif
+
+  //
+  // TODO: Figure out what the hell is doing this when RTSS is allowed to use
+  //         custom D3D libs. 1x1@0Hz is obviously NOT for rendering!
+  //
+  if ( pparams->BackBufferWidth            == 1 &&
+       pparams->BackBufferHeight           == 1 &&
+       pparams->FullScreen_RefreshRateInHz == 0 ) {
+    dll_log.Log (L" * Fake D3D9Ex Device Detected... Ignoring!");
+    return BMF_SetPresentParamsD3D9_Original (device, pparams);
+  }
+
+
   tzf::RenderFix::pDevice             = device;
   tzf::RenderFix::pPostProcessSurface = nullptr;
 
   if (pparams != nullptr) {
     memcpy (&present_params, pparams, sizeof D3DPRESENT_PARAMETERS);
 
-    dll_log.Log ( L" %% Caught D3D9 Swapchain :: Fullscreen=%s",
+    dll_log.Log ( L" %% Caught D3D9 Swapchain :: Fullscreen=%s  (%lux%lu@%lu Hz)",
                     pparams->Windowed ? L"False" :
-                                        L"True" );
+                                        L"True",
+                      pparams->BackBufferWidth,
+                        pparams->BackBufferHeight,
+                          pparams->FullScreen_RefreshRateInHz );
 
     extern HWND hDeviceWindow;
     hDeviceWindow = pparams->hDeviceWindow;
@@ -256,6 +284,36 @@ LPVOID pfnBinkOpen                 = nullptr;
 LPVOID pfnBinkClose                = nullptr;
 
 void
+TZF_FlushInstructionCache ( LPCVOID base_addr,
+                            size_t  code_size )
+{
+  FlushInstructionCache ( GetCurrentProcess (),
+                            base_addr,
+                              code_size );
+}
+
+void
+TZF_InjectByteCode ( LPVOID   base_addr,
+                     uint8_t* new_code,
+                     size_t   code_size,
+                     DWORD    permissions,
+                     uint8_t* old_code = nullptr )
+{
+  DWORD dwOld;
+
+  VirtualProtect (base_addr, code_size, permissions, &dwOld);
+  {
+    if (old_code != nullptr)
+      memcpy (old_code, base_addr, code_size);
+
+    memcpy (base_addr, new_code, code_size);
+  }
+  VirtualProtect (base_addr, code_size, dwOld, &dwOld);
+
+  TZF_FlushInstructionCache (base_addr, code_size);
+}
+
+void
 tzf::FrameRateFix::Init (void)
 {
   CommandProcessor* comm_proc = CommandProcessor::getInstance ();
@@ -308,11 +366,15 @@ tzf::FrameRateFix::Init (void)
     // 
     // we want to skip the first two dwords
     //
+#if 0
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
                *((DWORD *)(config.framerate.speedresetcode_addr +  2)) += 8;
                *((DWORD *)(config.framerate.speedresetcode_addr +  8)) += 8;
                *((DWORD *)(config.framerate.speedresetcode_addr + 13)) -= 2;
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
+#endif
+
+    TZF_FlushInstructionCache ((LPCVOID)config.framerate.speedresetcode_addr, 17);
 
     //
     // original code:
@@ -335,26 +397,24 @@ tzf::FrameRateFix::Init (void)
     // nop
     // nop
     //
+#if 0
     uint8_t new_code [7] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x90 };
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
-            memcpy (&old_speed_reset_code2,                        &new_code, 7);
-            memcpy ((LPVOID)config.framerate.speedresetcode2_addr, &new_code, 7);
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
 
-    //VirtualProtect ((LPVOID)0x005638F5, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-    //memcpy ((LPVOID)0x005638F5, "\x90\x90\x90\x90", 4);
-    //VirtualProtect ((LPVOID)0x005638F5, 4, dwOld, &dwOld);
+    TZF_InjectByteCode ( (LPVOID)config.framerate.speedresetcode2_addr,
+                           new_code,
+                             7,
+                               PAGE_EXECUTE_READWRITE,
+                                 old_speed_reset_code2 );
+#endif
 
-
-    // Use a constant tick rate for scripted actions
-    VirtualProtect ((LPVOID)0x5638E0, 6, PAGE_EXECUTE_READWRITE, &dwOld);
-            memcpy ((LPVOID)0x5638E0, "\xBE\xFF\xFF\xFF\xFF\x90", 6);
-    VirtualProtect ((LPVOID)0x5638E0, 6, dwOld, &dwOld);
+    variable_speed_installed = true;
 
     // mov eax, 02 to mov eax, 01
     command.ProcessCommandLine ("TickScale 1");
 
-    variable_speed_installed = true;
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
+    *(DWORD *)config.framerate.speedresetcode3_addr = 1;
+    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
 
     dll_log.LogEx (false, L" Target=%lu FPS\n",
       target_fps);
@@ -368,9 +428,10 @@ tzf::FrameRateFix::Init (void)
     // Replace the original jump with an unconditional jump
     uint8_t new_code [6] = { 0xE9, 0x8B, 0x00, 0x00, 0x00, 0x90 };
 
-    VirtualProtect ((LPVOID)config.framerate.limiter_branch_addr, 6, PAGE_EXECUTE_READWRITE, &dwOld);
-            memcpy ((LPVOID)config.framerate.limiter_branch_addr, &new_code, 6);
-    VirtualProtect ((LPVOID)config.framerate.limiter_branch_addr, 6, dwOld, &dwOld);
+    TZF_InjectByteCode ( (LPVOID)config.framerate.limiter_branch_addr,
+                           new_code,
+                             6,
+                               PAGE_EXECUTE_READWRITE );
   }
 
   command.AddVariable ("TargetFPS", new eTB_VarStub <int> ((int *)&target_fps));
@@ -422,9 +483,12 @@ tzf::FrameRateFix::Shutdown (void)
                 *((DWORD *)(config.framerate.speedresetcode_addr + 13)) += 2;
     VirtualProtect ((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
 
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, PAGE_EXECUTE_READWRITE, &dwOld);
-            memcpy ((LPVOID)config.framerate.speedresetcode2_addr, &old_speed_reset_code2, 7);
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode2_addr, 7, dwOld, &dwOld);
+    TZF_FlushInstructionCache ((LPCVOID)config.framerate.speedresetcode_addr, 17);
+
+    TZF_InjectByteCode ( (LPVOID)config.framerate.speedresetcode2_addr,
+                           old_speed_reset_code2,
+                             7,
+                               PAGE_EXECUTE_READWRITE );
 
     command.ProcessCommandLine ("TickScale 2");
 
@@ -484,42 +548,37 @@ tzf::FrameRateFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
   DWORD dwOld;
 
   if (var == tick_scale_) {
-    EnterCriticalSection (&alter_speed_cs);
-
-    VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, PAGE_READWRITE, &dwOld);
-
-    int32_t original0 = *((int32_t *)(TICK_ADDR_BASE    ));
-    int32_t original1 = *((int32_t *)(TICK_ADDR_BASE + 4));
+    DWORD original0 = *((DWORD *)(TICK_ADDR_BASE    ));
+    DWORD original1 = *((DWORD *)(TICK_ADDR_BASE + 4));
 
     if (val != nullptr) {
+#if 1
+      VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, PAGE_READWRITE, &dwOld);
+
+#if 0
+      if (variable_speed_installed) {
+        *(DWORD *)(TICK_ADDR_BASE) = *(DWORD *)val;
+      }
+#endif
+
+      if (variable_speed_installed) {
+        *(DWORD *)(TICK_ADDR_BASE + 4) = *(DWORD *)val;
+      }
+      *(DWORD *)val = *(DWORD *)(TICK_ADDR_BASE + 4);
+
+      VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, dwOld, &dwOld);
+
       if (variable_speed_installed) {
         // mov eax, 02 to mov eax, 01
         VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-                     *((DWORD *)config.framerate.speedresetcode3_addr) = *(int32_t *)val;
+        *(DWORD *)config.framerate.speedresetcode3_addr = *(DWORD *)val;
         VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
       }
+      //InterlockedExchange ((DWORD *)val, *(DWORD *)config.framerate.speedresetcode3_addr);
+#endif
 
-      if (original0 != *(int32_t *)val && variable_speed_installed) {
-        //dll_log.Log ( L" * Changing Tick Scale {0} from %li to %li",
-        //original0,
-        //*(int32_t *)val );
-        *(int32_t *)(TICK_ADDR_BASE) = *(int32_t *)val;
-      }
-
-      if (original1 != *(int32_t *)val && variable_speed_installed) {
-        //dll_log.Log ( L" * Changing Tick Scale {1} from %lu to %lu",
-        //original1,
-        //*(int32_t *)val );
-        *(int32_t *)(TICK_ADDR_BASE + 4) = *(int32_t *)val;
-      }
-
-      *(int32_t *)val = *((DWORD *)config.framerate.speedresetcode3_addr);
       tick_scale      = *(int32_t *)val;
     }
-
-    VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, dwOld, &dwOld);
-
-    LeaveCriticalSection (&alter_speed_cs);
   }
 
   return true;
@@ -543,7 +602,6 @@ tzf::FrameRateFix::RenderTick (void)
 
   // Busy-wait because we are rendering too fast...
   while (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon)) {
-    YieldProcessor ();
     QueryPerformanceCounter (&time);
   }
 
@@ -561,7 +619,11 @@ tzf::FrameRateFix::RenderTick (void)
   }
 #endif
 
-  long scale = min (max (dt, 1), 60);
+  long scale = min (max (dt, 1), 7);
+
+  if (scale > 6) {
+    scale = inv_rate / (1.0 / 60.0);
+  }
 
   if (config.framerate.auto_adjust) {
     char rescale [32];

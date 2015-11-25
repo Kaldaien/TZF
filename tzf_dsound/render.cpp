@@ -221,6 +221,18 @@ STDMETHODCALLTYPE
 D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
                             IDirect3DVertexShader9* pShader)
 {
+  // Ignore D3D9Ex devices, I don't know what they are even for, but they will
+  //   totally screw things up if we don't.
+  IDirect3DDevice9Ex* pDeviceEx = nullptr;
+  if ( SUCCEEDED ( This->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
+                                            (void **)&pDeviceEx )
+                 ) 
+     ) {
+    pDeviceEx->Release ();
+    return D3D9SetVertexShader_Original (This, pShader);
+  }
+
+
   if (g_pVS != pShader) {
     if (pShader != nullptr) {
       if (vs_checksums.find (pShader) == vs_checksums.end ()) {
@@ -252,6 +264,18 @@ STDMETHODCALLTYPE
 D3D9SetPixelShader_Detour (IDirect3DDevice9*      This,
                            IDirect3DPixelShader9* pShader)
 {
+  // Ignore D3D9Ex devices, I don't know what they are even for, but they will
+  //   totally screw things up if we don't.
+  IDirect3DDevice9Ex* pDeviceEx = nullptr;
+  if ( SUCCEEDED ( This->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
+                                            (void **)&pDeviceEx )
+                 ) 
+     ) {
+    pDeviceEx->Release ();
+    return D3D9SetPixelShader_Original (This, pShader);
+  }
+
+
   if (g_pPS != pShader) {
     if (pShader != nullptr) {
       if (ps_checksums.find (pShader) == ps_checksums.end ()) {
@@ -319,6 +343,11 @@ HRESULT
 STDMETHODCALLTYPE
 D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 {
+  // Ignore anything that's not the primary render device.
+  if (device != tzf::RenderFix::pDevice)
+    return BMF_EndBufferSwap (hr, device);
+
+
   TZF_DrawCommandConsole ();
 
   hr = BMF_EndBufferSwap (hr, device);
@@ -432,6 +461,12 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
                           IDirect3DTexture9 **ppTexture,
                           HANDLE             *pSharedHandle)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9CreateTexture_Original ( This, Width, Height, Levels, Usage,
+                                          Format, Pool, ppTexture, pSharedHandle );
+
+
 #if 0
   if (Usage == D3DUSAGE_RENDERTARGET)
   dll_log.Log (L" [!] IDirect3DDevice9::CreateTexture (%lu, %lu, %lu, %lu, "
@@ -583,6 +618,11 @@ STDMETHODCALLTYPE
 D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
                      const RECT*             pRect)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9SetScissorRect_Original (This, pRect);
+
+
   // If we don't care about aspect ratio, then just early-out
   if (! config.render.aspect_correction)
     return D3D9SetScissorRect_Original (This, pRect);
@@ -633,6 +673,11 @@ STDMETHODCALLTYPE
 D3D9SetViewport_Detour (IDirect3DDevice9* This,
                   CONST D3DVIEWPORT9*     pViewport)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9SetViewport_Original (This, pViewport);
+
+
   //
   // Adjust Character Drop Shadows
   //
@@ -694,6 +739,15 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
                                      CONST float*      pConstantData,
                                      UINT              Vector4fCount)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice) {
+    return D3D9SetVertexShaderConstantF_Original ( This,
+                                                     StartRegister,
+                                                       pConstantData,
+                                                         Vector4fCount );
+  }
+
+
   //
   // Model Shadows
   //
@@ -1027,12 +1081,18 @@ tzf::RenderFix::Init (void)
            (LPVOID *)&D3DXMatrixMultiply_Original );
 #endif
 
+
+
+#if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetSamplerState_Override",
                       D3D9SetSamplerState_Detour,
             (LPVOID*)&D3D9SetSamplerState_Original,
                      &SetSamplerState );
 
   TZF_EnableHook (SetSamplerState);
+#endif
+
+
 
 #if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShaderConstantF_Override",
