@@ -1,0 +1,7 @@
+Tales of Zestiria "Fix" started out as a simple single-author DirectSound / WASAPI fix for audio-related game crashes.
+
+Thanks to the work of multiple contributors, the scope has broadened to encompass virtually all aspects of gameplay.
+
+  Andon "Kaldaien" Coleman	Core Project and d3d9.dll	<amcolema(at)eagle(dot)fgcu(dot)edu>
+  Niklas "DrDaxxy" Kielblock	60 FPS and Related Features
+  Peter "Durante" Thoman	Shadow Resolution and GeDoSaTo
