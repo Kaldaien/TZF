@@ -1,7 +1,13 @@
 # TZF
-Tales of Zestiria "Fix" - Sound System Fixes
-Copyright (c) 2015 Andon "Kaldaien" Coleman.
-All Rights Reserved.
+Tales of Zestiria "Fix" - Community Patch
+
+    Copyright (c) 2015
+
+       Andon "Kaldaien" Coleman,
+       Niklas "DrDaxxy" Kielblock,
+       Peter "Durante" Thoman
+ 
+    All Rights Reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions
