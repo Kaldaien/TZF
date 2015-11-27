@@ -855,19 +855,18 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       //
       if (config.render.postproc_ratio > 0.0f) {
         if (desc.Width  == tzf::RenderFix::width  &&
-            desc.Height == tzf::RenderFix::height &&
-            desc.Usage == D3DUSAGE_RENDERTARGET) {
+            desc.Height == tzf::RenderFix::height) {
           if (pSurf == tzf::RenderFix::pPostProcessSurface) {
             float newData [12];
 
             float rescale_x = 512.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
             float rescale_y = 256.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
 
-            for (int i = 0; i < 4; i += 2) {
+            for (int i = 0; i < 8; i += 2) {
               newData [i] = pConstantData [i] * rescale_x;
             }
 
-            for (int i = 1; i < 4; i += 2) {
+            for (int i = 1; i < 8; i += 2) {
               newData [i] = pConstantData [i] * rescale_y;
             }
 
