@@ -1,0 +1,22 @@
+Tales of Zestiria "Fix" started out as a simple single-author DirectSound / WASAPI fix for audio-related game crashes.
+
+
+Thanks to the work of multiple contributors, the scope has broadened to encompass virtually all aspects of gameplay.
+
+  Andon "Kaldaien" Coleman	Core Project and d3d9.dll	<amcolema(at)eagle(.)fgcu(.)edu>
+  Niklas "DrDaxxy" Kielblock	60 FPS and Related Features
+  Peter "Durante" Thoman	Character Shadow Resolution
+
+
+The community would like to extend thanks to the following individuals for tools and other support:
+
+  Eric "Dark Byte" Heijnen	Cheat Engine
+  Peter "Durante" Thoman	GeDoSaTo
+  Steve P. Miller		Dependency Walker
+
+  Steam User: Crache		Unofficial Community Manager
+
+
+  Everyone who has ever posted in the development thread on the Steam forums.
+  
+   * This project would be nothing but a throw-away 7.1 channel audio fix without your support.
