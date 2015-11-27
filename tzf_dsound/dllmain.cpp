@@ -87,6 +87,7 @@ DllMain (HMODULE hModule,
       config.framerate.limiter_branch_addr  = 0x00990873;
       config.framerate.disable_limiter      = true;
       config.framerate.auto_adjust          = true;
+      config.framerate.target               = 60;
 
       config.file_io.capture                = false;
 

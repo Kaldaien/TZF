@@ -78,8 +78,6 @@ TZF_FindRootWindow (DWORD proc_id)
   return win.root;
 }
 
-HWND hDeviceWindow;
-
 class TZF_InputHooker
 {
 private:
@@ -146,12 +144,6 @@ public:
 
     std::string output;
 
-    if (config.framerate.stutter_fix && (! (tzf::FrameRateFix::fullscreen ||
-      tzf::FrameRateFix::driver_limit_setup ||
-      config.framerate.allow_windowed_mode))) {
-      output += "<Run Game in Fullscreen Mode or Disable Stutter Fix!>\n";
-    }
-
     static DWORD last_time = timeGetTime ();
     static bool  carret    = true;
 
@@ -202,13 +194,15 @@ public:
     DWORD dwTime = timeGetTime ();
 
     while (true) {
-      // Spin until the game has a render window setup
+      // Spin until the game has a render window setup and various
+      //   other resources loaded
       if (! tzf::RenderFix::pDevice) {
         Sleep (83);
         continue;
       }
 
-      dwThreadId = GetWindowThreadProcessId (hDeviceWindow, nullptr);
+      dwThreadId =
+        GetWindowThreadProcessId (tzf::RenderFix::hWndDevice, nullptr);
 
       break;
     }
@@ -338,31 +332,27 @@ public:
       if (visible && vkCode == VK_BACK) {
         if (keyDown) {
           size_t len = strlen (text);
-          len--;
+                 len--;
+
           if (len < 1)
             len = 1;
+
           text [len] = '\0';
         }
-      } else if ((vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT)) {
-        if (keyDown)
-          keys_ [VK_SHIFT] = 0x81;
-        else
-          keys_ [VK_SHIFT] = 0x00;
       }
+
+      else if ((vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT)) {
+        if (keyDown) keys_ [VK_SHIFT] = 0x81; else keys_ [VK_SHIFT] = 0x00;
+      }
+
       else if ((!repeated) && vkCode == VK_CAPITAL) {
-        if (keyDown) {
-          if (keys_ [VK_CAPITAL] == 0x00)
-            keys_ [VK_CAPITAL] = 0x81;
-          else
-            keys_ [VK_CAPITAL] = 0x00;
-        }
+        if (keyDown) if (keys_ [VK_CAPITAL] == 0x00) keys_ [VK_CAPITAL] = 0x81; else keys_ [VK_CAPITAL] = 0x00;
       }
+
       else if ((vkCode == VK_CONTROL || vkCode == VK_LCONTROL || vkCode == VK_RCONTROL)) {
-        if (keyDown)
-          keys_ [VK_CONTROL] = 0x81;
-        else
-          keys_ [VK_CONTROL] = 0x00;
+        if (keyDown) keys_ [VK_CONTROL] = 0x81; else keys_ [VK_CONTROL] = 0x00;
       }
+
       else if ((vkCode == VK_UP) || (vkCode == VK_DOWN)) {
         if (keyDown && visible) {
           if (vkCode == VK_UP)
@@ -382,6 +372,7 @@ public:
           }
         }
       }
+
       else if (visible && vkCode == VK_RETURN) {
         if (keyDown && LOWORD (lParam) < 2) {
           size_t len = strlen (text+1);
@@ -407,8 +398,8 @@ public:
             }
 
             result_str = result.getWord   () + std::string (" ")   +
-                          result.getArgs   () + std::string (":  ") +
-                          result.getResult ();
+                         result.getArgs   () + std::string (":  ") +
+                         result.getResult ();
           }
         }
       }
@@ -418,9 +409,50 @@ public:
 
         keys_ [vkCode] = 0x81;
 
-        if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press) {
-          visible = ! visible;
-          tzf::SteamFix::SetOverlayState (visible);
+        if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT]) {
+          if (keys_ [VK_TAB] && new_press) {
+            visible = ! visible;
+            tzf::SteamFix::SetOverlayState (visible);
+          }
+          else if (keys_ ['1'] && new_press) {
+            command.ProcessCommandLine ("AutoAdjust false");
+            command.ProcessCommandLine ("TargetFPS 60");
+            command.ProcessCommandLine ("TickScale 1");
+          }
+          else if (keys_ ['2'] && new_press) {
+            command.ProcessCommandLine ("AutoAdjust false");
+            command.ProcessCommandLine ("TargetFPS 30");
+            command.ProcessCommandLine ("TickScale 2");
+          }
+          else if (keys_ ['3'] && new_press) {
+            command.ProcessCommandLine ("AutoAdjust false");
+            command.ProcessCommandLine ("TargetFPS 20");
+            command.ProcessCommandLine ("TickScale 3");
+          }
+          else if (keys_ ['4'] && new_press) {
+            command.ProcessCommandLine ("AutoAdjust false");
+            command.ProcessCommandLine ("TargetFPS 15");
+            command.ProcessCommandLine ("TickScale 4");
+          }
+          else if (keys_ ['5'] && new_press) {
+            command.ProcessCommandLine ("AutoAdjust false");
+            command.ProcessCommandLine ("TargetFPS 12");
+            command.ProcessCommandLine ("TickScale 5");
+          }
+          else if (keys_ ['6'] && new_press) {
+            command.ProcessCommandLine ("AutoAdjust false");
+            command.ProcessCommandLine ("TargetFPS 10");
+            command.ProcessCommandLine ("TickScale 6");
+          }
+          else if (keys_ ['9'] && new_press) {
+            command.ProcessCommandLine ("AutoAdjust true");
+            command.ProcessCommandLine ("TargetFPS 60");
+            command.ProcessCommandLine ("TickScale 1");
+          }
+          else if (keys_ [VK_OEM_PERIOD]) {
+            command.ProcessCommandLine ("AutoAdjust true");
+            command.ProcessCommandLine ("TickScale 25");
+          }
         }
 
         if (visible) {
@@ -437,12 +469,12 @@ public:
             command_issued = false;
           }
         }
-      } else if ((! keyDown)) {
-        keys_ [vkCode] = 0x00;
       }
 
-      if (visible)
-        return 1;
+      else if ((! keyDown))
+        keys_ [vkCode] = 0x00;
+
+      if (visible) return 1;
     }
 
     return CallNextHookEx (TZF_InputHooker::getInstance ()->hooks.keyboard, nCode, wParam, lParam);
@@ -507,7 +539,9 @@ TZF_CreateFuncHook ( LPCWSTR pwszFuncName,
                     pDetour,
                     ppOriginal );
 
-  if (status != MH_OK) {
+  // Ignore the Already Created Error; happens A LOT as multiple
+  //   devices are created during runtime.
+  if (status != MH_OK && status != MH_ERROR_ALREADY_CREATED) {
     dll_log.Log ( L" [ MinHook ] Failed to Install Hook for '%s' "
                   L"[Address: %04Xh]!  (Status: \"%hs\")",
                     pwszFuncName,
@@ -662,8 +696,6 @@ TZF_Init_MinHook (void)
            (LPVOID *)&LoadLibraryW_Original );
 #endif
 
-  //TZF_EnableHook (MH_ALL_HOOKS);
-
   TZF_InputHooker* pHook = TZF_InputHooker::getInstance ();
   pHook->Start ();
 
@@ -695,7 +727,7 @@ TZF_DrawCommandConsole (void)
 
   // Skip the first frame, so that the console appears below the
   //  other OSD.
-  if (draws++ > 0) {
+  if (draws++ > 20) {
     TZF_InputHooker* pHook = TZF_InputHooker::getInstance ();
     pHook->Draw ();
   }

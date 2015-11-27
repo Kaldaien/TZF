@@ -41,11 +41,11 @@ struct {
 } audio;
 
 struct {
-  tzf::ParameterBool*    stutter_fix;
-  tzf::ParameterFloat*   fudge_factor;
+  tzf::ParameterBool*    stutter_fix;         // OBSOLETE
+  tzf::ParameterFloat*   fudge_factor;        // OBSOLETE
   tzf::ParameterBool*    allow_fake_sleep;
   tzf::ParameterBool*    yield_processor;
-  tzf::ParameterBool*    allow_windowed_mode;
+  tzf::ParameterBool*    allow_windowed_mode; // OBSOLETE
   tzf::ParameterBool*    minimize_latency;
   tzf::ParameterInt*     speedresetcode_addr;
   tzf::ParameterInt*     speedresetcode2_addr;
@@ -53,6 +53,7 @@ struct {
   tzf::ParameterInt*     limiter_branch_addr;
   tzf::ParameterBool*    disable_limiter;
   tzf::ParameterBool*    auto_adjust;
+  tzf::ParameterInt*     target;
 } framerate;
 
 struct {
@@ -253,6 +254,16 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.FrameRate",
          L"AutoAdjust" );
 
+   framerate.target =
+     static_cast <tzf::ParameterInt *>
+       (g_ParameterFactory.create_parameter <int> (
+         L"Target FPS")
+       );
+   framerate.target->register_to_ini (
+     dll_ini,
+       L"TZFIX.FrameRate",
+         L"Target" );
+
 
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>
@@ -356,7 +367,7 @@ TZF_LoadConfig (std::wstring name) {
 
    render.rescale_env_shadows =
      static_cast <tzf::ParameterInt *>
-       (g_ParameterFactory.create_parameter <bool> (
+       (g_ParameterFactory.create_parameter <int> (
          L"Rescale Enviornmental Shadows")
        );
    render.rescale_env_shadows->register_to_ini (
@@ -446,6 +457,9 @@ TZF_LoadConfig (std::wstring name) {
 
   if (framerate.auto_adjust->load ())
     config.framerate.auto_adjust = framerate.auto_adjust->get_value ();
+
+  if (framerate.target->load ())
+    config.framerate.target = framerate.target->get_value ();
 
 
 
@@ -548,6 +562,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   framerate.auto_adjust->set_value (config.framerate.auto_adjust);
   framerate.auto_adjust->store     ();
+
+  framerate.target->set_value (config.framerate.target);
+  framerate.target->store     ();
 
 
   render.aspect_addr->set_value (config.render.aspect_addr);

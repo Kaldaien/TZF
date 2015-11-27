@@ -39,13 +39,17 @@ namespace tzf
     void RenderTick (void);
 
 
+    // Determine the appropriate value for TickScale
+    long CalcTickScale (double elapsed_ms);
+
+
     //
     // At key points during the game, we need to disable the code that
     //  cuts timing in half. These places will be wrapped by calls to
     //    these.
     //
-    void Disallow60FPS (void);
-    void Allow60FPS    (void);
+    void Begin30FPSEvent (void);
+    void End30FPSEvent   (void);
 
 
     class CommandProcessor : public eTB_iVariableListener {

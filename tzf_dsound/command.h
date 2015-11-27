@@ -143,7 +143,7 @@ private:
   eTB_iVariableListener*     listener_;
 };
 
-#define eTB_CaseAdjust(ch,lower) ((lower) ? ::tolower ((int)(ch)) : (ch))
+#define eTB_CaseAdjust(ch,lower) ((lower) ? __ascii_tolower ((ch)) : (ch))
 
 // Hash function for UTF8 strings
 template < class _Kty, class _Pr = std::less <_Kty> >

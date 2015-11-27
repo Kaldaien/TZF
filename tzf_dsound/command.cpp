@@ -234,13 +234,20 @@ eTB_CommandProcessor::ProcessCommandLine (const char* szCommandLine)
       }
     }
 
-    std::string cmd_word (command_word);
-    std::string cmd_args (command_args_len > 0 ? command_args : "");
+    //char* lowercase_cmd_word = strdup (command_word);
+    //for (int i = strlen (lowercase_cmd_word) - 1; i >= 0; i--)
+      //lowercase_cmd_word [i] = __ascii_tolower (lowercase_cmd_word [i]);
+
+    std::string cmd_word       (command_word);
+    //std::string cmd_word_lower (lowercase_cmd_word);
+    std::string cmd_args       (command_args_len > 0 ? command_args : "");
     /* ^^^ cmd_args is what is passed back to the object that issued
              this command... If no arguments were passed, it MUST be
                an empty string. */
 
-    eTB_Command* cmd = command.FindCommand (command_word);
+    //free (lowercase_cmd_word);
+
+    eTB_Command* cmd = command.FindCommand (cmd_word.c_str ());
 
     if (cmd != NULL) {
       return cmd->execute (command_args);
@@ -248,7 +255,7 @@ eTB_CommandProcessor::ProcessCommandLine (const char* szCommandLine)
 
     /* No command found, perhaps the word was a variable? */
 
-    const eTB_Variable* var = command.FindVariable (command_word);
+    const eTB_Variable* var = command.FindVariable (cmd_word.c_str ());
 
     if (var != NULL) {
       if (var->getType () == eTB_Variable::Boolean)

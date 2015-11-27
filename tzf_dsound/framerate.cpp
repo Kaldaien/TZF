@@ -36,8 +36,6 @@ int32_t          tzf::FrameRateFix::tick_scale               = 2; // 30 FPS
 
 CRITICAL_SECTION tzf::FrameRateFix::alter_speed_cs           = { 0 };
 
-bool             tzf::FrameRateFix::fullscreen               = false;
-bool             tzf::FrameRateFix::driver_limit_setup       = false;
 bool             tzf::FrameRateFix::stutter_fix_installed    = false;
 bool             tzf::FrameRateFix::variable_speed_installed = false;
 
@@ -57,7 +55,6 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
 {
   D3DPRESENT_PARAMETERS present_params;
 
-#if 0
   // Ignore D3D9Ex devices, I don't know what they are even for, but they will
   //   totally screw things up if we don't.
   IDirect3DDevice9Ex* pDeviceEx = nullptr;
@@ -68,7 +65,6 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
     pDeviceEx->Release ();
     return BMF_SetPresentParamsD3D9_Original (device, pparams);
   }
-#endif
 
   //
   // TODO: Figure out what the hell is doing this when RTSS is allowed to use
@@ -88,60 +84,17 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   if (pparams != nullptr) {
     memcpy (&present_params, pparams, sizeof D3DPRESENT_PARAMETERS);
 
-    dll_log.Log ( L" %% Caught D3D9 Swapchain :: Fullscreen=%s  (%lux%lu@%lu Hz)",
+    dll_log.Log ( L" %% Caught D3D9 Swapchain :: Fullscreen=%s "
+                  L" (%lux%lu@%lu Hz) "
+                  L" [Device Window: 0x%04X]",
                     pparams->Windowed ? L"False" :
                                         L"True",
                       pparams->BackBufferWidth,
                         pparams->BackBufferHeight,
-                          pparams->FullScreen_RefreshRateInHz );
+                          pparams->FullScreen_RefreshRateInHz,
+                            pparams->hDeviceWindow );
 
-    extern HWND hDeviceWindow;
-    hDeviceWindow = pparams->hDeviceWindow;
-
-    if (config.framerate.stutter_fix) {
-      // On NVIDIA hardware, we can setup a framerate limiter at the driver
-      //   level to handle windowed mode or improperly setup VSYNC
-      static HMODULE hD3D9 = GetModuleHandle (L"d3d9.dll");
-
-      typedef BOOL (__stdcall *BMF_NvAPI_IsInit_t)
-        (void);
-      typedef void (__stdcall *BMF_NvAPI_SetAppFriendlyName_t)
-        (const wchar_t* wszFriendlyName);
-      typedef BOOL (__stdcall *BMF_NvAPI_SetFramerateLimit_t)
-        (uint32_t limit);
-
-      static BMF_NvAPI_IsInit_t             BMF_NvAPI_IsInit             =
-        (BMF_NvAPI_IsInit_t)GetProcAddress
-        (hD3D9, "BMF_NvAPI_IsInit");
-      static BMF_NvAPI_SetAppFriendlyName_t BMF_NvAPI_SetAppFriendlyName = 
-        (BMF_NvAPI_SetAppFriendlyName_t)GetProcAddress
-        (hD3D9, "BMF_NvAPI_SetAppFriendlyName");
-      static BMF_NvAPI_SetFramerateLimit_t BMF_NvAPI_SetFramerateLimit   = 
-        (BMF_NvAPI_SetFramerateLimit_t)GetProcAddress
-        (hD3D9, "BMF_NvAPI_SetFramerateLimit");
-
-      if ((! tzf::FrameRateFix::driver_limit_setup) && BMF_NvAPI_IsInit ()) {
-        BMF_NvAPI_SetAppFriendlyName (L"Tales of Zestiria");
-
-        if (! BMF_NvAPI_SetFramerateLimit (0UL)) {
-          MessageBox ( NULL,
-                         L"Stutter Fix:\t\t"
-                         L"Optimal NVIDIA Driver Framerate Limit Setup",
-                           L"Game Must Restart",
-                             MB_OK | MB_TOPMOST | MB_SETFOREGROUND |
-                             MB_ICONINFORMATION );
-          exit (0);
-        }
-
-        tzf::FrameRateFix::driver_limit_setup = true;
-      }
-    }
-
-    if (! pparams->Windowed)
-      tzf::FrameRateFix::fullscreen = true;
-    else {
-      tzf::FrameRateFix::fullscreen = false;
-    }
+    tzf::RenderFix::hWndDevice = pparams->hDeviceWindow;
 
     tzf::RenderFix::width  = present_params.BackBufferWidth;
     tzf::RenderFix::height = present_params.BackBufferHeight;
@@ -213,11 +166,7 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
   //   thread when it DID NOT just voluntarily relinquish its scheduling
   //     timeslice
   //
-  if (dwThreadId != tzf::RenderFix::dwRenderThreadID || (! render_sleep0) ||
-                              (! (tzf::FrameRateFix::fullscreen           ||
-                                  tzf::FrameRateFix::driver_limit_setup   ||
-                                  config.framerate.allow_windowed_mode))) {
-
+  if (dwThreadId != tzf::RenderFix::dwRenderThreadID || (! render_sleep0)) {
     if (dwThreadId == tzf::RenderFix::dwRenderThreadID)
       memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
 
@@ -251,10 +200,10 @@ __stdcall
 BinkOpen_Detour ( DWORD unknown0,
                   DWORD unknown1 )
 {
-  dll_log.Log (L" * Disabling 60 FPS -- Bink Video Opened");
+  dll_log.Log (L" * Disabling TargetFPS -- Bink Video Opened");
 
   tzf::RenderFix::bink = true;
-  tzf::FrameRateFix::Disallow60FPS ();
+  tzf::FrameRateFix::Begin30FPSEvent ();
 
   return BinkOpen_Original (unknown0, unknown1);
 }
@@ -268,10 +217,10 @@ BinkClose_Detour (DWORD unknown)
 {
   BinkClose_Original (unknown);
 
-  dll_log.Log (L" * Restoring 60 FPS -- Bink Video Closed");
+  dll_log.Log (L" * Restoring TargetFPS -- Bink Video Closed");
 
   tzf::RenderFix::bink = false;
-  tzf::FrameRateFix::Allow60FPS ();
+  tzf::FrameRateFix::End30FPSEvent ();
 }
 
 
@@ -318,16 +267,7 @@ tzf::FrameRateFix::Init (void)
 {
   CommandProcessor* comm_proc = CommandProcessor::getInstance ();
 
-  // Poke a hole in the BMF design and hackishly query the TargetFPS ...
-  //   this needs to be re-designed pronto.
-  static HMODULE hD3D9 = GetModuleHandle (L"d3d9.dll");
-
-  typedef uint32_t (__stdcall *BMF_Config_GetTargetFPS_t)(void);
-  static BMF_Config_GetTargetFPS_t BMF_Config_GetTargetFPS =
-    (BMF_Config_GetTargetFPS_t)GetProcAddress ( hD3D9,
-                                                  "BMF_Config_GetTargetFPS" );
-
-  target_fps = BMF_Config_GetTargetFPS ();
+  target_fps = config.framerate.target;
 
   TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
                       BMF_SetPresentParamsD3D9_Detour, 
@@ -351,7 +291,7 @@ tzf::FrameRateFix::Init (void)
 
   InitializeCriticalSectionAndSpinCount (&alter_speed_cs, 1000UL);
 
-  if (true) {//target_fps != 30) {
+  if (true) {
     dll_log.LogEx (true, L" * Installing variable rate simulation... ");
 
     DWORD dwOld;
@@ -366,13 +306,11 @@ tzf::FrameRateFix::Init (void)
     // 
     // we want to skip the first two dwords
     //
-#if 0
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, PAGE_EXECUTE_READWRITE, &dwOld);
                *((DWORD *)(config.framerate.speedresetcode_addr +  2)) += 8;
                *((DWORD *)(config.framerate.speedresetcode_addr +  8)) += 8;
                *((DWORD *)(config.framerate.speedresetcode_addr + 13)) -= 2;
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
-#endif
 
     TZF_FlushInstructionCache ((LPCVOID)config.framerate.speedresetcode_addr, 17);
 
@@ -410,11 +348,11 @@ tzf::FrameRateFix::Init (void)
     variable_speed_installed = true;
 
     // mov eax, 02 to mov eax, 01
-    command.ProcessCommandLine ("TickScale 1");
-
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-    *(DWORD *)config.framerate.speedresetcode3_addr = 1;
-    VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+    char scale [32];
+    sprintf ( scale,
+                "TickScale %li",
+                  CalcTickScale (1000.0f * (1.0f / target_fps)) );
+    command.ProcessCommandLine (scale);
 
     dll_log.LogEx (false, L" Target=%lu FPS\n",
       target_fps);
@@ -438,7 +376,6 @@ tzf::FrameRateFix::Init (void)
 
   // No matter which technique we use, these things need to be options
   command.AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
-  command.AddVariable ("AllowWindowedMode", new eTB_VarStub <bool>  (&config.framerate.allow_windowed_mode));
 
   // Hook this no matter what, because it lowers the _REPORTED_ CPU usage,
   //   and some people would object if we suddenly changed this behavior :P
@@ -505,12 +442,15 @@ tzf::FrameRateFix::Shutdown (void)
   stutter_fix_installed = false;
 }
 
+static int scale_before = 2;
+
 void
-tzf::FrameRateFix::Disallow60FPS (void)
+tzf::FrameRateFix::Begin30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
   if (variable_speed_installed) {
+    scale_before = tick_scale;
     command.ProcessCommandLine ("TickScale 2");
   }
 
@@ -518,12 +458,14 @@ tzf::FrameRateFix::Disallow60FPS (void)
 }
 
 void
-tzf::FrameRateFix::Allow60FPS (void)
+tzf::FrameRateFix::End30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
   if (variable_speed_installed) {
-    command.ProcessCommandLine ("TickScale 1");
+    char szRescale [32];
+    sprintf (szRescale, "TickScale %i", scale_before);
+    command.ProcessCommandLine (szRescale);
   }
 
   LeaveCriticalSection (&alter_speed_cs);
@@ -532,6 +474,8 @@ tzf::FrameRateFix::Allow60FPS (void)
 
 
 
+bool use_accumulator = false;
+bool floating_target = true;
 
 tzf::FrameRateFix::CommandProcessor* tzf::FrameRateFix::CommandProcessor::pCommProc;
 
@@ -540,6 +484,8 @@ tzf::FrameRateFix::CommandProcessor::CommandProcessor (void)
   tick_scale_ = new eTB_VarStub <int> (&tick_scale, this);
 
   command.AddVariable ("TickScale", tick_scale_);
+
+  command.AddVariable ("UseAccumulator", new eTB_VarStub <bool> (&use_accumulator));
 }
 
 bool
@@ -552,16 +498,15 @@ tzf::FrameRateFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
     DWORD original1 = *((DWORD *)(TICK_ADDR_BASE + 4));
 
     if (val != nullptr) {
-#if 1
       VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, PAGE_READWRITE, &dwOld);
 
-#if 0
       if (variable_speed_installed) {
+        // Battle Tickrate
         *(DWORD *)(TICK_ADDR_BASE) = *(DWORD *)val;
       }
-#endif
 
       if (variable_speed_installed) {
+        // World Tickrate
         *(DWORD *)(TICK_ADDR_BASE + 4) = *(DWORD *)val;
       }
       *(DWORD *)val = *(DWORD *)(TICK_ADDR_BASE + 4);
@@ -571,11 +516,10 @@ tzf::FrameRateFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
       if (variable_speed_installed) {
         // mov eax, 02 to mov eax, 01
         VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
-        *(DWORD *)config.framerate.speedresetcode3_addr = *(DWORD *)val;
+                      *(DWORD *)config.framerate.speedresetcode3_addr = *(DWORD *)val;
         VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
       }
       //InterlockedExchange ((DWORD *)val, *(DWORD *)config.framerate.speedresetcode3_addr);
-#endif
 
       tick_scale      = *(int32_t *)val;
     }
@@ -586,44 +530,119 @@ tzf::FrameRateFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
 
 
 
+long
+tzf::FrameRateFix::CalcTickScale (double elapsed_ms)
+{
+  const double tick_ms  = (1.0 / 60.0) * 1000.0;
+  const double inv_rate =  1.0 / target_fps;
+
+  long scale = min (max (elapsed_ms / tick_ms, 1), 7);
+
+  if (scale > 6)
+    scale = inv_rate / (1.0 / 60.0);
+
+  return scale;
+}
+
 void
 tzf::FrameRateFix::RenderTick (void)
 {
-  static LARGE_INTEGER last_time = { 0 };
-  static LARGE_INTEGER freq      = { 0 };
+  static LARGE_INTEGER last_time  = { 0 };
+  static LARGE_INTEGER freq       = { 0 };
 
   LARGE_INTEGER time;
 
   QueryPerformanceFrequency (&freq);
   QueryPerformanceCounter   (&time);
 
-  const double inv_rate = 1.0 / tzf::FrameRateFix::target_fps;
-  const double epsilon  = 0.0;
+  const double inv_rate = 1.0 / target_fps;
+  const double epsilon  = 0.0;//(accum / freq.QuadPart / (1.0 / 60.0));
+
+
+#ifdef ADAPTIVE_LIMITER
+  double fps = 1.0 / ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart);
+
+  static double        last_fps        = target_fps;
+  static long          last_fps_target = target_fps;
+  static long          last_change     = target_fps;
+
+  static long          lower_vote      = 0;
+  static long          raise_vote      = 0;
+
+  const int            streak_threshold_lower = 3;//10;
+  const int            streak_threshold_raise = 30;//100;
+
+  long fps_target = 60;
+
+  if ((fps + last_fps) / 2.0 > 50)
+    fps_target = 60;
+  else if ((fps + last_fps) / 2.0 > 26)
+    fps_target = 30;
+  else if ((fps + last_fps) / 2.0 > 18.5)
+    fps_target = 20;
+  else if ((fps + last_fps) / 2.0 > 13.5)
+    fps_target = 15;
+  else
+    fps_target = 10;
+
+  if (fps_target > last_fps_target) {
+    raise_vote++;
+    lower_vote = 0;
+  }
+  else if (fps_target < last_fps_target) {
+    lower_vote++;
+    raise_vote = 0;
+  }
+
+  if (lower_vote > streak_threshold_lower) {
+    target_fps  = fps_target;
+    last_fps_target = fps_target;
+    lower_vote = 0;
+    raise_vote = 0;
+  }
+  if (raise_vote > streak_threshold_raise) {
+    target_fps  = fps_target;
+    last_fps_target = fps_target;
+    lower_vote = 0;
+    raise_vote = 0;
+  }
+
+  last_fps        = fps;
+#endif
+
 
   // Busy-wait because we are rendering too fast...
   while (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon)) {
+    YieldProcessor ();
     QueryPerformanceCounter (&time);
   }
 
-  double  dt = ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0);
+  double dt = ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0);
 
-#if 0
+
+#ifdef ACCUMULATOR
   static double accum = 0.0;
 
-  accum +=  dt - floor (dt);
-  dt    -= (dt - floor (dt));
+  if (use_accumulator) {
+    accum +=  dt - floor (dt);
 
-  if (accum >= 1.0) {
-    dt    +=  accum - (accum - floor (accum));
-    accum -=  accum - (accum - floor (accum));
+    time.QuadPart +=
+      (dt - floor (dt)) * (1.0 / 60.0) * freq.QuadPart;
+
+    dt    -= (dt - floor (dt));
+
+    if (accum >= 1.0) {
+      time.QuadPart -=
+          (accum - (accum - floor (accum))) * (1.0 / 60.0) * freq.QuadPart;
+      dt    +=  accum - (accum - floor (accum));
+      accum -=  accum - (accum - floor (accum));
+    }
+  } else {
+    accum = 0.0;
   }
 #endif
 
-  long scale = min (max (dt, 1), 7);
-
-  if (scale > 6) {
-    scale = inv_rate / (1.0 / 60.0);
-  }
+  long scale = CalcTickScale (dt * (1.0 / 60.0) * 1000.0);
 
   if (config.framerate.auto_adjust) {
     char rescale [32];

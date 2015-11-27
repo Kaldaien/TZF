@@ -28,6 +28,8 @@
 struct IDirect3DDevice9;
 struct IDirect3DSurface9;
 
+#include <Windows.h>
+
 namespace tzf
 {
   namespace RenderFix
@@ -62,6 +64,7 @@ namespace tzf
 
     extern IDirect3DSurface9* pPostProcessSurface;
     extern IDirect3DDevice9*  pDevice;
+    extern HWND               hWndDevice;
 
     extern uint32_t           dwRenderThreadID;
     extern bool               bink; // True if a bink video is playing

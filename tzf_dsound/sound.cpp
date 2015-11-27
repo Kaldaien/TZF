@@ -24,6 +24,7 @@
 #include "log.h"
 #include "config.h"
 #include "sound.h"
+#include "hook.h"
 
 #include <dsound.h>
 
@@ -48,36 +49,6 @@ WAVEFORMATEX tzf::SoundFix::snd_bink_fmt;
 WAVEFORMATEX tzf::SoundFix::snd_device_fmt;
 
 WAVEFORMATEXTENSIBLE g_DeviceFormat;
-
-#define __PTR_SIZE   sizeof LPCVOID
-#define __PAGE_PRIVS PAGE_EXECUTE_READWRITE
-
-#define DSOUND_VIRTUAL_OVERRIDE(_Base,_Index,_Name,_Override,_Original,_Type){\
-  void** vftable = *(void***)*_Base;                                          \
-                                                                              \
-  if (vftable [_Index] != _Override) {                                        \
-    DWORD dwProtect;                                                          \
-                                                                              \
-    VirtualProtect (&vftable [_Index], __PTR_SIZE, __PAGE_PRIVS, &dwProtect); \
-                                                                              \
-  /*dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",*/  \
-               /*L##_Name, vftable [_Index],                              */  \
-               /*TZF_DescribeVirtualProtectFlags (dwProtect));            */  \
-                                                                              \
-    if (_Original == NULL)                                                    \
-      _Original = (##_Type)vftable [_Index];                                  \
-                                                                              \
-    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
-                                                                              \
-    vftable [_Index] = _Override;                                             \
-                                                                              \
-    VirtualProtect (&vftable [_Index], __PTR_SIZE, dwProtect, &dwProtect);    \
-                                                                              \
-  /*dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",*/\
-                /*L##_Name, vftable [_Index],                               */\
-                /*TZF_DescribeVirtualProtectFlags (dwProtect));             */\
-  }                                                                           \
-}
 
 const wchar_t*
 TZF_DescribeHRESULT (HRESULT result)
@@ -207,10 +178,12 @@ HRESULT
 WINAPI DSound_GetSpeakerConfig (IDirectSound *This, 
                           _Out_ LPDWORD       pdwSpeakerConfig)
 {
-  dll_log.Log (L"[!] %s (%08Xh, %08Xh) - "
-    L"[Calling Thread: 0x%04x]",
-    L"IDirectSound::GetSpeakerConfig", This, pdwSpeakerConfig,
-    GetCurrentThreadId ()
+  dll_log.Log ( L"[!] %s (%08Xh, %08Xh) - "
+                L"[Calling Thread: 0x%04x]",
+                  L"IDirectSound::GetSpeakerConfig",
+                    This,
+                      pdwSpeakerConfig,
+                        GetCurrentThreadId ()
   );
 
   HRESULT ret;
@@ -323,15 +296,21 @@ DirectSoundCreate_Detour (_In_opt_   LPCGUID        pcGuidDevice,
   HRESULT ret = DirectSoundCreate_Original (pcGuidDevice, ppDS, pUnkOuter);
 
   if (SUCCEEDED (ret)) {
-    DSOUND_VIRTUAL_OVERRIDE ( ppDS, 8, "IDirectSound::GetSpeakerConfig",
-                              DSound_GetSpeakerConfig,
-                              DSound_GetSpeakerConfig_Original,
-                              DSound_GetSpeakerConfig_t );
+    void** vftable = *(void***)*ppDS;
 
-    DSOUND_VIRTUAL_OVERRIDE ( ppDS, 9, "IDirectSound::SetSpeakerConfig",
-                              DSound_SetSpeakerConfig,
-                              DSound_SetSpeakerConfig_Original,
-                              DSound_SetSpeakerConfig_t );
+    TZF_CreateFuncHook ( L"IDirectSound::GetSpeakerConfig",
+                         vftable [8],
+                         DSound_GetSpeakerConfig,
+              (LPVOID *)&DSound_GetSpeakerConfig_Original );
+
+    TZF_EnableHook (vftable [8]);
+
+    TZF_CreateFuncHook ( L"IDirectSound::SetSpeakerConfig",
+                         vftable [9],
+                         DSound_SetSpeakerConfig,
+              (LPVOID *)&DSound_SetSpeakerConfig_Original );
+
+    TZF_EnableHook (vftable [9]);
 
     DWORD dwSpeaker;
 
@@ -677,15 +656,21 @@ IMMDevice_Activate_Detour (IMMDevice    *This,
       // 13  SetEventHandle
       // 14  GetService
 
-      DSOUND_VIRTUAL_OVERRIDE ( ppAudioClient, 3, "IAudioClient::Initialize",
-                                IAudioClient_Initialize_Detour,
-                                IAudioClient_Initialize_Original,
-                                IAudioClient_Initialize_t );
+      void** vftable = *(void***)*ppAudioClient;
 
-      DSOUND_VIRTUAL_OVERRIDE ( ppAudioClient, 8, "IAudioClient::GetMixFormat",
-                                IAudioClient_GetMixFormat_Detour,
-                                IAudioClient_GetMixFormat_Original,
-                                IAudioClient_GetMixFormat_t );
+      TZF_CreateFuncHook ( L"IAudioClient::Initialize",
+                           vftable [3],
+                           IAudioClient_Initialize_Detour,
+                (LPVOID *)&IAudioClient_Initialize_Original );
+
+      TZF_EnableHook (vftable [3]);
+
+      TZF_CreateFuncHook ( L"IAudioClient::GetMixFormat",
+                           vftable [8],
+                           IAudioClient_GetMixFormat_Detour,
+                (LPVOID *)&IAudioClient_GetMixFormat_Original );
+
+      TZF_EnableHook (vftable [8]);
 
       g_pAudioDev = This;
 
@@ -724,10 +709,15 @@ CoCreateInstance_Detour (_In_     REFCLSID    rclsid,
     // 3 Activate
 
     if (SUCCEEDED (hr2) && pDev != nullptr) {
-      DSOUND_VIRTUAL_OVERRIDE ( (void **)&pDev, 3, "IMMDevice::Activate",
-                                IMMDevice_Activate_Detour,
-                                IMMDevice_Activate_Original,
-                                IMMDevice_Activate_t );
+      void** vftable = *(void***)*&pDev;
+
+      TZF_CreateFuncHook ( L"IMMDevice::Activate",
+                           vftable [3],
+                           IMMDevice_Activate_Detour,
+                (LPVOID *)&IMMDevice_Activate_Original );
+
+      TZF_EnableHook (vftable [3]);
+
       pDev->Release ();
     }
 
@@ -752,24 +742,6 @@ void
 tzf::SoundFix::Init (void)
 {
   CommandProcessor* pCmdProc = CommandProcessor::getInstance ();
-
-#if 0
-  TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf", 
-    sprintf_Detour,
-    (LPVOID *)&sprintf_Original );
-
-  TZF_CreateDLLHook ( L"msvcr100.dll", "sprintf_s", 
-    sprintf_s_Detour,
-    (LPVOID *)&sprintf_s_Original );
-
-  TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf", 
-    _snprintf_Detour,
-    (LPVOID *)&_snprintf_Original );
-
-  TZF_CreateDLLHook ( L"msvcr100.dll", "_snprintf_s", 
-    _snprintf_s_Detour,
-    (LPVOID *)&_snprintf_s_Original );
-#endif
 
   if (! config.audio.enable_fix)
     return;

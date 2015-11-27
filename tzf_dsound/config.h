@@ -39,9 +39,9 @@ struct tzf_config_t
   struct {
     bool  yield_processor      = true;
     bool  allow_fake_sleep     = false;
-    bool  stutter_fix          = false;
-    float fudge_factor         = 1.666f;
-    bool  allow_windowed_mode  = false;
+    bool  stutter_fix          = false;  // OBSOLETE
+    float fudge_factor         = 1.666f; // OBSOLETE
+    bool  allow_windowed_mode  = false;  // OBSOLETE
     bool  minimize_latency     = false;
     DWORD speedresetcode_addr  = 0x0046C529;
     DWORD speedresetcode2_addr = 0x0056E441;
@@ -49,6 +49,7 @@ struct tzf_config_t
     DWORD limiter_branch_addr  = 0x00990873;
     bool  disable_limiter      = true;
     bool  auto_adjust          = true;
+    int   target               = 60;
   } framerate;
 
   struct {
@@ -70,7 +71,7 @@ struct tzf_config_t
     int32_t  shadow_rescale     = -2;
     float    postproc_ratio     =  1.0f;
     bool     disable_scissor    = false;
-    uint32_t env_shadow_rescale = 0;
+    int32_t  env_shadow_rescale = 0;
   } render;
 
   struct {

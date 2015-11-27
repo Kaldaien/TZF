@@ -50,8 +50,6 @@ TZF_MakeShadowBitShift (uint32_t dim)
 }
 
 
-IDirect3DDevice9* tzf::RenderFix::pDevice = nullptr;
-
 typedef D3DMATRIX* (WINAPI *D3DXMatrixMultiply_t)(_Inout_    D3DMATRIX *pOut,
                                                   _In_ const D3DMATRIX *pM1,
                                                   _In_ const D3DMATRIX *pM2);
@@ -113,14 +111,6 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
         if (Value != D3DTEXF_POINT)
           Value = D3DTEXF_ANISOTROPIC;
     } else {
-#if 0
-      float bias = *((float *)(&Value));
-      if (bias > 3.0f)
-        bias = 3.0f;
-      if (bias < -3.0f)
-        bias = -3.0f;
-      Value = *((LPDWORD)(&bias));
-#endif
       float bias = *(float *)&Value;
 
       // Bad game, bad! Negative LOD Bias is UGLY AS HELL!
@@ -333,8 +323,6 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
-  tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
-
   return BMF_BeginBufferSwap ();
 }
 
@@ -346,6 +334,8 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
   // Ignore anything that's not the primary render device.
   if (device != tzf::RenderFix::pDevice)
     return BMF_EndBufferSwap (hr, device);
+
+  tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
 
 
   TZF_DrawCommandConsole ();
@@ -517,7 +507,7 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
   }
 
  if (Usage == D3DUSAGE_DEPTHSTENCIL) {
-    if (Width == 512 || Width == 1024 || Width == 2048) {
+    if (Width == Height && (Height == 512 || Height == 1024 || Height == 2048)) {
       uint32_t shift = config.render.env_shadow_rescale;
 
       Width  <<= shift;
@@ -697,11 +687,14 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
   //
   // Environmental Shadows
   //
-  if (pViewport->Width == pViewport->Height) {
+  if (pViewport->Width == pViewport->Height && 
+      (pViewport->Width ==  512 ||
+       pViewport->Width == 1024 ||
+       pViewport->Width == 2048)) {
     D3DVIEWPORT9 rescaled_shadow = *pViewport;
 
-    rescaled_shadow.Width  <<= 2;
-    rescaled_shadow.Height <<= 2;
+    rescaled_shadow.Width  <<= config.render.env_shadow_rescale;
+    rescaled_shadow.Height <<= config.render.env_shadow_rescale;
 
     return D3D9SetViewport_Original (This, &rescaled_shadow);
   }
@@ -782,6 +775,30 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
   }
 
   //
+  // Post-Processing
+  //
+  if (StartRegister == 240 &&
+    Vector4fCount == 1   &&
+    pConstantData [0] == -1.0f / 512.0f &&
+    pConstantData [1] ==  1.0f / 256.0f &&
+    config.render.postproc_ratio > 0.0f) {
+    if (SUCCEEDED (This->GetRenderTarget (0, &tzf::RenderFix::pPostProcessSurface)))
+      tzf::RenderFix::pPostProcessSurface->Release ();
+
+    float newData [4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    newData [0] = -1.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
+    newData [1] =  1.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
+
+    if (pConstantData [2] != 0.0f || 
+      pConstantData [3] != 0.0f) {
+      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+    }
+
+    return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
+  }
+
+  //
   // Env Shadow
   //
   if (StartRegister == 240 && Vector4fCount == 1) {
@@ -837,19 +854,20 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       // Post-Processing
       //
       if (config.render.postproc_ratio > 0.0f) {
-        if (desc.Width  == tzf::RenderFix::width &&
-            desc.Height == tzf::RenderFix::height) {
+        if (desc.Width  == tzf::RenderFix::width  &&
+            desc.Height == tzf::RenderFix::height &&
+            desc.Usage == D3DUSAGE_RENDERTARGET) {
           if (pSurf == tzf::RenderFix::pPostProcessSurface) {
             float newData [12];
 
             float rescale_x = 512.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
             float rescale_y = 256.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
 
-            for (int i = 0; i < 8; i += 2) {
+            for (int i = 0; i < 4; i += 2) {
               newData [i] = pConstantData [i] * rescale_x;
             }
 
-            for (int i = 1; i < 8; i += 2) {
+            for (int i = 1; i < 4; i += 2) {
               newData [i] = pConstantData [i] * rescale_y;
             }
 
@@ -875,37 +893,17 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
     }
   }
 
-
-  //
-  // Post-Processing
-  //
-  if (StartRegister == 240 &&
-      Vector4fCount == 1   &&
-      pConstantData [0] == -1.0f / 512.0f &&
-      pConstantData [1] ==  1.0f / 256.0f &&
-      config.render.postproc_ratio > 0.0f) {
-    if (SUCCEEDED (This->GetRenderTarget (0, &tzf::RenderFix::pPostProcessSurface)))
-      tzf::RenderFix::pPostProcessSurface->Release ();
-
-    float newData [4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-
-    newData [0] = -1.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
-    newData [1] =  1.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
-
-    if (pConstantData [2] != 0.0f || 
-        pConstantData [3] != 0.0f) {
-      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
-    }
-
-    return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
-  }
-
   //
   // Bink Video or UI
   //
   if ( Vector4fCount == 5 && g_pPS != nullptr && g_pVS != nullptr && 
        ( (ps_checksums [g_pPS] == PS_CHECKSUM_UI   && vs_checksums [g_pVS] == VS_CHECKSUM_UI && config.render.aspect_correction) ||
          (vs_checksums [g_pVS] == VS_CHECKSUM_BINK && tzf::RenderFix::bink && config.render.blackbar_videos) ) ) {
+    if (pConstantData [ 0] == 0.0015625f     && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
+        pConstantData [ 4] == 0.0f           && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
+        pConstantData [ 8] == 0.0f           && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f /*&&
+        pConstantData [12] == -0.7937499881f && pConstantData [13] == 0.1555555612f && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
+        pConstantData [16] == 1.0f           && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f*/)
    {
       D3DVIEWPORT9 vp9_orig;
       This->GetViewport (&vp9_orig);
@@ -1083,7 +1081,7 @@ tzf::RenderFix::Init (void)
 
 
 
-#if 0
+#if 1
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetSamplerState_Override",
                       D3D9SetSamplerState_Detour,
             (LPVOID*)&D3D9SetSamplerState_Original,
@@ -1100,6 +1098,10 @@ tzf::RenderFix::Init (void)
             (LPVOID*)&D3D9SetPixelShaderConstantF_Original );
 #endif
 
+
+
+
+#if 1
   // Needed for shadow re-scaling
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetViewport_Override",
                       D3D9SetViewport_Detour,
@@ -1127,6 +1129,10 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateTexture_Override",
                       D3D9CreateTexture_Detour,
             (LPVOID*)&D3D9CreateTexture_Original );
+#endif
+
+
+
 
 #if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateRenderTarget_Override",
@@ -1229,6 +1235,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
 
   eTB_Variable* complete_mipmaps    = new eTB_VarStub <bool>  (&config.render.complete_mipmaps);
   eTB_Variable* rescale_shadows     = new eTB_VarStub <int>   (&config.render.shadow_rescale);
+  eTB_Variable* rescale_env_shadows = new eTB_VarStub <int>   (&config.render.env_shadow_rescale);
   eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
   eTB_Variable* disable_scissor     = new eTB_VarStub <bool>  (&config.render.disable_scissor);
 
@@ -1239,6 +1246,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("AspectCorrection",    aspect_correction);
   command.AddVariable ("CompleteMipmaps",     complete_mipmaps);
   command.AddVariable ("RescaleShadows",      rescale_shadows);
+  command.AddVariable ("RescaleEnvShadows",   rescale_env_shadows);
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
   command.AddVariable ("DisableScissor",      disable_scissor);
 }
@@ -1298,9 +1306,12 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
 
 tzf::RenderFix::CommandProcessor* tzf::RenderFix::CommandProcessor::pCommProc;
 
-uint32_t tzf::RenderFix::width;
-uint32_t tzf::RenderFix::height;
+HWND              tzf::RenderFix::hWndDevice = NULL;
+IDirect3DDevice9* tzf::RenderFix::pDevice    = nullptr;
+
+uint32_t tzf::RenderFix::width            = 0UL;
+uint32_t tzf::RenderFix::height           = 0UL;
 uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
 
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
-bool tzf::RenderFix::bink = false;
+bool               tzf::RenderFix::bink                = false;
