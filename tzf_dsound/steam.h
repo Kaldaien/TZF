@@ -53,6 +53,9 @@ namespace tzf
     private:
       static CommandProcessor* pCommProc;
     };
+
+    // Hold a reference to the Steam DLL
+    extern HMODULE steam_dll;
   }
 }
 

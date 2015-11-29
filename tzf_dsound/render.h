@@ -68,6 +68,8 @@ namespace tzf
 
     extern uint32_t           dwRenderThreadID;
     extern bool               bink; // True if a bink video is playing
+
+    extern HMODULE            d3dx9_43_dll;
   }
 }
 

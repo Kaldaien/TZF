@@ -29,6 +29,8 @@
 
 #include <stdint.h>
 
+HMODULE tzf::SteamFix::steam_dll = 0;
+
 typedef uint32_t AppId_t;
 
 class ISteamVideo
@@ -104,6 +106,8 @@ tzf::SteamFix::Init (void)
   if (! config.steam.allow_broadcasts)
     return;
 
+  steam_dll = LoadLibrary (L"steam_api.dll");
+
   TZF_CreateDLLHook ( L"steam_api.dll", "SteamVideo",
                       SteamVideo_Detour,
            (LPVOID *)&SteamVideo_Original,
@@ -118,7 +122,9 @@ tzf::SteamFix::Shutdown (void)
   if (! config.steam.allow_broadcasts)
     return;
 
-  TZF_RemoveHook (SteamVideo);
+  //TZF_RemoveHook (SteamVideo);
+
+  FreeLibrary (steam_dll);
 }
 
 void

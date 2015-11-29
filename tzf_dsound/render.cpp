@@ -1148,6 +1148,8 @@ tzf::RenderFix::Init (void)
 #endif
 
 
+  d3dx9_43_dll = LoadLibrary (L"D3DX9_43.DLL");
+
   // Needed for mipmap completeness
   TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXCreateTextureFromFileInMemoryEx",
                       D3DXCreateTextureFromFileInMemoryEx_Detour,
@@ -1221,6 +1223,7 @@ tzf::RenderFix::Init (void)
 void
 tzf::RenderFix::Shutdown (void)
 {
+  FreeLibrary (d3dx9_43_dll);
   //TZF_RemoveHook (SetSamplerState);
 }
 
@@ -1314,3 +1317,5 @@ uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
 
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
 bool               tzf::RenderFix::bink                = false;
+
+HMODULE            tzf::RenderFix::d3dx9_43_dll        = 0;

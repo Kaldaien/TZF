@@ -110,10 +110,11 @@ DllMain (HMODULE hModule,
       TZF_SaveConfig ();
     }
 
-    CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
+    HANDLE hThread = CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
 
     // Initialization delay
-    Sleep (250UL);
+    if (hThread != 0)
+      WaitForSingleObject (hThread, 250UL);
   } break;
 
   case DLL_THREAD_ATTACH:

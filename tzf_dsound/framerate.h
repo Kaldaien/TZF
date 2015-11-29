@@ -99,6 +99,10 @@ namespace tzf
 
     // Prevent mult-threaded shenanigans
     extern CRITICAL_SECTION alter_speed_cs;
+
+    // Hold references to these DLLs
+    extern HMODULE          bink_dll;
+    extern HMODULE          kernel32_dll;
   }
 }
 

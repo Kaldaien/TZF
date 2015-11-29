@@ -63,6 +63,10 @@ namespace tzf
     extern WAVEFORMATEX snd_core_fmt;
     extern WAVEFORMATEX snd_bink_fmt;
     extern WAVEFORMATEX snd_device_fmt;
+
+    // Hold references to these DLLs
+    extern HMODULE      dsound_dll;
+    extern HMODULE      ole32_dll;
   }
 }
 

@@ -48,6 +48,9 @@ WAVEFORMATEX tzf::SoundFix::snd_core_fmt;
 WAVEFORMATEX tzf::SoundFix::snd_bink_fmt;
 WAVEFORMATEX tzf::SoundFix::snd_device_fmt;
 
+HMODULE      tzf::SoundFix::dsound_dll = 0;
+HMODULE      tzf::SoundFix::ole32_dll  = 0;
+
 WAVEFORMATEXTENSIBLE g_DeviceFormat;
 
 const wchar_t*
@@ -749,6 +752,9 @@ tzf::SoundFix::Init (void)
   // Not setup yet
   g_DeviceFormat.Format.cbSize = 0;
 
+  dsound_dll = LoadLibrary (L"dsound.dll");
+  ole32_dll  = LoadLibrary (L"Ole32.dll");
+
   TZF_CreateDLLHook ( L"dsound.dll", "DirectSoundCreate",
                       DirectSoundCreate_Detour,
            (LPVOID *)&DirectSoundCreate_Original,
@@ -777,8 +783,11 @@ tzf::SoundFix::Shutdown (void)
   if (! config.audio.enable_fix)
     return;
 
-  TZF_RemoveHook (pfnCoCreateInstance);
-  TZF_RemoveHook (pfnDirectSoundCreate);
+  //TZF_RemoveHook (pfnCoCreateInstance);
+  //TZF_RemoveHook (pfnDirectSoundCreate);
+
+  FreeLibrary (dsound_dll);
+  FreeLibrary (ole32_dll);
 }
 
 

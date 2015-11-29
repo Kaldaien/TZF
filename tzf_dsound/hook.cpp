@@ -482,51 +482,6 @@ public:
 };
 
 
-
-typedef DECLSPEC_IMPORT HMODULE (WINAPI *LoadLibraryA_t)(LPCSTR  lpFileName);
-typedef DECLSPEC_IMPORT HMODULE (WINAPI *LoadLibraryW_t)(LPCWSTR lpFileName);
-
-LoadLibraryA_t LoadLibraryA_Original = nullptr;
-LoadLibraryW_t LoadLibraryW_Original = nullptr;
-
-HMODULE
-WINAPI
-LoadLibraryA_Detour (LPCSTR lpFileName)
-{
-  if (lpFileName == nullptr)
-    return NULL;
-
-  HMODULE hMod = LoadLibraryA_Original (lpFileName);
-
-  if (strstr (lpFileName, "steam_api") ||
-      strstr (lpFileName, "SteamworksNative")) {
-    //TZF::SteamAPI::Init (false);
-  }
-
-  return hMod;
-}
-
-HMODULE
-WINAPI
-LoadLibraryW_Detour (LPCWSTR lpFileName)
-{
-  if (lpFileName == nullptr)
-    return NULL;
-
-  HMODULE hMod = LoadLibraryW_Original (lpFileName);
-
-  if (wcsstr (lpFileName, L"steam_api") ||
-      wcsstr (lpFileName, L"SteamworksNative")) {
-    //TZF::SteamAPI::Init (false);
-  }
-
-  return hMod;
-}
-
-
-
-
-
 MH_STATUS
 WINAPI
 TZF_CreateFuncHook ( LPCWSTR pwszFuncName,
@@ -534,22 +489,16 @@ TZF_CreateFuncHook ( LPCWSTR pwszFuncName,
                      LPVOID  pDetour,
                      LPVOID *ppOriginal )
 {
-  MH_STATUS status =
-    MH_CreateHook ( pTarget,
-                    pDetour,
-                    ppOriginal );
+  static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  // Ignore the Already Created Error; happens A LOT as multiple
-  //   devices are created during runtime.
-  if (status != MH_OK && status != MH_ERROR_ALREADY_CREATED) {
-    dll_log.Log ( L" [ MinHook ] Failed to Install Hook for '%s' "
-                  L"[Address: %04Xh]!  (Status: \"%hs\")",
-                    pwszFuncName,
-                      pTarget,
-                        MH_StatusToString (status) );
-  }
+  typedef MH_STATUS (WINAPI *BMF_CreateFuncHook_t)
+      ( LPCWSTR pwszFuncName, LPVOID  pTarget,
+        LPVOID  pDetour,      LPVOID *ppOriginal );
+  static BMF_CreateFuncHook_t BMF_CreateFuncHook =
+    (BMF_CreateFuncHook_t)GetProcAddress (hParent, "BMF_CreateFuncHook");
 
-  return status;
+  return
+    BMF_CreateFuncHook (pwszFuncName, pTarget, pDetour, ppOriginal);
 }
 
 MH_STATUS
@@ -558,143 +507,63 @@ TZF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
                     LPVOID  pDetour,    LPVOID *ppOriginal,
                     LPVOID *ppFuncAddr )
 {
-#if 1
-  HMODULE hMod = GetModuleHandle (pwszModule);
+  static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  if (hMod == NULL) {
-    if (LoadLibraryW_Original != nullptr) {
-      hMod = LoadLibraryW_Original (pwszModule);
-    } else {
-      hMod = LoadLibraryW (pwszModule);
-    }
-  }
+  typedef MH_STATUS (WINAPI *BMF_CreateDLLHook_t)(
+        LPCWSTR pwszModule, LPCSTR  pszProcName,
+        LPVOID  pDetour,    LPVOID *ppOriginal, 
+        LPVOID *ppFuncAddr );
+  static BMF_CreateDLLHook_t BMF_CreateDLLHook =
+    (BMF_CreateDLLHook_t)GetProcAddress (hParent, "BMF_CreateDLLHook");
 
-  LPVOID pFuncAddr =
-    GetProcAddress (hMod, pszProcName);
-
-  MH_STATUS status =
-    MH_CreateHook ( pFuncAddr,
-      pDetour,
-      ppOriginal );
-#else
-  MH_STATUS status =
-    MH_CreateHookApi ( pwszModule,
-      pszProcName,
-      pDetour,
-      ppOriginal );
-#endif
-
-  if (status != MH_OK) {
-    dll_log.Log ( L" [ MinHook ] Failed to Install Hook for: '%hs' in '%s'! "
-                  L"(Status: \"%hs\")",
-                    pszProcName,
-                      pwszModule,
-                        MH_StatusToString (status) );
-  }
-  else if (ppFuncAddr != nullptr)
-    *ppFuncAddr = pFuncAddr;
-  else {
-    // I will probably come to regret this later, but what about automagically
-    //   enabling any hook where the funcaddr parameter is nullptr?
-    TZF_EnableHook (pFuncAddr);
-  }
-
-  return status;
+  return
+    BMF_CreateDLLHook (pwszModule,pszProcName,pDetour,ppOriginal,ppFuncAddr);
 }
 
 MH_STATUS
 WINAPI
 TZF_EnableHook (LPVOID pTarget)
 {
-  MH_STATUS status =
-    MH_EnableHook (pTarget);
+  static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  if (status != MH_OK)
-  {
-    if (pTarget != MH_ALL_HOOKS) {
-      dll_log.Log( L" [ MinHook ] Failed to Enable Hook with Address: %04Xh!"
-                   L" (Status: \"%hs\")",
-                     pTarget,
-                       MH_StatusToString (status) );
-    } else {
-      dll_log.Log ( L" [ MinHook ] Failed to Enable All Hooks! "
-                    L"(Status: \"%hs\")",
-                      MH_StatusToString (status) );
-    }
-  }
+  typedef MH_STATUS (WINAPI *BMF_EnableHook_t)(LPVOID pTarget);
+  static BMF_EnableHook_t BMF_EnableHook =
+    (BMF_EnableHook_t)GetProcAddress (hParent, "BMF_EnableHook");
 
-  return status;
+  return BMF_EnableHook (pTarget);
 }
 
 MH_STATUS
 WINAPI
 TZF_DisableHook (LPVOID pTarget)
 {
-  MH_STATUS status =
-    MH_DisableHook (pTarget);
+  static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  if (status != MH_OK)
-  {
-    if (pTarget != MH_ALL_HOOKS) {
-      dll_log.Log ( L" [ MinHook ] Failed to Disable Hook with Address: %04Xh!"
-                    L" (Status: \"%hs\")",
-                      pTarget,
-                        MH_StatusToString (status) );
-    } else {
-      dll_log.Log ( L" [ MinHook ] Failed to Disable All Hooks! "
-                    L"(Status: \"%hs\")",
-                      MH_StatusToString (status) );
-    }
-  }
+  typedef MH_STATUS (WINAPI *BMF_DisableHook_t)(LPVOID pTarget);
+  static BMF_DisableHook_t BMF_DisableHook =
+    (BMF_DisableHook_t)GetProcAddress (hParent, "BMF_DisableHook");
 
-  return status;
+  return BMF_DisableHook (pTarget);
 }
 
 MH_STATUS
 WINAPI
 TZF_RemoveHook (LPVOID pTarget)
 {
-  MH_STATUS status =
-    MH_RemoveHook (pTarget);
+  static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  if (status != MH_OK)
-  {
-    dll_log.Log ( L" [ MinHook ] Failed to Remove Hook with Address: %04Xh! "
-                  L"(Status: \"%hs\")",
-                    pTarget,
-                      MH_StatusToString (status) );
-  }
+  typedef MH_STATUS (WINAPI *BMF_RemoveHook_t)(LPVOID pTarget);
+  static BMF_RemoveHook_t BMF_RemoveHook =
+    (BMF_RemoveHook_t)GetProcAddress (hParent, "BMF_RemoveHook");
 
-  return status;
+  return BMF_RemoveHook (pTarget);
 }
 
 MH_STATUS
 WINAPI
 TZF_Init_MinHook (void)
 {
-  MH_STATUS status;
-
-  if ((status = MH_Initialize ()) != MH_OK)
-  {
-    dll_log.Log ( L" [ MinHook ] Failed to Initialize MinHook Library! "
-                  L"(Status: \"%hs\")",
-                    MH_StatusToString (status) );
-  }
-
-#if 0
-  //
-  // Hook LoadLibrary so that we can watch for things like steam_api*.dll
-  //
-  TZF_CreateDLLHook ( L"kernel32.dll",
-                       "LoadLibraryA",
-                      LoadLibraryA_Detour,
-           (LPVOID *)&LoadLibraryA_Original );
-
-  TZF_CreateDLLHook ( L"kernel32.dll",
-                       "LoadLibraryW",
-                      LoadLibraryW_Detour,
-           (LPVOID *)&LoadLibraryW_Original );
-#endif
+  MH_STATUS status = MH_OK;
 
   TZF_InputHooker* pHook = TZF_InputHooker::getInstance ();
   pHook->Start ();
@@ -706,13 +575,7 @@ MH_STATUS
 WINAPI
 TZF_UnInit_MinHook (void)
 {
-  MH_STATUS status;
-
-  if ((status = MH_Uninitialize ()) != MH_OK) {
-    dll_log.Log ( L" [ MinHook ] Failed to Uninitialize MinHook Library! "
-                  L"(Status: \"%hs\")",
-                    MH_StatusToString (status) );
-  }
+  MH_STATUS status = MH_OK;
 
   TZF_InputHooker* pHook = TZF_InputHooker::getInstance ();
   pHook->End ();

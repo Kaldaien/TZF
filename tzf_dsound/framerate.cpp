@@ -41,6 +41,9 @@ bool             tzf::FrameRateFix::variable_speed_installed = false;
 
 uint32_t         tzf::FrameRateFix::target_fps               = 30;
 
+HMODULE          tzf::FrameRateFix::bink_dll                 = 0;
+HMODULE          tzf::FrameRateFix::kernel32_dll             = 0;
+
 
 typedef D3DPRESENT_PARAMETERS* (__stdcall *BMF_SetPresentParamsD3D9_t)
   (IDirect3DDevice9*      device,
@@ -274,6 +277,8 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
                      &pfnBMF_SetPresentParamsD3D9 );
 
+  bink_dll = LoadLibrary (L"bink2w32.dll");
+
   TZF_CreateDLLHook ( L"bink2w32.dll", "_BinkOpen@8",
                       BinkOpen_Detour, 
            (LPVOID *)&BinkOpen_Original,
@@ -335,7 +340,6 @@ tzf::FrameRateFix::Init (void)
     // nop
     // nop
     //
-#if 0
     uint8_t new_code [7] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x90 };
 
     TZF_InjectByteCode ( (LPVOID)config.framerate.speedresetcode2_addr,
@@ -343,7 +347,6 @@ tzf::FrameRateFix::Init (void)
                              7,
                                PAGE_EXECUTE_READWRITE,
                                  old_speed_reset_code2 );
-#endif
 
     variable_speed_installed = true;
 
@@ -409,7 +412,10 @@ tzf::FrameRateFix::Init (void)
 void
 tzf::FrameRateFix::Shutdown (void)
 {
-  TZF_RemoveHook (pfnBMF_SetPresentParamsD3D9);
+  FreeLibrary (kernel32_dll);
+  FreeLibrary (bink_dll);
+
+  ////TZF_DisableHook (pfnBMF_SetPresentParamsD3D9);
 
   if (variable_speed_installed) {
     DWORD dwOld;
@@ -432,12 +438,12 @@ tzf::FrameRateFix::Shutdown (void)
     variable_speed_installed = false;
   }
 
-  TZF_RemoveHook (pfnSleep);
+  ////TZF_DisableHook (pfnSleep);
 
   if (! config.framerate.stutter_fix)
     return;
 
-  TZF_RemoveHook (pfnQueryPerformanceCounter);
+  ////TZF_DisableHook (pfnQueryPerformanceCounter);
 
   stutter_fix_installed = false;
 }
@@ -514,10 +520,18 @@ tzf::FrameRateFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
       VirtualProtect ((LPVOID)TICK_ADDR_BASE, 8, dwOld, &dwOld);
 
       if (variable_speed_installed) {
-        // mov eax, 02 to mov eax, 01
+        // mov eax, 02 to mov eax, <val>
         VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, PAGE_EXECUTE_READWRITE, &dwOld);
                       *(DWORD *)config.framerate.speedresetcode3_addr = *(DWORD *)val;
         VirtualProtect ((LPVOID)config.framerate.speedresetcode3_addr, 4, dwOld, &dwOld);
+
+        uint8_t new_code [7] = { 0xB8, (uint8_t)*(DWORD *)val, 0x00, 0x00, 0x00, 0x90, 0x90 };
+
+        TZF_InjectByteCode ( (LPVOID)config.framerate.speedresetcode2_addr,
+                               new_code,
+                                 7,
+                                   PAGE_EXECUTE_READWRITE,
+                                     old_speed_reset_code2 );
       }
       //InterlockedExchange ((DWORD *)val, *(DWORD *)config.framerate.speedresetcode3_addr);
 
