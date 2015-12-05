@@ -92,6 +92,12 @@
     <ClCompile Include="render.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="keyboard.h">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="keyboard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="symbols.def">

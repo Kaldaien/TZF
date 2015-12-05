@@ -43,10 +43,10 @@ struct tzf_config_t
     float fudge_factor         = 1.666f; // OBSOLETE
     bool  allow_windowed_mode  = false;  // OBSOLETE
     bool  minimize_latency     = false;
-    DWORD speedresetcode_addr  = 0x0046C529;
-    DWORD speedresetcode2_addr = 0x0056E441;
-    DWORD speedresetcode3_addr = 0x0056D93F;
-    DWORD limiter_branch_addr  = 0x00990873;
+    DWORD speedresetcode_addr  = 0x0046C0F9; //0x0046C529;
+    DWORD speedresetcode2_addr = 0x0056EB41; //0x0056E441;  0x217B464
+    DWORD speedresetcode3_addr = 0x0056E03F; //0x0056D93F;
+    DWORD limiter_branch_addr  = 0x00990F53; //0x00990873;
     bool  disable_limiter      = true;
     bool  auto_adjust          = true;
     int   target               = 60;
@@ -63,8 +63,8 @@ struct tzf_config_t
   struct {
     float    fovy               = 0.785398f;
     float    aspect_ratio       = 1.777778f;
-    DWORD    aspect_addr        = 0x00D52398;
-    DWORD    fovy_addr          = 0x00D5239C;
+    DWORD    aspect_addr        = 0x00D56494;//0x00D52398;
+    DWORD    fovy_addr          = 0x00D56498;//0x00D5239C;
     bool     blackbar_videos    = true;
     bool     aspect_correction  = false;
     bool     complete_mipmaps   = false;

@@ -28,7 +28,8 @@
 #include "render.h"
 #include <d3d9.h>
 
-#define TICK_ADDR_BASE 0x0217B3D4
+#define TICK_ADDR_BASE 0x217B464
+// 0x0217B3D4  1.3
 
 uint8_t          tzf::FrameRateFix::old_speed_reset_code2   [7];
 uint8_t          tzf::FrameRateFix::old_limiter_instruction [6];
@@ -366,7 +367,7 @@ tzf::FrameRateFix::Init (void)
   if (config.framerate.disable_limiter) {
     DWORD dwOld;
 
-    // Replace the original jump with an unconditional jump
+    // Replace the original jump (jb) with an unconditional jump (jmp)
     uint8_t new_code [6] = { 0xE9, 0x8B, 0x00, 0x00, 0x00, 0x90 };
 
     TZF_InjectByteCode ( (LPVOID)config.framerate.limiter_branch_addr,

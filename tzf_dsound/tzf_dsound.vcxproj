@@ -196,6 +196,8 @@
     <ClCompile Include="framerate.cpp" />
     <ClCompile Include="hook.cpp" />
     <ClCompile Include="ini.cpp" />
+    <ClCompile Include="keyboard.cpp" />
+    <ClCompile Include="keyboard.h" />
     <ClCompile Include="log.cpp" />
     <ClCompile Include="parameter.cpp" />
     <ClCompile Include="render.cpp" />
