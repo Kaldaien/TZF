@@ -24,6 +24,7 @@
 #include "config.h"
 #include "log.h"
 #include "hook.h"
+#include "scanner.h"
 
 #include "render.h"
 #include <d3d9.h>
@@ -298,6 +299,47 @@ tzf::FrameRateFix::Init (void)
   InitializeCriticalSectionAndSpinCount (&alter_speed_cs, 1000UL);
 
   if (true) {
+    if (*((DWORD *)config.framerate.speedresetcode_addr) != 0x428CB08D) {
+      uint8_t sig [] = { 0x8D, 0xB0, 0x8C, 0x42,
+                         0x00, 0x00, 0x8D, 0xBB,
+                         0x8C, 0x42, 0x00, 0x00,
+                         0xB9, 0x0B, 0x00, 0x00 };
+      intptr_t addr = (intptr_t)TZF_Scan (sig, 16);
+
+      if (addr != NULL) {
+        dll_log.Log (L"Scanned SpeedResetCode Address: %06Xh", addr);
+        config.framerate.speedresetcode_addr = addr;
+      }
+      else {
+        dll_log.Log (L" >> ERROR: Unable to find SpeedResetCode memory!");
+      }
+    }
+
+#if 0
+    if (*((DWORD *)config.framerate.speedresetcode2_addr) != 0xF8831274) {
+      uint8_t sig [] = { 0x74, 0x12, 0x83, 0x42,
+                         0x00, 0x00, 0x8D, 0xBB,
+                         0x8C, 0x42, 0x00, 0x00,
+                         0xB9, 0x0B, 0x00, 0x00 };
+      intptr_t addr = (intptr_t)TZF_Scan (sig, 16);
+    }
+#endif
+
+    if (*((DWORD *)config.framerate.speedresetcode3_addr) != 0x02) {
+      uint8_t sig [] = { 0x0F, 0x95, 0xC0, 0x3A,
+                         0xC3, 0x74, 0x17, 0xB8,
+                         0x02, 0x00, 0x00, 0x00 };
+      intptr_t addr = (intptr_t)TZF_Scan (sig, 12);
+
+      if (*((DWORD *)((uint8_t *)addr + 8)) == 0x2) {
+        dll_log.Log (L"Scanned SpeedResetCode3 Address: %06Xh", addr);
+        config.framerate.speedresetcode3_addr = addr + 8;
+      }
+      else {
+        dll_log.Log (L" >> ERROR: Unable to find SpeedResetCode3 memory!");
+      }
+    }
+
     dll_log.LogEx (true, L" * Installing variable rate simulation... ");
 
     DWORD dwOld;
