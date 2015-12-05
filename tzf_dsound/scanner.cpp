@@ -1,3 +1,25 @@
+/**
+ * This file is part of Tales of Zestiria "Fix".
+ *
+ * Tales of Zestiria "Fix" is free software : you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by The Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * Tales of Zestiria "Fix" is distributed in the hope that it will be
+ * useful,
+ *
+ * But WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tales of Zestiria "Fix".
+ *
+ *   If not, see <http://www.gnu.org/licenses/>.
+ *
+**/
+
 #include "scanner.h"
 
 #include <Windows.h>
@@ -5,13 +27,23 @@
 void*
 TZF_Scan (uint8_t* pattern, size_t len, uint8_t* mask)
 {
-  UINT_PTR addr  = (UINT_PTR)GetModuleHandle (L"Tales of Zestiria.exe");
+  uint8_t* base_addr = (uint8_t *)GetModuleHandle (nullptr);
 
-  uint8_t*  begin = (uint8_t *)addr;
+  MEMORY_BASIC_INFORMATION mem_info;
+  VirtualQuery (base_addr, &mem_info, sizeof mem_info);
+
+  IMAGE_DOS_HEADER* pDOS =
+    (IMAGE_DOS_HEADER *)mem_info.AllocationBase;
+  IMAGE_NT_HEADERS* pNT  =
+    (IMAGE_NT_HEADERS *)((intptr_t)(pDOS + pDOS->e_lfanew));
+
+  uint8_t* end_addr = base_addr + pNT->OptionalHeader.SizeOfImage;
+
+  uint8_t*  begin = (uint8_t *)base_addr;
   uint8_t*  it    = begin;
   int       idx   = 0;
 
-  while (it)
+  while (it <= end_addr)
   {
     uint8_t* scan_addr = it;
 
@@ -27,7 +59,13 @@ TZF_Scan (uint8_t* pattern, size_t len, uint8_t* mask)
         return (void *)begin;
 
       ++it;
-    } else {
+    }
+
+    else {
+      // No match?!
+      if (it > end_addr - len)
+        break;
+
       it  = ++begin;
       idx = 0;
     }
