@@ -29,7 +29,7 @@
 #include "render.h"
 #include <d3d9.h>
 
-#define TICK_ADDR_BASE 0x217B464
+uint32_t TICK_ADDR_BASE = 0x217B464;
 // 0x0217B3D4  1.3
 
 uint8_t          tzf::FrameRateFix::old_speed_reset_code2   [7];
@@ -315,24 +315,14 @@ tzf::FrameRateFix::Init (void)
       }
     }
 
-#if 0
-    if (*((DWORD *)config.framerate.speedresetcode2_addr) != 0xF8831274) {
-      uint8_t sig [] = { 0x74, 0x12, 0x83, 0x42,
-                         0x00, 0x00, 0x8D, 0xBB,
-                         0x8C, 0x42, 0x00, 0x00,
-                         0xB9, 0x0B, 0x00, 0x00 };
-      intptr_t addr = (intptr_t)TZF_Scan (sig, 16);
-    }
-#endif
-
     if (*((DWORD *)config.framerate.speedresetcode3_addr) != 0x02) {
       uint8_t sig [] = { 0x0F, 0x95, 0xC0, 0x3A,
                          0xC3, 0x74, 0x17, 0xB8,
                          0x02, 0x00, 0x00, 0x00 };
       intptr_t addr = (intptr_t)TZF_Scan (sig, 12);
 
-      if (*((DWORD *)((uint8_t *)addr + 8)) == 0x2) {
-        dll_log.Log (L"Scanned SpeedResetCode3 Address: %06Xh", addr);
+      if (addr != NULL && *((DWORD *)((uint8_t *)addr + 8)) == 0x2) {
+        dll_log.Log (L"Scanned SpeedResetCode3 Address: %06Xh", addr + 8);
         config.framerate.speedresetcode3_addr = addr + 8;
       }
       else {
@@ -361,6 +351,41 @@ tzf::FrameRateFix::Init (void)
     VirtualProtect((LPVOID)config.framerate.speedresetcode_addr, 17, dwOld, &dwOld);
 
     TZF_FlushInstructionCache ((LPCVOID)config.framerate.speedresetcode_addr, 17);
+
+    uint8_t mask [] = { 0xff, 0xff, 0xff,            // cmp     [ebx+28h], eax
+                        0,    0,                     // jz      short <...>
+                        0xff, 0xff, 0xff,            // cmp     eax, 2
+                        0,    0,                     // jl      short <...>
+                        0xff, 0,    0,     0, 0,     // mov     <tickaddr>,  eax
+                        0xff, 0,    0,     0, 0,     // mov     <tickaddr2>, eax
+                        0xff, 0xff, 0xff             // mov     [ebx+28h],   eax
+                      };
+
+    uint8_t sig [] = { 0x39, 0x43, 0x28,             // cmp     [ebx+28h], eax
+                       0x74, 0x12,                   // jz      short <...>
+                       0x83, 0xF8, 0x02,             // cmp     eax, 2
+                       0x7C, 0x0D,                   // jl      short <...>
+                       0xA3, 0x64, 0xB4, 0x17, 0x02, // mov     <tickaddr>,  eax
+                       0xA3, 0x68, 0xB4, 0x17, 0x02, // mov     <tickaddr2>, eax
+                       0x89, 0x43, 0x28              // mov     [ebx+28h],   eax
+                      };
+
+    if (*((DWORD *)config.framerate.speedresetcode2_addr) != 0x0F8831274) {
+      intptr_t addr = (intptr_t)TZF_Scan (sig, 23, mask);
+
+      if (addr != NULL) {
+        config.framerate.speedresetcode2_addr = addr + 3;
+
+        dll_log.Log (L"Scanned SpeedResetCode2 Address: %06Xh", addr + 3);
+
+        TICK_ADDR_BASE = *(DWORD *)((uint8_t *)(addr + 11));
+
+        dll_log.Log (L" >> TICK_ADDR_BASE: %06Xh", TICK_ADDR_BASE);
+      }
+      else {
+        dll_log.Log (L" >> ERROR: Unable to find SpeedResetCode2 memory!");
+      }
+    }
 
     //
     // original code:
@@ -411,6 +436,24 @@ tzf::FrameRateFix::Init (void)
 
     // Replace the original jump (jb) with an unconditional jump (jmp)
     uint8_t new_code [6] = { 0xE9, 0x8B, 0x00, 0x00, 0x00, 0x90 };
+
+    if (*(DWORD *)config.framerate.limiter_branch_addr != 0x8A820F) {
+      uint8_t sig [] = { 0x53,                           // push    ebx
+                         0x56,                           // push    esi
+                         0x57,                           // push    edi
+                         0x0F, 0x82, 0x8A, 0x0, 0x0, 0x0 // jb      <dontcare>
+                       };
+      intptr_t addr = (intptr_t)TZF_Scan (sig, 9);
+
+      if (addr != NULL) {
+        config.framerate.limiter_branch_addr = addr + 3;
+
+        dll_log.Log (L"Scanned Limiter Branch Address: %06Xh", addr + 3);
+      }
+      else {
+        dll_log.Log (L" >> ERROR: Unable to find LimiterBranchAddr memory!");
+      }
+    }
 
     TZF_InjectByteCode ( (LPVOID)config.framerate.limiter_branch_addr,
                            new_code,

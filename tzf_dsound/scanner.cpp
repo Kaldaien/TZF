@@ -3,7 +3,7 @@
 #include <Windows.h>
 
 void*
-TZF_Scan (uint8_t* pattern, size_t len)
+TZF_Scan (uint8_t* pattern, size_t len, uint8_t* mask)
 {
   UINT_PTR addr  = (UINT_PTR)GetModuleHandle (L"Tales of Zestiria.exe");
 
@@ -15,7 +15,14 @@ TZF_Scan (uint8_t* pattern, size_t len)
   {
     uint8_t* scan_addr = it;
 
-    if (*scan_addr == pattern [idx]) {
+    bool match = (*scan_addr == pattern [idx]);
+
+    // For portions we do not care about... treat them
+    //   as matching.
+    if (mask != nullptr && (! mask [idx]))
+      match = true;
+
+    if (match) {
       if (++idx == len)
         return (void *)begin;
 
