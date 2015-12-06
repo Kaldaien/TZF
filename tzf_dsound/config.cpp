@@ -25,7 +25,8 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.1.2";
+std::wstring TZF_VER_STR = L"1.1.1";
+std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
 
@@ -503,8 +504,8 @@ TZF_LoadConfig (std::wstring name) {
   if (sys.version->load ())
     config.system.version = sys.version->get_value ();
 
-  //if (sys.intro_video->load ())
-    //config.system.intro_video = sys.intro_video->get_value ();
+  if (sys.intro_video->load ())
+    config.system.intro_video = sys.intro_video->get_value ();
 
   if (empty)
     return false;
@@ -608,8 +609,8 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   sys.version->set_value       (TZF_VER_STR);
   sys.version->store           ();
 
-  //sys.intro_video->set_value   (config.system.intro_video);
-  //sys.intro_video->store       ();
+  sys.intro_video->set_value   (config.system.intro_video);
+  sys.intro_video->store       ();
 
   dll_ini->write (name + L".ini");
 

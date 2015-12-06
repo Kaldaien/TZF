@@ -197,20 +197,32 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
   return ret;
 }
 
-typedef void (__stdcall *BinkOpen_t)(DWORD unknown0, DWORD unknown1);
+typedef void (__stdcall *BinkOpen_t)(const char* filename, DWORD unknown0);
 BinkOpen_t BinkOpen_Original = nullptr;
 
 void
 __stdcall
-BinkOpen_Detour ( DWORD unknown0,
-                  DWORD unknown1 )
+BinkOpen_Detour ( const char* filename,
+                  DWORD       unknown0 )
 {
   dll_log.Log (L" * Disabling TargetFPS -- Bink Video Opened");
 
   tzf::RenderFix::bink = true;
   tzf::FrameRateFix::Begin30FPSEvent ();
 
-  return BinkOpen_Original (unknown0, unknown1);
+  // Optionally play some other video...
+  if (! stricmp (filename, "RAW\\MOVIE\\AM_TOZ_OP_001.BK2")) {
+    dll_log.Log ( L" >> Bypassing Opening Movie with %ws",
+                   config.system.intro_video.c_str ());
+
+    static char szBypassName [MAX_PATH] = { '\0' };
+
+    sprintf (szBypassName, "%ws", config.system.intro_video.c_str ());
+
+    return BinkOpen_Original (szBypassName, unknown0);
+  }
+
+  return BinkOpen_Original (filename, unknown0);
 }
 
 typedef void (__stdcall *BinkClose_t)(DWORD unknown);
@@ -713,7 +725,10 @@ tzf::FrameRateFix::RenderTick (void)
 
   // Busy-wait because we are rendering too fast...
   while (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon)) {
-    YieldProcessor ();
+    if (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon) -
+                                      (0.05 * freq.QuadPart)) {
+      YieldProcessor ();
+    }
     QueryPerformanceCounter (&time);
   }
 

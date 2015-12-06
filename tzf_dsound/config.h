@@ -26,6 +26,7 @@
 #include <string>
 
 extern std::wstring TZF_VER_STR;
+extern std::wstring DEFAULT_BK2;
 
 struct tzf_config_t
 {
@@ -78,7 +79,7 @@ struct tzf_config_t
     std::wstring
             version         = TZF_VER_STR;
     std::wstring
-            intro_video     = L"";
+            intro_video     = DEFAULT_BK2;
   } system;
 };
 

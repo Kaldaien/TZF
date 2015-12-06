@@ -43,7 +43,7 @@ TZF_Scan (uint8_t* pattern, size_t len, uint8_t* mask)
   uint8_t*  it    = begin;
   int       idx   = 0;
 
-  while (it <= end_addr)
+  while (it < end_addr)
   {
     uint8_t* scan_addr = it;
 
