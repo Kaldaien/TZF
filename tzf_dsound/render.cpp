@@ -35,7 +35,9 @@
 
 // Textures that are missing mipmaps
 std::set <IDirect3DBaseTexture9 *> incomplete_textures;
-bool shadows = false;
+int ui_passes = 0;
+bool viewport_fixed = false;
+int scissors  = 0;
 
 uint32_t
 TZF_MakeShadowBitShift (uint32_t dim)
@@ -47,6 +49,37 @@ TZF_MakeShadowBitShift (uint32_t dim)
   shift += ((config.render.shadow_rescale) < 0L) * (dim == 64UL);
 
   return shift;
+}
+
+
+void
+TZF_ComputeAspectScale (float& x, float& y, float& xoff, float& yoff)
+{
+  yoff = 0.0f;
+  xoff = 0.0f;
+
+  x = 1.0f;
+  y = 1.0f;
+
+  //if (! config.render.aspect_correction)
+    return;
+
+  float rescale = (1.77777778f / config.render.aspect_ratio);
+
+  // Wider
+  if (config.render.aspect_ratio > 1.7777f) {
+    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
+    int x_off = (tzf::RenderFix::width - width) / 2;
+
+    x = rescale;
+    xoff = x_off;
+  } else {
+    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
+    int y_off  = (tzf::RenderFix::height - height) / 2;
+
+    y = rescale;
+    yoff = y_off;
+  }
 }
 
 
@@ -211,18 +244,6 @@ STDMETHODCALLTYPE
 D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
                             IDirect3DVertexShader9* pShader)
 {
-  // Ignore D3D9Ex devices, I don't know what they are even for, but they will
-  //   totally screw things up if we don't.
-  IDirect3DDevice9Ex* pDeviceEx = nullptr;
-  if ( SUCCEEDED ( This->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
-                                            (void **)&pDeviceEx )
-                 ) 
-     ) {
-    pDeviceEx->Release ();
-    return D3D9SetVertexShader_Original (This, pShader);
-  }
-
-
   if (g_pVS != pShader) {
     if (pShader != nullptr) {
       if (vs_checksums.find (pShader) == vs_checksums.end ()) {
@@ -254,18 +275,6 @@ STDMETHODCALLTYPE
 D3D9SetPixelShader_Detour (IDirect3DDevice9*      This,
                            IDirect3DPixelShader9* pShader)
 {
-  // Ignore D3D9Ex devices, I don't know what they are even for, but they will
-  //   totally screw things up if we don't.
-  IDirect3DDevice9Ex* pDeviceEx = nullptr;
-  if ( SUCCEEDED ( This->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
-                                            (void **)&pDeviceEx )
-                 ) 
-     ) {
-    pDeviceEx->Release ();
-    return D3D9SetPixelShader_Original (This, pShader);
-  }
-
-
   if (g_pPS != pShader) {
     if (pShader != nullptr) {
       if (ps_checksums.find (pShader) == ps_checksums.end ()) {
@@ -318,11 +327,82 @@ CalcCursorPos (LPPOINT pPoint)
   return *pPoint;
 }
 
+typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
+  IDirect3DDevice9* This,
+  const RECT*       pRect);
+
+SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
+
 COM_DECLSPEC_NOTHROW
 void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
+  ui_passes = 0;
+  viewport_fixed = false;
+
+#if 0
+  if (scissors == 0) {
+  D3DCOLOR color = 0x00000000;
+
+  int width = tzf::RenderFix::width;
+  int height = (9.0f / 16.0f) * width;
+
+  // We can't do this, so instead we need to sidebar the stuff
+  if (height > tzf::RenderFix::height) {
+    width  = (16.0f / 9.0f) * tzf::RenderFix::height;
+    height = tzf::RenderFix::height;
+  }
+
+  if (height != tzf::RenderFix::height) {
+    RECT top;
+    top.top    = 0;
+    top.left   = 0;
+    top.right  = tzf::RenderFix::width;
+    top.bottom = top.top + (tzf::RenderFix::height - height) / 2;
+    D3D9SetScissorRect_Original (tzf::RenderFix::pDevice, &top);
+    tzf::RenderFix::pDevice->SetRenderState (D3DRS_SCISSORTESTENABLE, 1);
+
+    tzf::RenderFix::pDevice->Clear (0, NULL, D3DCLEAR_TARGET, color, 1.0f, 0x0);
+
+    RECT bottom;
+    bottom.top    = tzf::RenderFix::height - (tzf::RenderFix::height - height) / 2;
+    bottom.left   = 0;
+    bottom.right  = tzf::RenderFix::width;
+    bottom.bottom = tzf::RenderFix::height;
+    D3D9SetScissorRect_Original (tzf::RenderFix::pDevice, &bottom);
+
+    tzf::RenderFix::pDevice->Clear (0, NULL, D3DCLEAR_TARGET, color, 1.0f, 0x0);
+  }
+
+  if (width != tzf::RenderFix::width) {
+    RECT left;
+    left.top    = 0;
+    left.left   = 0;
+    left.right  = left.left + (tzf::RenderFix::width - width) / 2;
+    left.bottom = tzf::RenderFix::height;
+    D3D9SetScissorRect_Original (tzf::RenderFix::pDevice, &left);
+    tzf::RenderFix::pDevice->SetRenderState (D3DRS_SCISSORTESTENABLE, 1);
+
+    tzf::RenderFix::pDevice->Clear (0, NULL, D3DCLEAR_TARGET, color, 1.0f, 0x0);
+
+    RECT right;
+    right.top    = 0;
+    right.left   = tzf::RenderFix::width - (tzf::RenderFix::width - width) / 2;
+    right.right  = tzf::RenderFix::width;
+    right.bottom = tzf::RenderFix::height;
+    D3D9SetScissorRect_Original (tzf::RenderFix::pDevice, &right);
+    tzf::RenderFix::pDevice->SetRenderState (D3DRS_SCISSORTESTENABLE, 1);
+
+    tzf::RenderFix::pDevice->Clear (0, NULL, D3DCLEAR_TARGET, color, 1.0f, 0x0);
+
+    tzf::RenderFix::pDevice->SetRenderState (D3DRS_SCISSORTESTENABLE, 0);
+  }
+  }
+#endif
+
+  scissors = 0;
+
   return BMF_BeginBufferSwap ();
 }
 
@@ -336,7 +416,6 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
     return BMF_EndBufferSwap (hr, device);
 
   tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
-
 
   TZF_DrawCommandConsole ();
 
@@ -596,12 +675,6 @@ D3D9CreateRenderTarget_Detour (IDirect3DDevice9     *This,
                                           Lockable, ppSurface, pSharedHandle);
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
-  IDirect3DDevice9* This,
-  const RECT*       pRect);
-
-SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
-
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -612,6 +685,7 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetScissorRect_Original (This, pRect);
 
+  ++scissors;
 
   // If we don't care about aspect ratio, then just early-out
   if (! config.render.aspect_correction)
@@ -667,6 +741,7 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetViewport_Original (This, pViewport);
 
+  viewport_fixed = false;
 
   //
   // Adjust Character Drop Shadows
@@ -707,8 +782,16 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
       pViewport->Height == 256 && config.render.postproc_ratio > 0.0f) {
     D3DVIEWPORT9 rescaled_post_proc = *pViewport;
 
-    rescaled_post_proc.Width  = tzf::RenderFix::width  * config.render.postproc_ratio;
-    rescaled_post_proc.Height = tzf::RenderFix::height * config.render.postproc_ratio;
+    float scale_x, scale_y;
+    float x_off,   y_off;
+    TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
+
+    rescaled_post_proc.Width  = tzf::RenderFix::width  * config.render.postproc_ratio * scale_x;
+    rescaled_post_proc.Height = tzf::RenderFix::height * config.render.postproc_ratio * scale_y;
+    rescaled_post_proc.X       += x_off;
+    rescaled_post_proc.Y       += y_off;
+
+    viewport_fixed = true;
 
     return D3D9SetViewport_Original (This, &rescaled_post_proc);
   }
@@ -770,28 +853,33 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
-    if (dim != 0)
+    if (dim != 0) {
       return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
+    }
   }
 
   //
   // Post-Processing
   //
-  if (StartRegister == 240 &&
-    Vector4fCount == 1   &&
-    pConstantData [0] == -1.0f / 512.0f &&
-    pConstantData [1] ==  1.0f / 256.0f &&
-    config.render.postproc_ratio > 0.0f) {
+  if (StartRegister     == 240 &&
+      Vector4fCount     == 1   &&
+      pConstantData [0] == -1.0f / 512.0f &&
+      pConstantData [1] ==  1.0f / 256.0f &&
+      config.render.postproc_ratio > 0.0f) {
     if (SUCCEEDED (This->GetRenderTarget (0, &tzf::RenderFix::pPostProcessSurface)))
       tzf::RenderFix::pPostProcessSurface->Release ();
 
     float newData [4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-    newData [0] = -1.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
-    newData [1] =  1.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
+    float scale_x, scale_y;
+    float x_off,   y_off;
+    TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
+
+    newData [0] = -1.0f / ((float)tzf::RenderFix::width  * config.render.postproc_ratio * scale_x);
+    newData [1] =  1.0f / ((float)tzf::RenderFix::height * config.render.postproc_ratio * scale_y);
 
     if (pConstantData [2] != 0.0f || 
-      pConstantData [3] != 0.0f) {
+        pConstantData [3] != 0.0f) {
       dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
@@ -833,7 +921,6 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
     }
 
     if (dim != 0) {
-      shadows = true;
       return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
     }
   }
@@ -859,8 +946,13 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
           if (pSurf == tzf::RenderFix::pPostProcessSurface) {
             float newData [12];
 
-            float rescale_x = 512.0f / (float)tzf::RenderFix::width  * config.render.postproc_ratio;
-            float rescale_y = 256.0f / (float)tzf::RenderFix::height * config.render.postproc_ratio;
+            float scale_x, scale_y;
+            float x_off, y_off;
+
+            TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
+
+            float rescale_x = 512.0f / ((float)tzf::RenderFix::width  * config.render.postproc_ratio * scale_x);
+            float rescale_y = 256.0f / ((float)tzf::RenderFix::height * config.render.postproc_ratio * scale_y);
 
             for (int i = 0; i < 8; i += 2) {
               newData [i] = pConstantData [i] * rescale_x;
@@ -892,24 +984,79 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
     }
   }
 
+  bool fix_viewport = false;
+
+#if 0
+  IDirect3DSurface9* pSurf = nullptr;
+
+  if ((config.render.aspect_correction) &&
+      Vector4fCount == 1 && StartRegister == 240                 &&
+      pConstantData [0] == -1.0f / (float)tzf::RenderFix::width  &&
+      pConstantData [1] ==  1.0f / (float)tzf::RenderFix::height) {
+    bool begin_ui = false;
+
+    IDirect3DBaseTexture9* pTexBase = nullptr;
+    if (SUCCEEDED (This->GetTexture (0, &pTexBase)) && pTexBase != nullptr) {
+      IDirect3DTexture9* pTex = nullptr;
+      if (SUCCEEDED (pTexBase->QueryInterface (__uuidof (IDirect3DTexture9), (void **)&pTex)) && pTex != nullptr) {
+        if (SUCCEEDED (pTex->GetSurfaceLevel (0, &pSurf)) && pSurf != nullptr) {
+          D3DSURFACE_DESC desc;
+          pSurf->GetDesc (&desc);
+          if (desc.Usage & D3DUSAGE_RENDERTARGET    &&
+              desc.Height == tzf::RenderFix::height &&
+              desc.Width  == tzf::RenderFix::width) {
+            //2917649932
+            //12/05/2015 23:36:02.529: Potential Match: Format 000015 (vs: 3945640540, ps: 36123480), 
+              //12/05/2015 23:36:02.546: Potential Match: Format 000015 (vs: 3225191522, ps: 3744323608), 
+            //dll_log.Log (L"Potential Match: Format %06X, Type %lu, Pool %lu - (vs: %lu, ps: %lu), ",
+              //desc.Format, desc.Type, desc.Pool, vs_checksums [g_pVS], ps_checksums [g_pPS] );
+           if (vs_checksums [g_pVS] == 3945640540 && ps_checksums [g_pPS] == 36123480)
+              begin_ui = true;
+          }
+          pSurf->Release ();
+        }
+        pTex->Release ();
+      }
+      pTexBase->Release ();
+    }
+
+    if (begin_ui && (! viewport_fixed)) {
+      viewport_fixed = true;
+      fix_viewport   = true;
+      goto BIG_MAMA_JAMA;
+    }
+  }
+#endif
+
   //
   // Bink Video or UI
   //
-  if ( Vector4fCount == 5 && g_pPS != nullptr && g_pVS != nullptr && 
-       ( (ps_checksums [g_pPS] == PS_CHECKSUM_UI   && vs_checksums [g_pVS] == VS_CHECKSUM_UI && config.render.aspect_correction) ||
-         (vs_checksums [g_pVS] == VS_CHECKSUM_BINK && tzf::RenderFix::bink && config.render.blackbar_videos) ) ) {
-    if (pConstantData [ 0] == 0.0015625f     && pConstantData [ 1] == 0.0f          && pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&
-        pConstantData [ 4] == 0.0f           && pConstantData [ 5] == 0.0027777778f && pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
-        pConstantData [ 8] == 0.0f           && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f /*&&
+  if ( Vector4fCount == 5 && g_pPS != nullptr && g_pVS != nullptr &&
+       (config.render.aspect_correction ||
+         (tzf::RenderFix::bink && config.render.blackbar_videos) ) ) {
+    if (pConstantData [ 0] == 2.0f / 1280.0f && pConstantData [ 1] == 0.0f          && /*pConstantData [ 2] == 0.0f     && pConstantData [ 3] == 0.0f &&*/
+        pConstantData [ 4] == 0.0f           && pConstantData [ 5] == 2.0f / 720.0f /*&& pConstantData [ 6] == 0.0f     && pConstantData [ 7] == 0.0f &&
+        pConstantData [ 8] == 0.0f           && pConstantData [ 9] == 0.0f          && pConstantData [10] == 0.00005f && pConstantData [11] == 0.0f &&
         pConstantData [12] == -0.7937499881f && pConstantData [13] == 0.1555555612f && pConstantData [14] == 0.5f     && pConstantData [15] == 1.0f &&
         pConstantData [16] == 1.0f           && pConstantData [17] == 1.0f          && pConstantData [18] == 1.0f     && pConstantData [19] == 1.0f*/)
    {
+BIG_MAMA_JAMA:
+     if (! viewport_fixed)
+       fix_viewport = true;
+#if 1
+      D3DCOLOR color =
+        D3DCOLOR_COLORVALUE (0.0f, 0.0f, 0.0f, 0.0f);//pConstantData [16], pConstantData [17], pConstantData [18], pConstantData [19]);
+
       D3DVIEWPORT9 vp9_orig;
       This->GetViewport (&vp9_orig);
+      vp9_orig.X = 0;
+      vp9_orig.Y = 0;
+      vp9_orig.Width = tzf::RenderFix::width;
+      vp9_orig.Height = tzf::RenderFix::height;
 
       // Only apply aspect ratio correction as needed!
-      if (vp9_orig.Width  == tzf::RenderFix::width &&
-          vp9_orig.Height == tzf::RenderFix::height) {
+      if (true) {//if (vp9_orig.Width  == tzf::RenderFix::width &&
+          //vp9_orig.Height == tzf::RenderFix::height) {
       int width = vp9_orig.Width;
       int height = (9.0f / 16.0f) * vp9_orig.Width;
 
@@ -920,46 +1067,64 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       }
 
      if (height != vp9_orig.Height) {
-#if 0
-       RECT top;
-       top.top    = 0;
-       top.left   = 0;
-       top.right  = vp9_orig.Width;
-       top.bottom = top.top + (vp9_orig.Height - height) / 2;
-       D3D9SetScissorRect_Original (This, &top);
-       This->SetRenderState (D3DRS_SCISSORTESTENABLE, 1);
-
-       if (! shadows)
-         This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
-
-       RECT bottom;
-       bottom.top    = vp9_orig.Height - (vp9_orig.Height - height) / 2;
-       bottom.left   = 0;
-       bottom.right  = vp9_orig.Width;
-       bottom.bottom = vp9_orig.Height;
-       D3D9SetScissorRect_Original (This, &bottom);
-       if (! shadows)
-         This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
-#endif
-
        D3DVIEWPORT9 vp9;
        vp9.X     = vp9_orig.X;    vp9.Y      = vp9_orig.Y + (vp9_orig.Height - height) / 2;
        vp9.Width = width;         vp9.Height = height;
        vp9.MinZ  = vp9_orig.MinZ; vp9.MaxZ   = vp9_orig.MaxZ;
-       This->SetViewport (&vp9);
+
+       //if (fix_viewport) {
+         This->SetViewport (&vp9);
+         viewport_fixed = true;
+       //}
      }
 
      // Sidebar Videos
      if (width != vp9_orig.Width) {
-       //This->Clear (0, NULL, D3DCLEAR_TARGET, 0x0, 0.0f, 0x0);
-
        D3DVIEWPORT9 vp9;
        vp9.X     = vp9_orig.X + (vp9_orig.Width - width) / 2; vp9.Y = vp9_orig.Y;
        vp9.Width = width;                                     vp9.Height = height;
        vp9.MinZ  = vp9_orig.MinZ;                             vp9.MaxZ   = vp9_orig.MaxZ;
-       This->SetViewport (&vp9);
+
+       //if (fix_viewport) {
+         This->SetViewport (&vp9);
+         viewport_fixed = true;
+       //}
      }
+
+#if 0
+     if (true) {
+       float data [20];
+       memcpy (data, pConstantData, sizeof (float) * 20);
+
+       float rescale = (1.77777778f / config.render.aspect_ratio);
+
+       // Wider
+       if (config.render.aspect_ratio > 1.7777f) {
+         int width = (16.0f / 9.0f) * tzf::RenderFix::height;
+         int x_off = (tzf::RenderFix::width - width) / 2;
+
+         data [ 0] *= rescale;
+         data [ 3] *= rescale;
+         data [ 4] *= rescale;
+         data [ 8] *= rescale;
+         data [12] *= rescale;
+       } else {
+         int height = (9.0f / 16.0f) * tzf::RenderFix::width;
+         int y_off  = (tzf::RenderFix::height - height) / 2;
+
+         data [ 1] *= rescale;
+         data [ 5] *= rescale;
+         data [ 7] *= rescale;
+         data [ 9] *= rescale;
+         data [13] *= rescale;
+       }
+
+       return D3D9SetVertexShaderConstantF_Original (This, StartRegister, data, Vector4fCount);
+     }
+#endif
     }
+#endif
+      ++ui_passes;
     }
   }
 

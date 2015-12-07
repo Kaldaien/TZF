@@ -60,17 +60,6 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
 {
   D3DPRESENT_PARAMETERS present_params;
 
-  // Ignore D3D9Ex devices, I don't know what they are even for, but they will
-  //   totally screw things up if we don't.
-  IDirect3DDevice9Ex* pDeviceEx = nullptr;
-  if ( SUCCEEDED ( device->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
-                                              (void **)&pDeviceEx )
-                 ) 
-     ) {
-    pDeviceEx->Release ();
-    return BMF_SetPresentParamsD3D9_Original (device, pparams);
-  }
-
   //
   // TODO: Figure out what the hell is doing this when RTSS is allowed to use
   //         custom D3D libs. 1x1@0Hz is obviously NOT for rendering!
@@ -581,6 +570,8 @@ tzf::FrameRateFix::End30FPSEvent (void)
 bool use_accumulator = false;
 bool floating_target = true;
 
+int  max_latency = 2;
+
 tzf::FrameRateFix::CommandProcessor* tzf::FrameRateFix::CommandProcessor::pCommProc;
 
 tzf::FrameRateFix::CommandProcessor::CommandProcessor (void)
@@ -590,6 +581,7 @@ tzf::FrameRateFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("TickScale", tick_scale_);
 
   command.AddVariable ("UseAccumulator", new eTB_VarStub <bool> (&use_accumulator));
+  command.AddVariable ("MaxFrameLatency", new eTB_VarStub <int> (&max_latency));
 }
 
 bool
@@ -668,7 +660,7 @@ tzf::FrameRateFix::RenderTick (void)
   QueryPerformanceCounter   (&time);
 
   const double inv_rate = 1.0 / target_fps;
-  const double epsilon  = 0.0;//(accum / freq.QuadPart / (1.0 / 60.0));
+  const double epsilon  = freq.QuadPart * (1.0 / target_fps) * 0.15;//(accum / freq.QuadPart / (1.0 / 60.0));
 
 
 #ifdef ADAPTIVE_LIMITER
@@ -723,14 +715,32 @@ tzf::FrameRateFix::RenderTick (void)
 #endif
 
 
+  // If available (Windows 7+), wait on the swapchain
+  IDirect3DDevice9Ex* d3d9ex = nullptr;
+  if (tzf::RenderFix::pDevice != nullptr) {
+    if ( SUCCEEDED ( tzf::RenderFix::pDevice->QueryInterface ( 
+                       __uuidof (IDirect3DDevice9Ex),
+                         (void **)&d3d9ex )
+                   ) && d3d9ex != nullptr
+       ) {
+      d3d9ex->SetMaximumFrameLatency (max_latency);
+      d3d9ex->WaitForVBlank          (0);
+    }
+  }
+
+  QueryPerformanceCounter (&time);
+
   // Busy-wait because we are rendering too fast...
   while (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon)) {
-    if (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon) -
-                                      (0.05 * freq.QuadPart)) {
-      YieldProcessor ();
+
+    if (d3d9ex != nullptr) {
+      d3d9ex->WaitForVBlank (0);
     }
+
     QueryPerformanceCounter (&time);
   }
+
+  if (d3d9ex != nullptr) d3d9ex->Release ();
 
   double dt = ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0);
 
