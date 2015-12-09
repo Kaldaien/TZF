@@ -570,7 +570,8 @@ tzf::FrameRateFix::End30FPSEvent (void)
 bool use_accumulator = false;
 bool floating_target = true;
 
-int  max_latency = 2;
+int  max_latency     = 2;
+bool wait_for_vblank = true;
 
 tzf::FrameRateFix::CommandProcessor* tzf::FrameRateFix::CommandProcessor::pCommProc;
 
@@ -580,8 +581,9 @@ tzf::FrameRateFix::CommandProcessor::CommandProcessor (void)
 
   command.AddVariable ("TickScale", tick_scale_);
 
-  command.AddVariable ("UseAccumulator", new eTB_VarStub <bool> (&use_accumulator));
-  command.AddVariable ("MaxFrameLatency", new eTB_VarStub <int> (&max_latency));
+  command.AddVariable ("UseAccumulator",  new eTB_VarStub <bool> (&use_accumulator));
+  command.AddVariable ("MaxFrameLatency", new eTB_VarStub <int>  (&max_latency));
+  command.AddVariable ("WaitForVBLANK",   new eTB_VarStub <bool> (&wait_for_vblank));
 }
 
 bool
@@ -651,6 +653,8 @@ tzf::FrameRateFix::CalcTickScale (double elapsed_ms)
 void
 tzf::FrameRateFix::RenderTick (void)
 {
+  static long last_scale = 1;
+
   static LARGE_INTEGER last_time  = { 0 };
   static LARGE_INTEGER freq       = { 0 };
 
@@ -660,7 +664,7 @@ tzf::FrameRateFix::RenderTick (void)
   QueryPerformanceCounter   (&time);
 
   const double inv_rate = 1.0 / target_fps;
-  const double epsilon  = freq.QuadPart * (1.0 / target_fps) * 0.15;//(accum / freq.QuadPart / (1.0 / 60.0));
+  const double epsilon  = 0.0;//freq.QuadPart * (1.0 / 60.0) * 0.5;//(accum / freq.QuadPart / (1.0 / 60.0));
 
 
 #ifdef ADAPTIVE_LIMITER
@@ -724,17 +728,22 @@ tzf::FrameRateFix::RenderTick (void)
                    ) && d3d9ex != nullptr
        ) {
       d3d9ex->SetMaximumFrameLatency (max_latency);
-      d3d9ex->WaitForVBlank          (0);
     }
   }
 
   QueryPerformanceCounter (&time);
 
-  // Busy-wait because we are rendering too fast...
-  while (time.QuadPart < (last_time.QuadPart + freq.QuadPart * inv_rate - epsilon)) {
+  bool first_wait = true;
+  double remaining =  ((last_time.QuadPart + (freq.QuadPart * inv_rate) - epsilon) - time.QuadPart) / freq.QuadPart;
 
-    if (d3d9ex != nullptr) {
+  // Busy-wait because we are rendering too fast...
+  while (remaining > 0) {
+    remaining =  ((last_time.QuadPart + (freq.QuadPart * inv_rate) - epsilon) - time.QuadPart) / freq.QuadPart;
+
+    if (wait_for_vblank && d3d9ex != nullptr &&
+        first_wait      && remaining > 0.008 && max_latency > 0) {
       d3d9ex->WaitForVBlank (0);
+      first_wait = false;
     }
 
     QueryPerformanceCounter (&time);
@@ -774,6 +783,8 @@ tzf::FrameRateFix::RenderTick (void)
     sprintf (rescale, "TickScale %li", scale);
     command.ProcessCommandLine (rescale);
   }
+
+  last_scale = scale;
 
   last_time.QuadPart = time.QuadPart;
 }
