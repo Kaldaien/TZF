@@ -746,11 +746,21 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
 
   // Wider
   if (config.render.aspect_ratio > 1.7777f) {
-    fixed_scissor.left  = (pRect->left  + x_off) * x_scale;
-    fixed_scissor.right = (pRect->right - x_off) * x_scale;
+    float left_ndc  = 2.0f * ((float)pRect->left  / (float)tzf::RenderFix::width) - 1.0f;
+    float right_ndc = 2.0f * ((float)pRect->right / (float)tzf::RenderFix::width) - 1.0f;
+
+    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
+
+    fixed_scissor.left  = (left_ndc  * width + width) / 2.0f + x_off;
+    fixed_scissor.right = (right_ndc * width + width) / 2.0f + x_off;
   } else {
-    fixed_scissor.top    = (pRect->top    - y_off) * y_scale;
-    fixed_scissor.bottom = (pRect->bottom + y_off) * y_scale;
+    float top_ndc    = 2.0f * ((float)pRect->top    / (float)tzf::RenderFix::height) - 1.0f;
+    float bottom_ndc = 2.0f * ((float)pRect->bottom / (float)tzf::RenderFix::height) - 1.0f;
+
+    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
+
+    fixed_scissor.top    = (top_ndc    * height + height) / 2.0f + y_off;
+    fixed_scissor.bottom = (bottom_ndc * height + height) / 2.0f + y_off;
   }
 
   if (! config.render.disable_scissor)

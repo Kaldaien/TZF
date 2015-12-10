@@ -106,7 +106,10 @@ struct game_state_t {
     return false;
   }
   bool needsFixedMouseCoords(void) {
-    return (hasFixedAspect () || *Title);
+    return (*GamePause    ||
+            *Menu         ||
+            *BattlePause  ||
+            *Title);
   }
 } static game_state;
 

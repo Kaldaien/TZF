@@ -536,6 +536,7 @@ tzf::FrameRateFix::Shutdown (void)
 }
 
 static int scale_before = 2;
+bool       forced_30    = false;
 
 void
 tzf::FrameRateFix::Begin30FPSEvent (void)
@@ -543,6 +544,7 @@ tzf::FrameRateFix::Begin30FPSEvent (void)
   EnterCriticalSection (&alter_speed_cs);
 
   if (variable_speed_installed) {
+    forced_30    = true;
     scale_before = tick_scale;
     command.ProcessCommandLine ("TickScale 2");
   }
@@ -556,6 +558,7 @@ tzf::FrameRateFix::End30FPSEvent (void)
   EnterCriticalSection (&alter_speed_cs);
 
   if (variable_speed_installed) {
+    forced_30 = false;
     char szRescale [32];
     sprintf (szRescale, "TickScale %i", scale_before);
     command.ProcessCommandLine (szRescale);
@@ -650,9 +653,24 @@ tzf::FrameRateFix::CalcTickScale (double elapsed_ms)
   return scale;
 }
 
+bool loading = false;
+
 void
 tzf::FrameRateFix::RenderTick (void)
 {
+#if 0
+  if (*game_state.Loading && (! loading)) {
+    loading = true;
+    dll_log.Log (L" ### Loading caused 30 FPS limit");
+    tzf::FrameRateFix::Begin30FPSEvent ();
+  }
+  else if (loading && (! *game_state.Loading)) {
+    loading = false;
+    dll_log.Log (L" ### Loading complete");
+    tzf::FrameRateFix::End30FPSEvent ();
+  }
+#endif
+
   static long last_scale = 1;
 
   static LARGE_INTEGER last_time  = { 0 };
@@ -750,6 +768,13 @@ tzf::FrameRateFix::RenderTick (void)
   }
 
   if (d3d9ex != nullptr) d3d9ex->Release ();
+
+
+  if (forced_30) {
+    last_time.QuadPart = time.QuadPart;
+    return;
+  }
+
 
   double dt = ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0);
 
