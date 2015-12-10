@@ -51,7 +51,7 @@ TZF_MakeShadowBitShift (uint32_t dim)
 
 
 void
-TZF_ComputeAspectScale (float& x, float& y, float& xoff, float& yoff)
+TZF_ComputeAspectCoeffs (float& x, float& y, float& xoff, float& yoff)
 {
   yoff = 0.0f;
   xoff = 0.0f;
@@ -59,7 +59,7 @@ TZF_ComputeAspectScale (float& x, float& y, float& xoff, float& yoff)
   x = 1.0f;
   y = 1.0f;
 
-  //if (! config.render.aspect_correction)
+  if (! config.render.aspect_correction)
     return;
 
   float rescale = (1.77777778f / config.render.aspect_ratio);
@@ -69,17 +69,16 @@ TZF_ComputeAspectScale (float& x, float& y, float& xoff, float& yoff)
     int width = (16.0f / 9.0f) * tzf::RenderFix::height;
     int x_off = (tzf::RenderFix::width - width) / 2;
 
-    x = rescale;
+    x    = (float)tzf::RenderFix::width / (float)width;
     xoff = x_off;
   } else {
     int height = (9.0f / 16.0f) * tzf::RenderFix::width;
     int y_off  = (tzf::RenderFix::height - height) / 2;
 
-    y = rescale;
+    y    = (float)tzf::RenderFix::height / (float)height;
     yoff = y_off;
   }
 }
-
 
 typedef D3DMATRIX* (WINAPI *D3DXMatrixMultiply_t)(_Inout_    D3DMATRIX *pOut,
                                                   _In_ const D3DMATRIX *pM1,
@@ -314,65 +313,24 @@ typedef HRESULT (STDMETHODCALLTYPE *BMF_EndBufferSwap_t)
    IUnknown* device);
 BMF_EndBufferSwap_t BMF_EndBufferSwap = nullptr;
 
-// The cursor position before we start screwing with it for aspect ratio
-//   correction ;)
-POINT real_cursor;
-
-// Returns the original cursor position and stores the new one in pPoint
-POINT
-CalcCursorPos (LPPOINT pPoint)
-{
-  return *pPoint;
-}
-
 typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
   IDirect3DDevice9* This,
   const RECT*       pRect);
 
 SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
 
+typedef HRESULT (STDMETHODCALLTYPE *EndScene_t)
+(IDirect3DDevice9* This);
+
+EndScene_t D3D9EndScene_Original = nullptr;
+
 COM_DECLSPEC_NOTHROW
-void
+HRESULT
 STDMETHODCALLTYPE
-D3D9EndFrame_Pre (void)
+D3D9EndScene_Detour (IDirect3DDevice9* This)
 {
-  viewport_fixed = false;
-
-  struct game_state_t {
-    BYTE*  base_addr    =  (BYTE *)0x2130309;
-
-    BYTE*  Title        =  (BYTE *) base_addr;       // Title
-    BYTE*  OpeningMovie =  (BYTE *)(base_addr + 1);  // Openining Movie
-
-    BYTE*  Game         =  (BYTE *)(base_addr + 2);  // Game
-    BYTE*  GamePause    =  (BYTE *)(base_addr + 3);  // Game Pause
-
-    SHORT* Loading      = (SHORT *)(base_addr + 4);  // Why are there 2 states for this?
-
-    BYTE*  Explanation  =  (BYTE *)(base_addr + 6);  // Explanation (+ Bink)?
-    BYTE*  Menu         =  (BYTE *)(base_addr + 7);  // Menu
-
-    BYTE*  Unknown0     =  (BYTE *)(base_addr + 8);  // Unknown
-    BYTE*  Unknown1     =  (BYTE *)(base_addr + 9);  // Unknown - Appears to be battle related
-    BYTE*  Unknown2     =  (BYTE *)(base_addr + 10); // Unknown
-
-    BYTE*  Battle       =  (BYTE *)(base_addr + 11); // Battle
-    BYTE*  BattlePause  =  (BYTE *)(base_addr + 12); // Battle Pause
-
-    bool hasFixedAspect (void) {
-      if (*OpeningMovie ||
-        *GamePause    ||
-        *Loading      ||
-        *Explanation  ||
-        *Menu         ||
-        *BattlePause)
-        return true;
-      return false;
-    }
-  } static state;
-
-  if (state.hasFixedAspect () && (config.render.aspect_correction || (config.render.blackbar_videos && tzf::RenderFix::bink))) {
-    D3DCOLOR color = 0x00000000;
+  if (game_state.hasFixedAspect () && (config.render.aspect_correction || (config.render.blackbar_videos && tzf::RenderFix::bink))) {
+    D3DCOLOR color = 0xff000000;
 
     int width = tzf::RenderFix::width;
     int height = (9.0f / 16.0f) * width;
@@ -430,6 +388,18 @@ D3D9EndFrame_Pre (void)
       tzf::RenderFix::pDevice->SetRenderState (D3DRS_SCISSORTESTENABLE, 0);
     }
   }
+
+  HRESULT hr = D3D9EndScene_Original (This);
+
+  return hr;
+}
+
+COM_DECLSPEC_NOTHROW
+void
+STDMETHODCALLTYPE
+D3D9EndFrame_Pre (void)
+{
+  viewport_fixed = false;
 
   if (pre_limit)
     tzf::FrameRateFix::RenderTick ();
@@ -770,21 +740,17 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
   fixed_scissor.left   = pRect->left;
   fixed_scissor.right  = pRect->right;
 
-  float rescale = (1.77777778f / config.render.aspect_ratio);
+  float x_scale, y_scale;
+  float x_off,   y_off;
+  TZF_ComputeAspectCoeffs (x_scale, y_scale, x_off, y_off);
 
   // Wider
   if (config.render.aspect_ratio > 1.7777f) {
-    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
-    int x_off = (tzf::RenderFix::width - width) / 2;
-
-    fixed_scissor.left  = pRect->left  * rescale + x_off;
-    fixed_scissor.right = pRect->right * rescale + x_off;
+    fixed_scissor.left  = (pRect->left  + x_off) * x_scale;
+    fixed_scissor.right = (pRect->right - x_off) * x_scale;
   } else {
-    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
-    int y_off  = (tzf::RenderFix::height - height) / 2;
-
-    fixed_scissor.top    = pRect->top    / rescale + y_off;
-    fixed_scissor.bottom = pRect->bottom / rescale + y_off;
+    fixed_scissor.top    = (pRect->top    - y_off) * y_scale;
+    fixed_scissor.bottom = (pRect->bottom + y_off) * y_scale;
   }
 
   if (! config.render.disable_scissor)
@@ -854,7 +820,9 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
 
     float scale_x, scale_y;
     float x_off,   y_off;
-    TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
+    scale_x = 1.0f; scale_y = 1.0f;
+    x_off   = 0.0f;   y_off = 0.0f;
+    //TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
 
     rescaled_post_proc.Width  = tzf::RenderFix::width  * config.render.postproc_ratio * scale_x;
     rescaled_post_proc.Height = tzf::RenderFix::height * config.render.postproc_ratio * scale_y;
@@ -1060,7 +1028,9 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     float scale_x, scale_y;
     float x_off,   y_off;
-    TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
+    scale_x = 1.0f; scale_y = 1.0f;
+    x_off   = 0.0f;   y_off = 0.0f;
+    //TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
 
     newData [0] = -1.0f / ((float)tzf::RenderFix::width  * config.render.postproc_ratio * scale_x);
     newData [1] =  1.0f / ((float)tzf::RenderFix::height * config.render.postproc_ratio * scale_y);
@@ -1136,7 +1106,10 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
             float scale_x, scale_y;
             float x_off, y_off;
 
-            TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
+            scale_x = 1.0f; scale_y = 1.0f;
+            x_off   = 0.0f;   y_off = 0.0f;
+
+            //TZF_ComputeAspectScale (scale_x, scale_y, x_off, y_off);
 
             float rescale_x = 512.0f / ((float)tzf::RenderFix::width  * config.render.postproc_ratio * scale_x);
             float rescale_y = 256.0f / ((float)tzf::RenderFix::height * config.render.postproc_ratio * scale_y);
@@ -1295,7 +1268,6 @@ SetWindowDisplayAffinity_Detour (HWND hWnd, DWORD dwAffinity)
 }
 
 
-
 #define D3DX_DEFAULT ((UINT) -1)
 struct D3DXIMAGE_INFO;
 
@@ -1375,7 +1347,6 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
   return hr;
 }
 
-
 void
 tzf::RenderFix::Init (void)
 {
@@ -1435,6 +1406,10 @@ tzf::RenderFix::Init (void)
                       D3D9SetScissorRect_Detour,
             (LPVOID*)&D3D9SetScissorRect_Original );
 
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9EndScene_Override",
+                      D3D9EndScene_Detour,
+            (LPVOID*)&D3D9EndScene_Original );
+
   // Needed for shadow re-scaling
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateTexture_Override",
                       D3D9CreateTexture_Detour,
@@ -1460,6 +1435,7 @@ tzf::RenderFix::Init (void)
 
 
   d3dx9_43_dll = LoadLibrary (L"D3DX9_43.DLL");
+  user32_dll   = LoadLibrary (L"User32.dll");
 
   // Needed for mipmap completeness
   TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXCreateTextureFromFileInMemoryEx",
@@ -1480,6 +1456,8 @@ tzf::RenderFix::Init (void)
                       SetWindowDisplayAffinity_Detour,
             (LPVOID*)&SetWindowDisplayAffinity_Original );
 #endif
+
+
 
 
 #if 0
@@ -1632,3 +1610,4 @@ IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
 bool               tzf::RenderFix::bink                = false;
 
 HMODULE            tzf::RenderFix::d3dx9_43_dll        = 0;
+HMODULE            tzf::RenderFix::user32_dll          = 0;

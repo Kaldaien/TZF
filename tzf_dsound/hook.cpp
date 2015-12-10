@@ -78,6 +78,111 @@ TZF_FindRootWindow (DWORD proc_id)
   return win.root;
 }
 
+
+// Returns the original cursor position and stores the new one in pPoint
+POINT
+CalcCursorPos (LPPOINT pPoint)
+{
+  float xscale, yscale;
+  float xoff,   yoff;
+
+  extern void TZF_ComputeAspectCoeffs ( float& xscale,
+                                        float& yscale,
+                                        float& xoff,
+                                        float& yoff );
+
+  TZF_ComputeAspectCoeffs (xscale, yscale, xoff, yoff);
+
+  pPoint->x = (pPoint->x - xoff) * xscale;
+  pPoint->y = (pPoint->y - yoff) * yscale;
+
+  return *pPoint;
+}
+
+
+WNDPROC original_wndproc = nullptr;
+
+LRESULT
+CALLBACK
+DetourWindowProc ( _In_  HWND   hWnd,
+                   _In_  UINT   uMsg,
+                   _In_  WPARAM wParam,
+                   _In_  LPARAM lParam )
+{
+  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
+    if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) {
+      POINT p;
+
+      p.x = MAKEPOINTS (lParam).x;
+      p.y = MAKEPOINTS (lParam).y;
+
+      CalcCursorPos (&p);
+
+      return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, MAKELPARAM (p.x, p.y));
+    }
+  }
+
+  return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, lParam);
+}
+
+
+typedef BOOL (WINAPI *GetCursorInfo_t)
+  (_Inout_ PCURSORINFO pci);
+
+GetCursorInfo_t GetCursorInfo_Original = nullptr;
+
+BOOL
+WINAPI
+GetCursorInfo_Detour (PCURSORINFO pci)
+{
+  BOOL ret = GetCursorInfo_Original (pci);
+
+  // Correct the cursor position for Aspect Ratio
+  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
+    POINT pt;
+
+    pt.x = pci->ptScreenPos.x;
+    pt.y = pci->ptScreenPos.y;
+
+    CalcCursorPos (&pt);
+
+    pci->ptScreenPos.x = pt.x;
+    pci->ptScreenPos.y = pt.y;
+  }
+
+  return ret;
+}
+
+typedef BOOL (WINAPI *GetCursorPos_t)
+  (_Out_ LPPOINT lpPoint);
+
+GetCursorPos_t GetCursorPos_Original = nullptr;
+
+BOOL
+WINAPI
+GetCursorPos_Detour (LPPOINT lpPoint)
+{
+  BOOL ret = GetCursorPos_Original (lpPoint);
+
+  // Correct the cursor position for Aspect Ratio
+  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction)
+    CalcCursorPos (lpPoint);
+
+  // Defer initialization of the Window Message redirection stuff until
+  //   the first time the game calls GetCursorPos (...)
+  if (original_wndproc == nullptr && tzf::RenderFix::hWndDevice != NULL) {
+    original_wndproc =
+      (WNDPROC)GetWindowLong (tzf::RenderFix::hWndDevice, GWL_WNDPROC);
+
+    SetWindowLong ( tzf::RenderFix::hWndDevice,
+                      GWL_WNDPROC,
+                        (LONG)DetourWindowProc );
+  }
+
+  return ret;
+}
+
+
 class TZF_InputHooker
 {
 private:
@@ -123,6 +228,14 @@ public:
                            &hooks,
                              NULL,
                                NULL );
+
+    TZF_CreateDLLHook ( L"user32.dll", "GetCursorInfo",
+                        GetCursorInfo_Detour,
+              (LPVOID*)&GetCursorInfo_Original );
+
+    TZF_CreateDLLHook ( L"user32.dll", "GetCursorPos",
+                        GetCursorPos_Detour,
+              (LPVOID*)&GetCursorPos_Original );
   }
 
   void End (void)
@@ -279,8 +392,8 @@ public:
 #if 0
     static bool fudging = false;
 
-    if (tzf::RenderFix::pDevice != nullptr && (! fudging)) {
-      //GetCursorPos (&pmh->pt);
+    if (game_state.hasFixedAspect () && tzf::RenderFix::pDevice != nullptr && (! fudging)) {
+      GetCursorPos (&pmh->pt);
 
       extern POINT CalcCursorPos (LPPOINT pPos);
       extern POINT real_cursor;

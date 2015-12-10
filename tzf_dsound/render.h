@@ -70,7 +70,44 @@ namespace tzf
     extern bool               bink; // True if a bink video is playing
 
     extern HMODULE            d3dx9_43_dll;
+    extern HMODULE            user32_dll;
   }
 }
+
+struct game_state_t {
+  BYTE*  base_addr    =  (BYTE *)0x2130309;
+
+  BYTE*  Title        =  (BYTE *) base_addr;       // Title
+  BYTE*  OpeningMovie =  (BYTE *)(base_addr + 1);  // Opening Movie
+
+  BYTE*  Game         =  (BYTE *)(base_addr + 2);  // Game
+  BYTE*  GamePause    =  (BYTE *)(base_addr + 3);  // Game Pause
+
+  SHORT* Loading      = (SHORT *)(base_addr + 4);  // Why are there 2 states for this?
+
+  BYTE*  Explanation  =  (BYTE *)(base_addr + 6);  // Explanation (+ Bink)?
+  BYTE*  Menu         =  (BYTE *)(base_addr + 7);  // Menu
+
+  BYTE*  Unknown0     =  (BYTE *)(base_addr + 8);  // Unknown
+  BYTE*  Unknown1     =  (BYTE *)(base_addr + 9);  // Unknown - Appears to be battle related
+  BYTE*  Unknown2     =  (BYTE *)(base_addr + 10); // Unknown
+
+  BYTE*  Battle       =  (BYTE *)(base_addr + 11); // Battle
+  BYTE*  BattlePause  =  (BYTE *)(base_addr + 12); // Battle Pause
+
+  bool hasFixedAspect (void) {
+    if (*OpeningMovie ||
+        *GamePause    ||
+        *Loading      ||
+        *Explanation  ||
+        *Menu         ||
+        *BattlePause)
+      return true;
+    return false;
+  }
+  bool needsFixedMouseCoords(void) {
+    return (hasFixedAspect () || *Title);
+  }
+} static game_state;
 
 #endif /* __TZF__RENDER_H__ */
