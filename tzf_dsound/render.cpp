@@ -34,7 +34,6 @@
 
 // Textures that are missing mipmaps
 std::set <IDirect3DBaseTexture9 *> incomplete_textures;
-bool viewport_fixed = false;
 bool pre_limit      = false;
 
 uint32_t
@@ -59,7 +58,7 @@ TZF_ComputeAspectCoeffs (float& x, float& y, float& xoff, float& yoff)
   x = 1.0f;
   y = 1.0f;
 
-  if (! config.render.aspect_correction)
+  if (! (config.render.aspect_correction || config.render.blackbar_videos))
     return;
 
   float rescale = (1.77777778f / config.render.aspect_ratio);
@@ -399,8 +398,6 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
-  viewport_fixed = false;
-
   if (pre_limit)
     tzf::FrameRateFix::RenderTick ();
 
@@ -787,8 +784,6 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetViewport_Original (This, pViewport);
 
-  viewport_fixed = false;
-
   //
   // Adjust Character Drop Shadows
   //
@@ -838,8 +833,6 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
     rescaled_post_proc.Height = tzf::RenderFix::height * config.render.postproc_ratio * scale_y;
     rescaled_post_proc.X       += x_off;
     rescaled_post_proc.Y       += y_off;
-
-    viewport_fixed = true;
 
     return D3D9SetViewport_Original (This, &rescaled_post_proc);
   }
@@ -892,9 +885,11 @@ TZF_AdjustViewport (IDirect3DDevice9* This, bool UI)
     return;
   }
 
-  // Only apply aspect ratio correction as needed!
-  if (vp9_orig.Width  == tzf::RenderFix::width &&
-      vp9_orig.Height == tzf::RenderFix::height) {
+  vp9_orig.X = 0;
+  vp9_orig.Y = 0;
+  vp9_orig.Width  = tzf::RenderFix::width;
+  vp9_orig.Height = tzf::RenderFix::height;
+
   int width = vp9_orig.Width;
   int height = (9.0f / 16.0f) * vp9_orig.Width;
 
@@ -922,7 +917,6 @@ TZF_AdjustViewport (IDirect3DDevice9* This, bool UI)
 
     This->SetViewport (&vp9);
   }
-  }
 }
 
 typedef HRESULT (STDMETHODCALLTYPE *DrawIndexedPrimitive_t)(
@@ -947,15 +941,16 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
                                  UINT              startIndex,
                                  UINT              primCount)
 {
-  if (config.render.aspect_correction && Type == D3DPT_TRIANGLESTRIP && (vs_checksums [g_pVS] == 0x52BD224A ||
-                                                                         vs_checksums [g_pVS] == 0x272A71B0 || // Splash Screen
-                                                                         vs_checksums [g_pVS] == 0x66E0873  || // Fadein / Fadeout Effect
-                                                                         vs_checksums [g_pVS] == 0xCE6ADAB2)) {
+  if ((config.render.aspect_correction && Type == D3DPT_TRIANGLESTRIP && (vs_checksums [g_pVS] == 0x52BD224A ||
+                                                                          vs_checksums [g_pVS] == 0x272A71B0 || // Splash Screen
+                                                                          vs_checksums [g_pVS] == 0x66E0873 // Fadein / Fadeout Effect
+                                                                          )) ||
+     (config.render.blackbar_videos && tzf::RenderFix::bink && vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
     TZF_AdjustViewport (This, true);
-  } else if (Type == D3DPT_TRIANGLESTRIP) {
+  }
+  else if (Type == D3DPT_TRIANGLESTRIP) {
     //dll_log.Log (L" Consider Vertex Shader 0x%04X...", vs_checksums [g_pVS]);
-  } else if ((! config.render.aspect_correction) && config.render.blackbar_videos && tzf::RenderFix::bink)
-    TZF_AdjustViewport (This, true);
+  }
 
   return D3D9DrawIndexedPrimitive_Original ( This, Type,
                                               BaseVertexIndex, MinVertexIndex,
@@ -1079,8 +1074,8 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     float newData [4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-    newData [0] = -1.0f / (dim << 2);
-    newData [1] =  1.0f / (dim << 2);
+    newData [0] = -1.0f / (dim << shift);
+    newData [1] =  1.0f / (dim << shift);
 
     if (pConstantData [2] != 0.0f || 
         pConstantData [3] != 0.0f) {
@@ -1150,87 +1145,6 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
         }
 
         return D3D9SetVertexShaderConstantF_Original (This, 0, newData, Vector4fCount);
-      }
-    }
-  }
-
-  bool fix_viewport = false;
-
-#if 0
-  IDirect3DSurface9* pSurf = nullptr;
-
-  if ((config.render.aspect_correction) &&
-      Vector4fCount == 1 && StartRegister == 240                 &&
-      pConstantData [0] == -1.0f / (float)tzf::RenderFix::width  &&
-      pConstantData [1] ==  1.0f / (float)tzf::RenderFix::height) {
-    bool begin_ui = false;
-
-    IDirect3DBaseTexture9* pTexBase = nullptr;
-    if (SUCCEEDED (This->GetTexture (0, &pTexBase)) && pTexBase != nullptr) {
-      IDirect3DTexture9* pTex = nullptr;
-      if (SUCCEEDED (pTexBase->QueryInterface (__uuidof (IDirect3DTexture9), (void **)&pTex)) && pTex != nullptr) {
-        if (SUCCEEDED (pTex->GetSurfaceLevel (0, &pSurf)) && pSurf != nullptr) {
-          D3DSURFACE_DESC desc;
-          pSurf->GetDesc (&desc);
-          if (desc.Usage & D3DUSAGE_RENDERTARGET    &&
-              desc.Height == tzf::RenderFix::height &&
-              desc.Width  == tzf::RenderFix::width) {
-            //2917649932
-            //12/05/2015 23:36:02.529: Potential Match: Format 000015 (vs: 3945640540, ps: 36123480), 
-              //12/05/2015 23:36:02.546: Potential Match: Format 000015 (vs: 3225191522, ps: 3744323608), 
-            //dll_log.Log (L"Potential Match: Format %06X, Type %lu, Pool %lu - (vs: %lu, ps: %lu), ",
-              //desc.Format, desc.Type, desc.Pool, vs_checksums [g_pVS], ps_checksums [g_pPS] );
-           if (vs_checksums [g_pVS] == 3945640540 && ps_checksums [g_pPS] == 36123480)
-              begin_ui = true;
-          }
-          pSurf->Release ();
-        }
-        pTex->Release ();
-      }
-      pTexBase->Release ();
-    }
-
-    if (begin_ui && (! viewport_fixed)) {
-      viewport_fixed = true;
-      fix_viewport   = true;
-      goto BIG_MAMA_JAMA;
-    }
-  }
-#endif
-
-#if 0
-   0 1 2 3
-   4 5 6 7
-   8 9 0 1
-   2 3 4 5
-#endif
-
-  if (Vector4fCount > 1) {
-    if (pConstantData [0] == (1.0f / 1280.0f) &&
-        pConstantData [5] == (1.0f / 720.0f) ) { 
-       //dll_log.Log (L" UI? VS: %04X, PS: %04X - Vector4fCount: %lu, RegisterStart: %lu",
-       //vs_checksums [g_pVS], ps_checksums [g_pPS], Vector4fCount, StartRegister );
-     }
-  }
-
-  if ( Vector4fCount > 4 && config.render.aspect_correction ) {
-    if ( /*((pConstantData [0] == 2.0f / 1280.0f  &&
-           pConstantData [5] == 2.0f / 720.0f)  ||
-          (pConstantData [0] == (1.0f / 1280.0f) * pConstantData [15]   &&
-           pConstantData [5] == (1.0f / 720.0f)  * pConstantData [15])) &&*/
-          /*vs_checksums [g_pVS] == 0x1A97B826*/
-          /*vs_checksums [g_pVS] == 0x66E0873*/
-          (vs_checksums [g_pVS] == 0x52BD224A ||
-           vs_checksums [g_pVS] == 0x272A71B0 || // Splash Screen
-           vs_checksums [g_pVS] == 0x66E0873  || // Fadein / Fadeout Effect
-           vs_checksums [g_pVS] == 0x1A97B826 ||
-           tzf::RenderFix::bink )) {
-      ////dll_log.Log (L" UI? VS: %04X, PS: %04X - Vector4fCount: %lu, RegisterStart: %lu",
-                      ////vs_checksums [g_pVS], ps_checksums [g_pPS], Vector4fCount, StartRegister );
-      D3DCOLOR color =
-        D3DCOLOR_COLORVALUE (0.0f, 0.0f, 0.0f, 0.0f);//pConstantData [16], pConstantData [17], pConstantData [18], pConstantData [19]);
-
-      if (vs_checksums [g_pVS] == 0x1A97B826) {
       }
     }
   }

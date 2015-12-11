@@ -87,7 +87,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                         pparams->BackBufferHeight,
                           pparams->FullScreen_RefreshRateInHz,
                             pparams->hDeviceWindow );
-
+  
     tzf::RenderFix::hWndDevice = pparams->hDeviceWindow;
 
     tzf::RenderFix::width  = present_params.BackBufferWidth;
@@ -653,6 +653,79 @@ tzf::FrameRateFix::CalcTickScale (double elapsed_ms)
   return scale;
 }
 
+class FramerateLimiter
+{
+public:
+  FramerateLimiter (double target = 60.0) {
+     init (target);
+   }
+  ~FramerateLimiter (void) {
+   }
+
+  void init (double target) {
+    ms  = 1000.0 / target;
+    fps = target;
+
+    frames = 0;
+
+    QueryPerformanceFrequency (&freq);
+    QueryPerformanceCounter   (&start);
+
+    next.QuadPart = 0ULL;
+    time.QuadPart = 0ULL;
+    last.QuadPart = 0ULL;
+
+    last.QuadPart = start.QuadPart - (ms / 1000.0) * freq.QuadPart;
+  }
+
+  void wait (void) {
+    frames++;
+
+    QueryPerformanceCounter (&time);
+
+    last.QuadPart = time.QuadPart;
+    next.QuadPart = (start.QuadPart + frames * (ms / 1000.0) * freq.QuadPart);
+
+    if (next.QuadPart > 0ULL) {
+      // If available (Windows 7+), wait on the swapchain
+      IDirect3DDevice9Ex* d3d9ex = nullptr;
+      if (tzf::RenderFix::pDevice != nullptr) {
+        tzf::RenderFix::pDevice->QueryInterface ( 
+                           __uuidof (IDirect3DDevice9Ex),
+                             (void **)&d3d9ex );
+      }
+
+      while (time.QuadPart < next.QuadPart) {
+        if (wait_for_vblank) {
+          if (d3d9ex != nullptr)
+            d3d9ex->WaitForVBlank (0);
+        }
+        QueryPerformanceCounter (&time);
+      }
+
+      if (d3d9ex != nullptr)
+        d3d9ex->Release ();
+    }
+
+    // Previous frame ran long, subtract a little bit of time to
+    //   prevent stuttering.
+    else {
+      start.QuadPart += -next.QuadPart;
+    }
+  }
+
+  void change_limit (double target) {
+    init (target);
+  }
+
+private:
+    double ms, fps;
+
+    LARGE_INTEGER start, last, next, time, freq;
+
+    uint32_t frames;
+} *limiter = nullptr;
+
 bool loading = false;
 
 void
@@ -737,6 +810,7 @@ tzf::FrameRateFix::RenderTick (void)
 #endif
 
 
+#if 0
   // If available (Windows 7+), wait on the swapchain
   IDirect3DDevice9Ex* d3d9ex = nullptr;
   if (tzf::RenderFix::pDevice != nullptr) {
@@ -768,6 +842,21 @@ tzf::FrameRateFix::RenderTick (void)
   }
 
   if (d3d9ex != nullptr) d3d9ex->Release ();
+#else
+  static uint32_t last_limit = target_fps;
+
+  if (limiter == nullptr)
+    limiter = new FramerateLimiter ();
+
+  if (last_limit != target_fps) {
+    limiter->change_limit (target_fps);
+    last_limit = target_fps;
+  }
+
+  limiter->wait ();
+
+  QueryPerformanceCounter (&time);
+#endif
 
 
   if (forced_30) {
