@@ -26,6 +26,8 @@
 #include "hook.h"
 #include "scanner.h"
 
+#include "priest.lua.h"
+
 #include "render.h"
 #include <d3d9.h>
 
@@ -309,6 +311,9 @@ TZF_LuaHook (void)
 
   if (! strcmp (name, "MEP_100_130_010_PF_Script")) {
     dll_log.Log(L" * Replacing priest script...");
+
+    *pSz = lua_bytecode_priest_size;
+    *pBuffer = lua_bytecode_priest;
   }
 
   __asm
