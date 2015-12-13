@@ -268,6 +268,65 @@ TZF_InjectByteCode ( LPVOID   base_addr,
   TZF_FlushInstructionCache (base_addr, code_size);
 }
 
+LPVOID pLuaReturn = nullptr;
+
+void
+__declspec(naked)
+TZF_LuaHook (void)
+{
+  char *name;
+  size_t *pSz;
+  char **pBuffer;
+
+  __asm
+  {
+    pushad
+    pushfd
+
+    // save Lua loader's stack frame because we need some stuff on it
+    mov ebx, ebp
+
+    push ebp
+    mov ebp, esp
+    sub esp, __LOCAL_SIZE
+
+    // I don't think this is actually luaL_loadbuffer, name shouldn't be passed in eax,
+    // but we can get it here 100% of the time anyway
+    // more insight definitely welcome
+    mov name, eax
+
+    mov eax, ebx
+    add eax, 0xC
+    mov pSz, eax
+    mov eax, ebx
+    add eax, 0x8
+    mov pBuffer, eax
+  }
+
+#if 0
+  dll_log.Log (L"Lua script loaded: \"%S\"", name);
+#endif
+
+  if (! strcmp (name, "MEP_100_130_010_PF_Script")) {
+    dll_log.Log(L" * Replacing priest script...");
+  }
+
+  __asm
+  {
+    mov esp, ebp
+    pop ebp
+
+    popfd
+    popad
+
+    // overwritten instructions from original function
+    mov ecx, [ebp + 0x8]
+    mov [esp + 0x4], ecx
+
+    jmp pLuaReturn
+  }
+}
+
 void
 tzf::FrameRateFix::Init (void)
 {
@@ -460,6 +519,29 @@ tzf::FrameRateFix::Init (void)
                            new_code,
                              6,
                                PAGE_EXECUTE_READWRITE );
+  }
+
+  if (true) {
+    uint8_t sig[14] = {  0x8B, 0x4D, 0x08,        // mov ecx, [ebp+08]
+                         0x89, 0x4C, 0x24, 0x04,  // mov [esp+04], ecx
+                         0x8B, 0x4D, 0x0C,        // mov ecx, [ebp+0C]
+                         0x89, 0x4C, 0x24, 0x08   // mov [esp+08], ecx
+                      };
+    uint8_t new_code[7] = { 0xE9, 0x00, 0x00, 0x00, 0x00, 0x90, 0x90 };
+
+    void *addr = TZF_Scan (sig, 14);
+
+    if (addr != NULL) {
+      dll_log.Log (L"Scanned Lua Loader Address: %06Xh", addr);
+
+      DWORD hookOffset = (PtrToUlong(&TZF_LuaHook) - (DWORD)addr - 5);
+      memcpy(new_code + 1, &hookOffset, 4);
+      TZF_InjectByteCode(addr, new_code, 7, PAGE_EXECUTE_READWRITE);
+      pLuaReturn = (LPVOID)(0x85FE39 + 7);
+    }
+    else {
+      dll_log.Log (L" >> ERROR: Unable to find Lua loader address! Priest bug will occur.");
+    }
   }
 
   command.AddVariable ("TargetFPS", new eTB_VarStub <int> ((int *)&target_fps));
