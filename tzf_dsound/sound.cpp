@@ -42,6 +42,8 @@
 IDirectSound* g_pDS       = nullptr;
 bool          new_session = false;
 
+tzf_logger_t  audio_log;
+
 bool          tzf::SoundFix::wasapi_init = false;
 
 WAVEFORMATEX tzf::SoundFix::snd_core_fmt;
@@ -159,16 +161,16 @@ TZF_DescribeHRESULT (HRESULT result)
 
 
   default:
-    dll_log.Log (L" *** Encountered unknown HRESULT: (0x%08X)",
-      (unsigned long)result);
+    audio_log.Log ( L" *** Encountered unknown HRESULT: (0x%08X)",
+                      (unsigned long)result );
     return L"UNKNOWN";
   }
 }
 
-#define DSOUND_CALL(_Ret, _Call) {                                   \
-  dll_log.LogEx (true, L"  Calling original function: ");            \
-  (_Ret) = (_Call);                                                  \
-  dll_log.LogEx (false, L"(ret=%s)\n\n", TZF_DescribeHRESULT (_Ret));\
+#define DSOUND_CALL(_Ret, _Call) {                                     \
+  audio_log.LogEx (true, L"  Calling original function: ");            \
+  (_Ret) = (_Call);                                                    \
+  audio_log.LogEx (false, L"(ret=%s)\n\n", TZF_DescribeHRESULT (_Ret));\
 }
 
 typedef HRESULT (WINAPI *DSound_GetSpeakerConfig_t)
@@ -181,12 +183,12 @@ HRESULT
 WINAPI DSound_GetSpeakerConfig (IDirectSound *This, 
                           _Out_ LPDWORD       pdwSpeakerConfig)
 {
-  dll_log.Log ( L"[!] %s (%08Xh, %08Xh) - "
-                L"[Calling Thread: 0x%04x]",
-                  L"IDirectSound::GetSpeakerConfig",
-                    This,
-                      pdwSpeakerConfig,
-                        GetCurrentThreadId ()
+  audio_log.Log ( L"[!] %s (%08Xh, %08Xh) - "
+                  L"[Calling Thread: 0x%04x]",
+                    L"IDirectSound::GetSpeakerConfig",
+                      This,
+                        pdwSpeakerConfig,
+                          GetCurrentThreadId ()
   );
 
   HRESULT ret;
@@ -195,8 +197,8 @@ WINAPI DSound_GetSpeakerConfig (IDirectSound *This,
   if (*pdwSpeakerConfig == DSSPEAKER_7POINT1_SURROUND ||
       *pdwSpeakerConfig == DSSPEAKER_7POINT1 ) {
     *pdwSpeakerConfig = DSSPEAKER_5POINT1_SURROUND;
-    dll_log.Log ( L"IDirectSound::GetSpeakerConfig (...) : "
-                  L"Reporting 7.1 system as 5.1\n" );
+    audio_log.Log ( L"IDirectSound::GetSpeakerConfig (...) : "
+                    L"Reporting 7.1 system as 5.1\n" );
   }
 
   return ret;
@@ -212,11 +214,11 @@ HRESULT
 WINAPI DSound_SetSpeakerConfig (IDirectSound *This, 
                           _In_  DWORD         dwSpeakerConfig)
 {
-  dll_log.Log (L"[!] %s (%08Xh, %08Xh) - "
-               L"[Calling Thread: 0x%04x]",
-                 L"IDirectSound::SetSpeakerConfig",
-                   This, dwSpeakerConfig,
-                     GetCurrentThreadId ()
+  audio_log.Log ( L"[!] %s (%08Xh, %08Xh) - "
+                  L"[Calling Thread: 0x%04x]",
+                    L"IDirectSound::SetSpeakerConfig",
+                      This, dwSpeakerConfig,
+                        GetCurrentThreadId ()
   );
 
   HRESULT ret;
@@ -225,8 +227,8 @@ WINAPI DSound_SetSpeakerConfig (IDirectSound *This,
   if (dwSpeakerConfig == DSSPEAKER_7POINT1_SURROUND ||
       dwSpeakerConfig == DSSPEAKER_7POINT1 ) {
     dwSpeakerConfig = DSSPEAKER_5POINT1_SURROUND;
-    dll_log.Log ( L"IDirectSound::SetSpeakerConfig (...) : "
-                  L"Changing 7.1 system to 5.1\n" );
+    audio_log.Log ( L"IDirectSound::SetSpeakerConfig (...) : "
+                    L"Changing 7.1 system to 5.1\n" );
   }
 
   return ret;
@@ -242,11 +244,11 @@ HRESULT
 WINAPI DSound_GetSpeakerConfig8 (IDirectSound8 *This, 
                            _Out_ LPDWORD        pdwSpeakerConfig)
 {
-  dll_log.Log (L"[!] %s (%08Xh, %08Xh) - "
-               L"[Calling Thread: 0x%04x]",
-                 L"IDirectSound8::GetSpeakerConfig",
-                   This, pdwSpeakerConfig,
-                     GetCurrentThreadId ()
+  audio_log.Log ( L"[!] %s (%08Xh, %08Xh) - "
+                  L"[Calling Thread: 0x%04x]",
+                    L"IDirectSound8::GetSpeakerConfig",
+                      This, pdwSpeakerConfig,
+                        GetCurrentThreadId ()
   );
 
   HRESULT ret;
@@ -255,8 +257,8 @@ WINAPI DSound_GetSpeakerConfig8 (IDirectSound8 *This,
   if (*pdwSpeakerConfig == DSSPEAKER_7POINT1_SURROUND ||
       *pdwSpeakerConfig == DSSPEAKER_7POINT1 ) {
     *pdwSpeakerConfig = DSSPEAKER_5POINT1_SURROUND;
-    dll_log.Log ( L"IDirectSound8::GetSpeakerConfig (...) : "
-                  L"Reporting 7.1 system as 5.1\n" );
+    audio_log.Log ( L"IDirectSound8::GetSpeakerConfig (...) : "
+                    L"Reporting 7.1 system as 5.1\n" );
   }
 
   return ret;
@@ -279,16 +281,16 @@ DirectSoundCreate_Detour (_In_opt_   LPCGUID        pcGuidDevice,
   new_session                  = false;
   g_DeviceFormat.Format.cbSize = 0;
 
-  dll_log.Log ( L"[!] %s (%08Xh, %08Xh, %08Xh) - "
-                L"[Calling Thread: 0x%04x]",
-                  L"DirectSoundCreate",
-                    pcGuidDevice, ppDS, pUnkOuter,
-                      GetCurrentThreadId ()
+  audio_log.Log ( L"[!] %s (%08Xh, %08Xh, %08Xh) - "
+                  L"[Calling Thread: 0x%04x]",
+                    L"DirectSoundCreate",
+                      pcGuidDevice, ppDS, pUnkOuter,
+                        GetCurrentThreadId ()
   );
 
   if (g_pDS) {
-    dll_log.Log ( L" @ Short-Circuiting and returning previous IDirectSound "
-                  L"interface." );
+    audio_log.Log ( L" @ Short-Circuiting and returning previous IDirectSound "
+                      L"interface." );
 
     *ppDS = g_pDS;
     (*ppDS)->AddRef ();
@@ -322,7 +324,7 @@ DirectSoundCreate_Detour (_In_opt_   LPCGUID        pcGuidDevice,
   }
   else {
     _com_error ce (ret);
-    dll_log.Log ( L" > FAILURE %s - (%s)", TZF_DescribeHRESULT (ret),
+    audio_log.Log ( L" > FAILURE %s - (%s)", TZF_DescribeHRESULT (ret),
                                             ce.ErrorMessage () );
   }
 
@@ -356,11 +358,11 @@ STDMETHODCALLTYPE
 IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
                            _Out_  WAVEFORMATEX      **ppDeviceFormat)
 {
-  dll_log.Log (L" [!] IAudioClient::GetMixFormat (%08Xh)", This);
+  audio_log.Log (L" [!] IAudioClient::GetMixFormat (%08Xh)", This);
 
   if (new_session) {
-    dll_log.Log (L" >> Overriding  -  "
-                 L"Using Device Format rather than Mix Format <<");
+    audio_log.Log ( L" >> Overriding  -  "
+                    L"Using Device Format rather than Mix Format <<" );
 
     WAVEFORMATEX*   pMixFormat;
     IPropertyStore* pStore;
@@ -391,14 +393,14 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
             else
               format_name = L"Unknown";
 
-            dll_log.Log (L" Extensible WAVEFORMAT Found...");
-            dll_log.Log (L"  %lu Channels, %lu Samples Per Sec, %lu Bits"
-                         L" Per Sample (%lu Actual)",
+            audio_log.Log (L" Extensible WAVEFORMAT Found...");
+            audio_log.Log (L"  %lu Channels, %lu Samples Per Sec, %lu Bits"
+                           L" Per Sample (%lu Actual)",
               ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Format.nChannels,
               ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Format.nSamplesPerSec,
               ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Format.wBitsPerSample,
               ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Samples.wValidBitsPerSample);
-            dll_log.Log (L"  Format: %s", format_name.c_str ());
+            audio_log.Log (L"  Format: %s", format_name.c_str ());
 
             pMixFormat->wBitsPerSample =
               ((PWAVEFORMATEXTENSIBLE)pMixFormat)->Samples.wValidBitsPerSample;
@@ -406,30 +408,30 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
             DWORD dwChannels =
               ((PWAVEFORMATEXTENSIBLE)pMixFormat)->dwChannelMask;
 
-            dll_log.LogEx (true, L" Speaker Geometry:");
+            audio_log.LogEx (true, L" Speaker Geometry:");
 
             if (dwChannels & SPEAKER_FRONT_LEFT)
-              dll_log.LogEx (false, L" FrontLeft");
+              audio_log.LogEx (false, L" FrontLeft");
             if (dwChannels & SPEAKER_FRONT_RIGHT)
-              dll_log.LogEx (false, L" FrontRight");
+              audio_log.LogEx (false, L" FrontRight");
             if (dwChannels & SPEAKER_FRONT_CENTER)
-              dll_log.LogEx (false, L" FrontCenter");
+              audio_log.LogEx (false, L" FrontCenter");
             if (dwChannels & SPEAKER_LOW_FREQUENCY)
-              dll_log.LogEx (false, L" LowFrequencyEmitter");
+              audio_log.LogEx (false, L" LowFrequencyEmitter");
             if (dwChannels & SPEAKER_BACK_LEFT)
-              dll_log.LogEx (false, L" BackLeft");
+              audio_log.LogEx (false, L" BackLeft");
             if (dwChannels & SPEAKER_BACK_RIGHT)
-              dll_log.LogEx (false, L" BackRight");
+              audio_log.LogEx (false, L" BackRight");
             if (dwChannels & SPEAKER_FRONT_LEFT_OF_CENTER)
-              dll_log.LogEx (false, L" FrontLeftOfCenter");
+              audio_log.LogEx (false, L" FrontLeftOfCenter");
             if (dwChannels & SPEAKER_FRONT_RIGHT_OF_CENTER)
-              dll_log.LogEx (false, L" FrontRightOfCenter");
+              audio_log.LogEx (false, L" FrontRightOfCenter");
             if (dwChannels & SPEAKER_SIDE_LEFT)
-              dll_log.LogEx (false, L" SideLeft");
+              audio_log.LogEx (false, L" SideLeft");
             if (dwChannels & SPEAKER_SIDE_RIGHT)
-              dll_log.LogEx (false, L" SideRight");
+              audio_log.LogEx (false, L" SideRight");
 
-            dll_log.LogEx (false, L"\n");
+            audio_log.LogEx (false, L"\n");
 
             // Dolby Atmos? Neat!
 //#define SPEAKER_TOP_CENTER              0x800
@@ -443,16 +445,16 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
         }
 
         if (pMixFormat->nChannels > config.audio.channels) {
-          dll_log.Log ( L"  ** Downmixing from %lu channels to %lu",
-                         pMixFormat->nChannels, config.audio.channels );
+          audio_log.Log ( L"  ** Downmixing from %lu channels to %lu",
+                            pMixFormat->nChannels, config.audio.channels );
           pMixFormat->nChannels = config.audio.channels;
         }
 
         #define TARGET_SAMPLE_RATE config.audio.sample_hz
 
         if (pMixFormat->nSamplesPerSec != TARGET_SAMPLE_RATE) {
-          dll_log.Log ( L"  ** Resampling Audiostream from %lu Hz to %lu Hz",
-                          pMixFormat->nSamplesPerSec, TARGET_SAMPLE_RATE );
+          audio_log.Log ( L"  ** Resampling Audiostream from %lu Hz to %lu Hz",
+                            pMixFormat->nSamplesPerSec, TARGET_SAMPLE_RATE );
           pMixFormat->nSamplesPerSec = TARGET_SAMPLE_RATE;
         }
 
@@ -505,11 +507,11 @@ IAudioClient_Initialize_Detour (IAudioClient       *This,
                           _In_  const WAVEFORMATEX *pFormat,
                       _In_opt_  LPCGUID             AudioSessionGuid)
 {
-  dll_log.Log (L" [!] IAudioClient::Initialize (...)");
+  audio_log.Log (L" [!] IAudioClient::Initialize (...)");
 
-  dll_log.Log (
+  audio_log.Log (
     L"  {Share Mode: %lu - Stream Flags: 0x%04X}", ShareMode, StreamFlags );
-  dll_log.Log (
+  audio_log.Log (
     L"  >> Channels: %lu, Samples Per Sec: %lu, Bits Per Sample: %hu\n",
     pFormat->nChannels, pFormat->nSamplesPerSec, pFormat->wBitsPerSample );
 
@@ -579,7 +581,7 @@ IAudioClient_Initialize_Detour (IAudioClient       *This,
     CoTaskMemFree (pClosestMatch);
 #endif
 
-  dll_log.Log ( L"   Result: 0x%04X (%s)\n", ret - AUDCLNT_ERR (0x0000),
+  audio_log.Log ( L"   Result: 0x%04X (%s)\n", ret - AUDCLNT_ERR (0x0000),
                   error.ErrorMessage () );
 
   //new_session = false;
@@ -609,15 +611,15 @@ IMMDevice_Activate_Detour (IMMDevice    *This,
                     _Out_  void        **ppInterface)
 {
   if (iid == __uuidof (IAudioSessionManager2)) {
-    dll_log.Log ( L" >> IMMDevice Activating IAudioSessionManager2 Interface "
-                  L" (new_session = true)" );
+    audio_log.Log ( L" >> IMMDevice Activating IAudioSessionManager2 Interface "
+                    L" (new_session = true)" );
     new_session = true;
   }
-  
+
   else if (iid == __uuidof (IAudioClient)) {
-    dll_log.Log (L" >> IMMDevice Activating IAudioClient Interface");
+    audio_log.Log (L" >> IMMDevice Activating IAudioClient Interface");
   }
-  
+
   else {
     std::wstring iid_str;
     wchar_t*     pwszIID;
@@ -628,7 +630,7 @@ IMMDevice_Activate_Detour (IMMDevice    *This,
       CoTaskMemFree (pwszIID);
     }
 
-    dll_log.Log (L"IMMDevice::Activate (%s, ...)\n", iid_str.c_str ());
+    audio_log.Log (L"IMMDevice::Activate (%s, ...)\n", iid_str.c_str ());
   }
 
 
@@ -749,11 +751,16 @@ tzf::SoundFix::Init (void)
   if (! config.audio.enable_fix)
     return;
 
+  audio_log.init  ("logs/audio.log", "w");
+  audio_log.Log   (L"audio.log created");
+
   // Not setup yet
   g_DeviceFormat.Format.cbSize = 0;
 
   dsound_dll = LoadLibrary (L"dsound.dll");
   ole32_dll  = LoadLibrary (L"Ole32.dll");
+
+  audio_log.LogEx (true, L"@ Hooking DirectSoundCreate... ");
 
   TZF_CreateDLLHook ( L"dsound.dll", "DirectSoundCreate",
                       DirectSoundCreate_Detour,
@@ -762,6 +769,8 @@ tzf::SoundFix::Init (void)
 
   TZF_EnableHook (pfnDirectSoundCreate);
 
+  audio_log.LogEx (false, L"%06Xh\n", pfnDirectSoundCreate);
+
   // We need DSSCL_EXCLUSIVE for Bink to work, or at least we did
   //   when the code was originally written -- test this in the future.
   DirectSoundCreate_Detour   (NULL, &g_pDS, NULL);
@@ -769,12 +778,16 @@ tzf::SoundFix::Init (void)
 
   new_session = true;
 
+  audio_log.LogEx (true, L"@ Hooking CoCreateInstance... ");
+
   TZF_CreateDLLHook ( L"Ole32.dll", "CoCreateInstance",
                       CoCreateInstance_Detour,
            (LPVOID *)&CoCreateInstance_Original,
            (LPVOID *)&pfnCoCreateInstance );
 
   TZF_EnableHook (pfnCoCreateInstance);
+
+  audio_log.LogEx (false, L"%06Xh\n", pfnCoCreateInstance);
 }
 
 void
@@ -788,6 +801,9 @@ tzf::SoundFix::Shutdown (void)
 
   FreeLibrary (dsound_dll);
   FreeLibrary (ole32_dll);
+
+  audio_log.Log   (L"Closing log file...");
+  audio_log.close ();
 }
 
 

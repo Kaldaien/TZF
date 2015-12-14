@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.2.0";
+std::wstring TZF_VER_STR = L"1.2.1";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -36,17 +36,14 @@ tzf::ParameterFactory g_ParameterFactory;
 
 struct {
   tzf::ParameterInt*     sample_rate;
-  tzf::ParameterInt*     channels;
+  tzf::ParameterInt*     channels;      // OBSOLETE
   tzf::ParameterBool*    compatibility;
   tzf::ParameterBool*    enable_fix;
 } audio;
 
 struct {
-  tzf::ParameterBool*    stutter_fix;         // OBSOLETE
-  tzf::ParameterFloat*   fudge_factor;        // OBSOLETE
   tzf::ParameterBool*    allow_fake_sleep;
   tzf::ParameterBool*    yield_processor;
-  tzf::ParameterBool*    allow_windowed_mode; // OBSOLETE
   tzf::ParameterBool*    minimize_latency;
   tzf::ParameterInt*     speedresetcode_addr;
   tzf::ParameterInt*     speedresetcode2_addr;
@@ -71,7 +68,6 @@ struct {
   tzf::ParameterInt*     rescale_shadows;
   tzf::ParameterInt*     rescale_env_shadows;
   tzf::ParameterFloat*   postproc_ratio;
-  tzf::ParameterBool*    disable_scissor; // OBSOLETE
   tzf::ParameterBool*    clear_blackbars;
 } render;
 
@@ -144,26 +140,6 @@ TZF_LoadConfig (std::wstring name) {
         L"EnableFix" );
 
 
-  framerate.stutter_fix =
-    static_cast <tzf::ParameterBool *>
-      (g_ParameterFactory.create_parameter <bool> (
-        L"Stutter Elimination")
-      );
-  framerate.stutter_fix->register_to_ini (
-    dll_ini,
-      L"TZFIX.FrameRate",
-        L"FixStutter" );
-
-  framerate.fudge_factor =
-    static_cast <tzf::ParameterFloat *>
-      (g_ParameterFactory.create_parameter <float> (
-        L"Fudge Factor")
-      );
-  framerate.fudge_factor->register_to_ini (
-    dll_ini,
-      L"TZFIX.FrameRate",
-        L"FudgeFactor" );
-
   framerate.allow_fake_sleep =
     static_cast <tzf::ParameterBool *>
       (g_ParameterFactory.create_parameter <bool> (
@@ -183,16 +159,6 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.FrameRate",
         L"YieldProcessor" );
-
-  framerate.allow_windowed_mode =
-    static_cast <tzf::ParameterBool *>
-      (g_ParameterFactory.create_parameter <bool> (
-        L"Allow Windowed Mode")
-      );
-  framerate.allow_windowed_mode->register_to_ini (
-    dll_ini,
-      L"TZFIX.FrameRate",
-        L"AllowWindowedMode" );
 
   framerate.minimize_latency =
     static_cast <tzf::ParameterBool *>
@@ -395,16 +361,6 @@ TZF_LoadConfig (std::wstring name) {
       L"TZFIX.Render",
         L"PostProcessRatio" );
 
-  render.disable_scissor =
-    static_cast <tzf::ParameterBool *>
-      (g_ParameterFactory.create_parameter <bool> (
-        L"Disable Scissor Rectangle")
-      );
-  render.disable_scissor->register_to_ini (
-    dll_ini,
-      L"TZFIX.Render",
-        L"DisableScissor" );
-
    render.rescale_env_shadows =
      static_cast <tzf::ParameterInt *>
        (g_ParameterFactory.create_parameter <int> (
@@ -484,20 +440,11 @@ TZF_LoadConfig (std::wstring name) {
     config.audio.enable_fix = audio.enable_fix->get_value ();
 
 
-  if (framerate.stutter_fix->load ())
-    config.framerate.stutter_fix = framerate.stutter_fix->get_value ();
-
-  if (framerate.fudge_factor->load ())
-    config.framerate.fudge_factor = framerate.fudge_factor->get_value ();
-
   if (framerate.allow_fake_sleep->load ())
     config.framerate.allow_fake_sleep = framerate.allow_fake_sleep->get_value ();
 
   if (framerate.yield_processor->load ())
     config.framerate.yield_processor = framerate.yield_processor->get_value ();
-
-  if (framerate.allow_windowed_mode->load ())
-    config.framerate.allow_windowed_mode = framerate.allow_windowed_mode->get_value ();
 
   if (framerate.minimize_latency->load ())
     config.framerate.minimize_latency = framerate.minimize_latency->get_value ();
@@ -561,9 +508,6 @@ TZF_LoadConfig (std::wstring name) {
   if (render.rescale_shadows->load ())
     config.render.shadow_rescale = render.rescale_shadows->get_value ();
 
-  if (render.disable_scissor->load ())
-    config.render.disable_scissor = render.disable_scissor->get_value ();
-
   if (render.rescale_env_shadows->load ())
     config.render.env_shadow_rescale = render.rescale_env_shadows->get_value ();
 
@@ -593,8 +537,8 @@ TZF_LoadConfig (std::wstring name) {
 
 void
 TZF_SaveConfig (std::wstring name, bool close_config) {
-  audio.channels->set_value    (config.audio.channels);
-  audio.channels->store        ();
+  //audio.channels->set_value    (config.audio.channels);  // OBSOLETE 
+  //audio.channels->store        ();                       // OBSOLETE
 
   audio.sample_rate->set_value (config.audio.sample_hz);
   audio.sample_rate->store     ();
@@ -606,20 +550,11 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   audio.enable_fix->store     ();
 
 
-//  framerate.stutter_fix->set_value (config.framerate.stutter_fix);
-//  framerate.stutter_fix->store     ();
-
-//  framerate.fudge_factor->set_value (config.framerate.fudge_factor);
-//  framerate.fudge_factor->store     ();
-
   framerate.allow_fake_sleep->set_value (config.framerate.allow_fake_sleep);
   framerate.allow_fake_sleep->store     ();
 
   framerate.yield_processor->set_value (config.framerate.yield_processor);
   framerate.yield_processor->store     ();
-
-//  framerate.allow_windowed_mode->set_value (config.framerate.allow_windowed_mode);
-//  framerate.allow_windowed_mode->store     ();
 
   framerate.minimize_latency->set_value (config.framerate.minimize_latency);
   framerate.minimize_latency->store     ();
@@ -684,9 +619,6 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   render.rescale_shadows->set_value (config.render.shadow_rescale);
   render.rescale_shadows->store     ();
-
-//  render.disable_scissor->set_value (config.render.disable_scissor);
-//  render.disable_scissor->store     ();
 
   render.rescale_env_shadows->set_value (config.render.env_shadow_rescale);
   render.rescale_env_shadows->store     ();

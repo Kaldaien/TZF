@@ -66,7 +66,7 @@ struct tzf_logger_t
   }
 
   bool init (const char* const szFilename,
-    const char* const szMode);
+             const char* const szMode);
 
   void close (void);
 

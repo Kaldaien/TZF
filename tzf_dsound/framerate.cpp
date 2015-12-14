@@ -40,7 +40,6 @@ int32_t          tzf::FrameRateFix::tick_scale               = 2; // 30 FPS
 
 CRITICAL_SECTION tzf::FrameRateFix::alter_speed_cs           = { 0 };
 
-bool             tzf::FrameRateFix::stutter_fix_installed    = false;
 bool             tzf::FrameRateFix::variable_speed_installed = false;
 
 uint32_t         tzf::FrameRateFix::target_fps               = 30;
@@ -89,7 +88,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                         pparams->BackBufferHeight,
                           pparams->FullScreen_RefreshRateInHz,
                             pparams->hDeviceWindow );
-  
+
     tzf::RenderFix::hWndDevice = pparams->hDeviceWindow;
 
     tzf::RenderFix::width  = present_params.BackBufferWidth;
@@ -105,87 +104,19 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   return BMF_SetPresentParamsD3D9_Original (device, pparams);
 }
 
-
-typedef MMRESULT (WINAPI *timeBeginPeriod_t)(UINT uPeriod);
-timeBeginPeriod_t timeBeginPeriod_Original = nullptr;
-
-MMRESULT
-WINAPI
-timeBeginPeriod_Detour (UINT uPeriod)
-{
-  dll_log.Log ( L"[!] timeBeginPeriod (%d) - "
-                L"[Calling Thread: 0x%04x]",
-                  uPeriod,
-                    GetCurrentThreadId () );
-
-  return timeBeginPeriod_Original (uPeriod);
-}
-
 typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
 Sleep_t Sleep_Original = nullptr;
-
-bool          render_sleep0  = false;
-LARGE_INTEGER last_perfCount = { 0 };
 
 void
 WINAPI
 Sleep_Detour (DWORD dwMilliseconds)
 {
-  if (GetCurrentThreadId () == tzf::RenderFix::dwRenderThreadID) {
-    if (dwMilliseconds == 0)
-      render_sleep0 = true;
-    else
-      render_sleep0 = false;
-  }
-
   if (config.framerate.yield_processor && dwMilliseconds == 0)
     YieldProcessor ();
 
   if (dwMilliseconds != 0 || config.framerate.allow_fake_sleep) {
     Sleep_Original (dwMilliseconds);
   }
-}
-
-typedef BOOL (WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
-QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
-
-BOOL
-WINAPI
-QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
-{
-  BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
-
-  DWORD dwThreadId = GetCurrentThreadId ();
-
-  //
-  // Handle threads that aren't render-related NORMALLY as well as the render
-  //   thread when it DID NOT just voluntarily relinquish its scheduling
-  //     timeslice
-  //
-  if (dwThreadId != tzf::RenderFix::dwRenderThreadID || (! render_sleep0)) {
-    if (dwThreadId == tzf::RenderFix::dwRenderThreadID)
-      memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
-
-    return ret;
-  }
-
-  //
-  // At this point, we're fixing up the thread that throttles the swapchain.
-  //
-  const float fudge_factor = config.framerate.fudge_factor;
-
-  render_sleep0 = false;
-
-  LARGE_INTEGER freq;
-  QueryPerformanceFrequency (&freq);
-
-  // Mess with the numbers slightly to prevent scheduling from wreaking havoc
-  lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
-    fudge_factor *
-    ((float)tzf::FrameRateFix::target_fps / 30.0f);
-  memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
-
-  return ret;
 }
 
 typedef void* (__stdcall *BinkOpen_t)(const char* filename, DWORD unknown0);
@@ -197,14 +128,13 @@ BinkOpen_Detour ( const char* filename,
                   DWORD       unknown0 )
 {
   // non-null on success
-  void* bink_ret = nullptr;
+  void*       bink_ret = nullptr;
+  static char szBypassName [MAX_PATH] = { '\0' };
 
   // Optionally play some other video (or no video)...
   if (! stricmp (filename, "RAW\\MOVIE\\AM_TOZ_OP_001.BK2")) {
     dll_log.LogEx (true, L" >> Using %ws for Opening Movie ...",
                    config.system.intro_video.c_str ());
-
-    static char szBypassName [MAX_PATH] = { '\0' };
 
     sprintf (szBypassName, "%ws", config.system.intro_video.c_str ());
 
@@ -214,9 +144,9 @@ BinkOpen_Detour ( const char* filename,
                       L" %s!\n",
                         bink_ret != nullptr ? L"Success" :
                                               L"Failed" );
+  } else {
+    bink_ret = BinkOpen_Original (filename, unknown0);
   }
-
-  //bink_ret = BinkOpen_Original (filename, unknown0);
 
   if (bink_ret != nullptr) {
     dll_log.Log (L" * Disabling TargetFPS -- Bink Video Opened");
@@ -244,7 +174,6 @@ BinkClose_Detour (DWORD unknown)
 }
 
 
-LPVOID pfnQueryPerformanceCounter  = nullptr;
 LPVOID pfnSleep                    = nullptr;
 LPVOID pfnBMF_SetPresentParamsD3D9 = nullptr;
 
@@ -297,16 +226,14 @@ TZF_LuaHook (void)
     pushad
     pushfd
 
-    // save Lua loader's stack frame because we need some stuff on it
+    // save luaL_loadbuffer's stack frame because we need some stuff on it
     mov  ebx, ebp
 
     push ebp
     mov  ebp, esp
     sub  esp, __LOCAL_SIZE
 
-    // I don't think this is actually luaL_loadbuffer, name shouldn't be passed in eax,
-    // but we can get it here 100% of the time anyway
-    // more insight definitely welcome
+    // compiler must've optimised away the calling convention here
     mov  name, eax
 
     mov  eax, ebx
@@ -584,21 +511,6 @@ tzf::FrameRateFix::Init (void)
   command.AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
 
   command.AddVariable ("AutoAdjust", new eTB_VarStub <bool> (&config.framerate.auto_adjust));
-
-  // Stuff below here is ONLY needed for the hacky frame pacing fix
-  if (! config.framerate.stutter_fix)
-    return;
-
-  TZF_CreateDLLHook ( L"kernel32.dll", "QueryPerformanceCounter",
-                      QueryPerformanceCounter_Detour, 
-           (LPVOID *)&QueryPerformanceCounter_Original,
-           (LPVOID *)&pfnQueryPerformanceCounter );
-  TZF_EnableHook (pfnQueryPerformanceCounter);
-
-  // Only make these in-game options if the stutter fix code is enabled
-  command.AddVariable ("FudgeFactor",       new eTB_VarStub <float> (&config.framerate.fudge_factor));
-
-  stutter_fix_installed = true;
 }
 
 void
@@ -631,13 +543,6 @@ tzf::FrameRateFix::Shutdown (void)
   }
 
   ////TZF_DisableHook (pfnSleep);
-
-  if (! config.framerate.stutter_fix)
-    return;
-
-  ////TZF_DisableHook (pfnQueryPerformanceCounter);
-
-  stutter_fix_installed = false;
 }
 
 static int scale_before = 2;
@@ -839,6 +744,8 @@ public:
           if (d3d9ex != nullptr)
             d3d9ex->WaitForVBlank (0);
         }
+        //if (config.framerate.yield_processor)
+          //YieldProcessor        ();
         QueryPerformanceCounter (&time);
       }
 
@@ -863,7 +770,6 @@ private:
     uint32_t frames;
 } *limiter = nullptr;
 
-bool loading = false;
 
 void
 tzf::FrameRateFix::RenderTick (void)
@@ -890,11 +796,6 @@ tzf::FrameRateFix::RenderTick (void)
   LARGE_INTEGER time;
 
   QueryPerformanceFrequency (&freq);
-  QueryPerformanceCounter   (&time);
-
-  const double inv_rate = 1.0 / target_fps;
-  const double epsilon  = 0.0;
-
 
   static uint32_t last_limit = target_fps;
 
@@ -977,7 +878,6 @@ tzf::FrameRateFix::RenderTick (void)
   if (! game_state.inBattle ())
     last_frame_battle = false;
 
-  last_scale = scale;
-
+  last_scale         = scale;
   last_time.QuadPart = time.QuadPart;
 }

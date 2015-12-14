@@ -81,9 +81,6 @@ namespace tzf
     // True if the game is being framerate limited by the DRIVER
     extern bool             driver_limit_setup;
 
-    // True if the frame pacing hack is setup
-    extern bool             stutter_fix_installed;
-
     // True if the executable has been modified (at run-time) to allow 60 FPS
     extern bool             variable_speed_installed;
 

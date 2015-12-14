@@ -66,16 +66,16 @@ TZF_ComputeAspectCoeffs (float& x, float& y, float& xoff, float& yoff)
 
   // Wider
   if (config.render.aspect_ratio > 1.7777f) {
-    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
-    int x_off = (tzf::RenderFix::width - width) / 2;
+    float width = (16.0f / 9.0f) * tzf::RenderFix::height;
+    float x_off = (tzf::RenderFix::width - width) / 2.0f;
 
-    x    = (float)tzf::RenderFix::width / (float)width;
+    x    = (float)tzf::RenderFix::width / width;
     xoff = x_off;
   } else {
-    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
-    int y_off  = (tzf::RenderFix::height - height) / 2;
+    float height = (9.0f / 16.0f) * tzf::RenderFix::width;
+    float y_off  = (tzf::RenderFix::height - height) / 2.0f;
 
-    y    = (float)tzf::RenderFix::height / (float)height;
+    y    = (float)tzf::RenderFix::height / height;
     yoff = y_off;
   }
 }
@@ -336,8 +336,8 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
        config.render.clear_blackbars ) {
     D3DCOLOR color = 0xff000000;
 
-    int width = tzf::RenderFix::width;
-    int height = (9.0f / 16.0f) * width;
+    DWORD width = tzf::RenderFix::width;
+    DWORD height = (9.0f / 16.0f) * width;
 
     // We can't do this, so instead we need to sidebar the stuff
     if (height > tzf::RenderFix::height) {
@@ -751,7 +751,7 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
     float left_ndc  = 2.0f * ((float)pRect->left  / (float)tzf::RenderFix::width) - 1.0f;
     float right_ndc = 2.0f * ((float)pRect->right / (float)tzf::RenderFix::width) - 1.0f;
 
-    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
+    float width = (16.0f / 9.0f) * tzf::RenderFix::height;
 
     fixed_scissor.left  = (left_ndc  * width + width) / 2.0f + x_off;
     fixed_scissor.right = (right_ndc * width + width) / 2.0f + x_off;
@@ -759,18 +759,13 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
     float top_ndc    = 2.0f * ((float)pRect->top    / (float)tzf::RenderFix::height) - 1.0f;
     float bottom_ndc = 2.0f * ((float)pRect->bottom / (float)tzf::RenderFix::height) - 1.0f;
 
-    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
+    float height = (9.0f / 16.0f) * tzf::RenderFix::width;
 
     fixed_scissor.top    = (top_ndc    * height + height) / 2.0f + y_off;
     fixed_scissor.bottom = (bottom_ndc * height + height) / 2.0f + y_off;
   }
 
-  if (! config.render.disable_scissor)
-    return D3D9SetScissorRect_Original (This, &fixed_scissor);
-  else {
-    This->SetRenderState (D3DRS_SCISSORTESTENABLE, FALSE);
-    return S_OK;
-  }
+  return D3D9SetScissorRect_Original (This, &fixed_scissor);
 }
 
 typedef HRESULT (STDMETHODCALLTYPE *SetViewport_t)(
@@ -895,8 +890,8 @@ TZF_AdjustViewport (IDirect3DDevice9* This, bool UI)
   vp9_orig.Width  = tzf::RenderFix::width;
   vp9_orig.Height = tzf::RenderFix::height;
 
-  int width = vp9_orig.Width;
-  int height = (9.0f / 16.0f) * vp9_orig.Width;
+  DWORD width = vp9_orig.Width;
+  DWORD height = (9.0f / 16.0f) * vp9_orig.Width;
 
   // We can't do this, so instead we need to sidebar the stuff
   if (height > vp9_orig.Height) {
@@ -1145,7 +1140,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
         uint32_t shift = TZF_MakeShadowBitShift (desc.Width);
 
-        for (int i = 0; i < Vector4fCount * 4; i++) {
+        for (UINT i = 0; i < Vector4fCount * 4; i++) {
           newData [i] = pConstantData [i] / (float)(1 << shift);
         }
 
@@ -1457,7 +1452,6 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   eTB_Variable* rescale_shadows     = new eTB_VarStub <int>   (&config.render.shadow_rescale);
   eTB_Variable* rescale_env_shadows = new eTB_VarStub <int>   (&config.render.env_shadow_rescale);
   eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
-  eTB_Variable* disable_scissor     = new eTB_VarStub <bool>  (&config.render.disable_scissor);
   eTB_Variable* prelimit            = new eTB_VarStub <bool>  (&pre_limit);
   eTB_Variable* clear_blackbars     = new eTB_VarStub <bool>  (&config.render.clear_blackbars);
 
@@ -1470,7 +1464,6 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("RescaleShadows",      rescale_shadows);
   command.AddVariable ("RescaleEnvShadows",   rescale_env_shadows);
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
-  command.AddVariable ("DisableScissor",      disable_scissor);
   command.AddVariable ("PreLimitFPS",         prelimit);
   command.AddVariable ("ClearBlackbars",      clear_blackbars);
 

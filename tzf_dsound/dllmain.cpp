@@ -83,10 +83,7 @@ DllMain (HMODULE hModule,
       config.audio.compatibility            = false;
       config.audio.enable_fix               = true;
 
-      config.framerate.stutter_fix          = false;  // OBSOLETE - 1.0.3
-      config.framerate.fudge_factor         = 1.666f; // OBSOLETE - 1.0.3
       config.framerate.allow_fake_sleep     = false;
-      config.framerate.allow_windowed_mode  = true;   // OBSOLETE - 1.1.0
       config.framerate.yield_processor      = true;
       config.framerate.minimize_latency     = false;
       config.framerate.speedresetcode_addr  = 0x0046C0F9;
@@ -117,7 +114,6 @@ DllMain (HMODULE hModule,
       config.render.postproc_ratio          =  1.0f;
       config.render.shadow_rescale          = -2;
       config.render.env_shadow_rescale      =  0;
-      config.render.disable_scissor         = false; // OBSOLETE 1.2.0
       config.render.clear_blackbars         = true;
 
       // Save a new config if none exists
@@ -128,8 +124,9 @@ DllMain (HMODULE hModule,
     //   file is tremendously handy in identifying which client version a user
     //     is running.
     {
-      uint8_t sig [] = { 0x74, 0x42, 0xB1, 0x01, 0x38, 0x1D };
-      intptr_t addr = (intptr_t)TZF_Scan (sig, 6);
+      uint8_t  sig [] = { 0x74, 0x42, 0xB1, 0x01, 0x38, 0x1D };
+      intptr_t addr   = (intptr_t)TZF_Scan (sig, 6);
+
       if (addr != NULL) {
         game_state.base_addr = (BYTE *)(*(DWORD *)(addr + 6) - 0x13);
         dll_log.Log (L"Scanned Gamestate Address: %06Xh", game_state.base_addr);
@@ -159,7 +156,6 @@ DllMain (HMODULE hModule,
 
     dll_log.LogEx      (true,  L"Closing log file... ");
     dll_log.close      ();
-    dll_log.LogEx      (false, L"done!");
     break;
   }
 

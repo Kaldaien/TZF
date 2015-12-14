@@ -32,7 +32,7 @@ struct tzf_config_t
 {
   struct {
     uint32_t sample_hz        = 48000;
-    uint32_t channels         = 8;
+    uint32_t channels         = 8; // OBSOLETE
     bool     compatibility    = false;
     bool     enable_fix       = true;
   } audio;
@@ -40,9 +40,6 @@ struct tzf_config_t
   struct {
     bool  yield_processor      = true;
     bool  allow_fake_sleep     = false;
-    bool  stutter_fix          = false;  // OBSOLETE
-    float fudge_factor         = 1.666f; // OBSOLETE
-    bool  allow_windowed_mode  = false;  // OBSOLETE
     bool  minimize_latency     = false;
     DWORD speedresetcode_addr  = 0x0046C0F9; //0x0046C529;
     DWORD speedresetcode2_addr = 0x0056EB41; //0x0056E441;  0x217B464
@@ -78,7 +75,6 @@ struct tzf_config_t
     bool     complete_mipmaps   = false;
     int32_t  shadow_rescale     = -2;
     float    postproc_ratio     =  1.0f;
-    bool     disable_scissor    = false; // OBSOLETE
     bool     clear_blackbars    = true;
     int32_t  env_shadow_rescale = 0;
   } render;
