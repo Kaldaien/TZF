@@ -51,6 +51,7 @@ struct tzf_config_t
     bool  disable_limiter      = true;
     bool  auto_adjust          = true;
     int   target               = 60;
+    int   cutscene_target      = 30;
   } framerate;
 
   struct {

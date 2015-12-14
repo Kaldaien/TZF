@@ -77,6 +77,30 @@ namespace tzf
 struct game_state_t {
   BYTE*  base_addr    =  (BYTE *)0x2130309;
 
+  struct data_t {
+    BYTE  Title;
+    BYTE  OpeningMovie;
+    BYTE  Game;
+    BYTE  GamePause;
+    BYTE  Loading0;
+    BYTE  Loading1;
+    BYTE  Explanation;
+    BYTE  Menu;
+    BYTE  Unknown0;
+    BYTE  Unknown1;
+    BYTE  Unknown2;
+    BYTE  Battle;
+    BYTE  BattlePause;
+    BYTE  Unknown3;
+    BYTE  Unknown4;
+    BYTE  Unknown5;
+    BYTE  Unknown6;
+    BYTE  Unknown7;
+    BYTE  Unknown8;
+    BYTE  Cutscene;
+  };
+
+#if 0
   BYTE*  Title        =  (BYTE *) base_addr;       // Title
   BYTE*  OpeningMovie =  (BYTE *)(base_addr + 1);  // Opening Movie
 
@@ -95,21 +119,35 @@ struct game_state_t {
   BYTE*  Battle       =  (BYTE *)(base_addr + 11); // Battle
   BYTE*  BattlePause  =  (BYTE *)(base_addr + 12); // Battle Pause
 
+  BYTE*  Unknown3     =  (BYTE *)(base_addr + 13); // Unknown
+  BYTE*  Unknown4     =  (BYTE *)(base_addr + 14); // Unknown
+  BYTE*  Unknown5     =  (BYTE *)(base_addr + 15); // Unknown
+  BYTE*  Unknown6     =  (BYTE *)(base_addr + 16); // Unknown
+  BYTE*  Unknown7     =  (BYTE *)(base_addr + 17); // Unknown
+  BYTE*  Unknown8     =  (BYTE *)(base_addr + 18); // Unknown
+
+  BYTE*  Cutscene     =  (BYTE *)(base_addr + 19); // Cutscene
+#endif
+
+  bool inBattle   (void) { return ((data_t *)base_addr)->Battle   & 0x1; }
+  bool inCutscene (void) { return ((data_t *)base_addr)->Cutscene & 0x1; }
+
   bool hasFixedAspect (void) {
-    if (*OpeningMovie ||
-        *GamePause    ||
-        *Loading      ||
-        *Explanation  ||
-        *Menu         ||
-        *BattlePause)
+    if (((data_t *)base_addr)->OpeningMovie ||
+        ((data_t *)base_addr)->GamePause    ||
+        ((data_t *)base_addr)->Loading0     ||
+        ((data_t *)base_addr)->Loading1     ||
+        ((data_t *)base_addr)->Explanation  ||
+        ((data_t *)base_addr)->Menu         ||
+        ((data_t *)base_addr)->BattlePause)
       return true;
     return false;
   }
   bool needsFixedMouseCoords(void) {
-    return (*GamePause    ||
-            *Menu         ||
-            *BattlePause  ||
-            *Title);
+    return (((data_t *)base_addr)->GamePause    ||
+            ((data_t *)base_addr)->Menu         ||
+            ((data_t *)base_addr)->BattlePause  ||
+            ((data_t *)base_addr)->Title);
   }
 } static game_state;
 

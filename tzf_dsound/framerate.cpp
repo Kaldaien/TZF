@@ -536,6 +536,7 @@ tzf::FrameRateFix::Shutdown (void)
 }
 
 static int scale_before = 2;
+static int fps_before   = 60;
 bool       forced_30    = false;
 
 void
@@ -543,8 +544,10 @@ tzf::FrameRateFix::Begin30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
-  if (variable_speed_installed) {
+  if (variable_speed_installed && (! forced_30)) {
     forced_30    = true;
+    fps_before   = target_fps;
+    target_fps   = 30;
     scale_before = tick_scale;
     command.ProcessCommandLine ("TickScale 2");
   }
@@ -557,8 +560,9 @@ tzf::FrameRateFix::End30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
-  if (variable_speed_installed) {
-    forced_30 = false;
+  if (variable_speed_installed && (forced_30)) {
+    forced_30  = false;
+    target_fps = fps_before;
     char szRescale [32];
     sprintf (szRescale, "TickScale %i", scale_before);
     command.ProcessCommandLine (szRescale);
@@ -573,8 +577,8 @@ tzf::FrameRateFix::End30FPSEvent (void)
 bool use_accumulator = false;
 bool floating_target = true;
 
-int  max_latency     = 2;
-bool wait_for_vblank = true;
+int  max_latency     = 1;//2
+bool wait_for_vblank = false;
 
 tzf::FrameRateFix::CommandProcessor* tzf::FrameRateFix::CommandProcessor::pCommProc;
 
@@ -668,7 +672,22 @@ public:
 
     frames = 0;
 
+    IDirect3DDevice9Ex* d3d9ex = nullptr;
+    if (tzf::RenderFix::pDevice != nullptr) {
+      tzf::RenderFix::pDevice->QueryInterface ( 
+                         __uuidof (IDirect3DDevice9Ex),
+                           (void **)&d3d9ex );
+    }
+
     QueryPerformanceFrequency (&freq);
+
+    // Align the start to VBlank for minimum input latency
+    if (d3d9ex != nullptr) {
+      d3d9ex->SetMaximumFrameLatency (max_latency);
+      d3d9ex->WaitForVBlank          (0);
+      d3d9ex->Release                ();
+    }
+
     QueryPerformanceCounter   (&start);
 
     next.QuadPart = 0ULL;
@@ -707,8 +726,6 @@ public:
         d3d9ex->Release ();
     }
 
-    // Previous frame ran long, subtract a little bit of time to
-    //   prevent stuttering.
     else {
       start.QuadPart += -next.QuadPart;
     }
@@ -731,6 +748,12 @@ bool loading = false;
 void
 tzf::FrameRateFix::RenderTick (void)
 {
+  if (config.framerate.cutscene_target == 30) {
+    if (game_state.inCutscene ())
+      Begin30FPSEvent ();
+    else
+      End30FPSEvent ();
+  }
 #if 0
   if (*game_state.Loading && (! loading)) {
     loading = true;
@@ -756,58 +779,6 @@ tzf::FrameRateFix::RenderTick (void)
 
   const double inv_rate = 1.0 / target_fps;
   const double epsilon  = 0.0;//freq.QuadPart * (1.0 / 60.0) * 0.5;//(accum / freq.QuadPart / (1.0 / 60.0));
-
-
-#ifdef ADAPTIVE_LIMITER
-  double fps = 1.0 / ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart);
-
-  static double        last_fps        = target_fps;
-  static long          last_fps_target = target_fps;
-  static long          last_change     = target_fps;
-
-  static long          lower_vote      = 0;
-  static long          raise_vote      = 0;
-
-  const int            streak_threshold_lower = 3;//10;
-  const int            streak_threshold_raise = 30;//100;
-
-  long fps_target = 60;
-
-  if ((fps + last_fps) / 2.0 > 50)
-    fps_target = 60;
-  else if ((fps + last_fps) / 2.0 > 26)
-    fps_target = 30;
-  else if ((fps + last_fps) / 2.0 > 18.5)
-    fps_target = 20;
-  else if ((fps + last_fps) / 2.0 > 13.5)
-    fps_target = 15;
-  else
-    fps_target = 10;
-
-  if (fps_target > last_fps_target) {
-    raise_vote++;
-    lower_vote = 0;
-  }
-  else if (fps_target < last_fps_target) {
-    lower_vote++;
-    raise_vote = 0;
-  }
-
-  if (lower_vote > streak_threshold_lower) {
-    target_fps  = fps_target;
-    last_fps_target = fps_target;
-    lower_vote = 0;
-    raise_vote = 0;
-  }
-  if (raise_vote > streak_threshold_raise) {
-    target_fps  = fps_target;
-    last_fps_target = fps_target;
-    lower_vote = 0;
-    raise_vote = 0;
-  }
-
-  last_fps        = fps;
-#endif
 
 
 #if 0
@@ -892,11 +863,38 @@ tzf::FrameRateFix::RenderTick (void)
 
   long scale = CalcTickScale (dt * (1.0 / 60.0) * 1000.0);
 
-  if (config.framerate.auto_adjust) {
+  static bool last_frame_battle   = false;
+  static int  scale_before_battle = 0;
+
+  if (config.framerate.auto_adjust || game_state.inBattle ()) {
+    if (game_state.inBattle ()) {
+      if (! last_frame_battle) {
+        scale_before_battle = last_scale;
+        last_frame_battle   = true;
+      }
+
+#if 0
+      if (scale != last_scale) {
+        dll_log.Log ( L" ** Adjusting TickScale because of battle framerate change "
+                      L"(Expected: ~%4.2f ms, Got: %4.2f ms)",
+                        last_scale * 16.666667f, dt * (1.0 / 60.0) * 1000.0 );
+      }
+#endif
+    }
+
     char rescale [32];
     sprintf (rescale, "TickScale %li", scale);
     command.ProcessCommandLine (rescale);
   }
+
+  if (last_frame_battle && (! game_state.inBattle ())) {
+    char rescale [32];
+    sprintf (rescale, "TickScale %li", scale_before_battle);
+    command.ProcessCommandLine (rescale);
+  }
+
+  if (! game_state.inBattle ())
+    last_frame_battle = false;
 
   last_scale = scale;
 

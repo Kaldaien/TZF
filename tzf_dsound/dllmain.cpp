@@ -30,6 +30,7 @@
 #include "general_io.h"
 #include "steam.h"
 #include "render.h"
+#include "scanner.h"
 
 #include "command.h"
 
@@ -95,6 +96,7 @@ DllMain (HMODULE hModule,
       config.framerate.disable_limiter      = true;
       config.framerate.auto_adjust          = true;
       config.framerate.target               = 60;
+      config.framerate.cutscene_target      = 30;
 
       config.file_io.capture                = false;
 
@@ -115,6 +117,18 @@ DllMain (HMODULE hModule,
 
       // Save a new config if none exists
       TZF_SaveConfig ();
+    }
+
+    // Locate the gamestate address; having this as the first thing in the log
+    //   file is tremendously handy in identifying which client version a user
+    //     is running.
+    {
+      uint8_t sig [] = { 0x74, 0x42, 0xB1, 0x01, 0x38, 0x1D };
+      intptr_t addr = (intptr_t)TZF_Scan (sig, 6);
+      if (addr != NULL) {
+        game_state.base_addr = (BYTE *)(*(DWORD *)(addr + 6) - 0x13);
+        dll_log.Log (L"Scanned Gamestate Address: %06Xh", game_state.base_addr);
+      }
     }
 
     HANDLE hThread = CreateThread (NULL, NULL, DllThread, 0, 0, NULL);

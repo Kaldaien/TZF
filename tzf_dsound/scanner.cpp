@@ -45,29 +45,44 @@ TZF_Scan (uint8_t* pattern, size_t len, uint8_t* mask)
 
   while (it < end_addr)
   {
-    uint8_t* scan_addr = it;
+    VirtualQuery (it, &mem_info, sizeof mem_info);
 
-    bool match = (*scan_addr == pattern [idx]);
+    uint8_t* next_rgn = (uint8_t *)mem_info.BaseAddress + mem_info.RegionSize;
 
-    // For portions we do not care about... treat them
-    //   as matching.
-    if (mask != nullptr && (! mask [idx]))
-      match = true;
-
-    if (match) {
-      if (++idx == len)
-        return (void *)begin;
-
-      ++it;
+    if (mem_info.Type != MEM_IMAGE || mem_info.State != MEM_COMMIT || mem_info.Protect & PAGE_NOACCESS) {
+      it    = next_rgn;
+      idx   = 0;
+      begin = it;
+      continue;
     }
 
-    else {
-      // No match?!
-      if (it > end_addr - len)
-        break;
+    while (it < next_rgn) {
+      uint8_t* scan_addr = it;
 
-      it  = ++begin;
-      idx = 0;
+      bool match = (*scan_addr == pattern [idx]);
+
+      // For portions we do not care about... treat them
+      //   as matching.
+      if (mask != nullptr && (! mask [idx]))
+        match = true;
+
+      if (match) {
+        if (++idx == len)
+          return (void *)begin;
+
+        ++it;
+      }
+
+      else {
+        // No match?!
+        if (it > end_addr - len)
+          break;
+
+        
+
+        it  = ++begin;
+        idx = 0;
+      }
     }
   }
 

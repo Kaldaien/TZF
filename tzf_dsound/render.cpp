@@ -24,6 +24,7 @@
 #include "framerate.h"
 #include "config.h"
 #include "log.h"
+#include "scanner.h"
 
 #include <stdint.h>
 
@@ -127,8 +128,8 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
     //dll_log.Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
 
     if (Type < 8) {
-      if (Value != D3DTEXF_ANISOTROPIC)
-        D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
+      //if (Value != D3DTEXF_ANISOTROPIC)
+        //D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
 
       //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
       if (Type == D3DSAMP_MIPFILTER) {
@@ -1466,6 +1467,22 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
   command.AddVariable ("DisableScissor",      disable_scissor);
   command.AddVariable ("PreLimitFPS",         prelimit);
+
+   uint8_t signature [] = { 0x39, 0x8E, 0xE3, 0x3F,
+                            0xDB, 0x0F, 0x49, 0x3F };
+
+  if (*(float *)config.render.aspect_addr != 16.0f / 9.0f) {
+    void* addr = TZF_Scan (signature, sizeof (float) * 2, nullptr);
+    if (addr != nullptr) {
+      dll_log.Log (L"Scanned Aspect Ratio Address: %06Xh", addr);
+      config.render.aspect_addr = (DWORD)addr;
+      dll_log.Log (L"Scanned FOVY Address: %06Xh", (float *)addr + 1);
+      config.render.fovy_addr = (DWORD)((float *)addr + 1);
+    }
+    else {
+      dll_log.Log (L" >> ERROR: Unable to find Aspect Ratio Address!");
+    }
+  }
 }
 
 bool
@@ -1481,7 +1498,7 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
          (original == config.render.aspect_ratio))
             && val != nullptr) {
       config.render.aspect_ratio = *(float *)val;
-      
+
       if (original != config.render.aspect_ratio) {
         dll_log.Log ( L" * Changing Aspect Ratio from %f to %f",
                          original,

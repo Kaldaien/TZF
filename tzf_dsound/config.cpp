@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.1.4";
+std::wstring TZF_VER_STR = L"1.1.6";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -55,6 +55,7 @@ struct {
   tzf::ParameterBool*    disable_limiter;
   tzf::ParameterBool*    auto_adjust;
   tzf::ParameterInt*     target;
+  tzf::ParameterInt*     cutscene_target;
 } framerate;
 
 struct {
@@ -265,6 +266,16 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.FrameRate",
          L"Target" );
 
+   framerate.cutscene_target =
+     static_cast <tzf::ParameterInt *>
+       (g_ParameterFactory.create_parameter <int> (
+         L"Cutscene Target FPS")
+       );
+   framerate.cutscene_target->register_to_ini (
+     dll_ini,
+       L"TZFIX.FrameRate",
+         L"CutsceneTarget" );
+
 
   render.aspect_ratio =
     static_cast <tzf::ParameterFloat *>
@@ -462,6 +473,9 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.target->load ())
     config.framerate.target = framerate.target->get_value ();
 
+  if (framerate.cutscene_target->load ())
+    config.framerate.cutscene_target = framerate.cutscene_target->get_value ();
+
 
 
   if (render.aspect_addr->load ())
@@ -564,8 +578,11 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   framerate.auto_adjust->set_value (config.framerate.auto_adjust);
   framerate.auto_adjust->store     ();
 
-  framerate.target->set_value (config.framerate.target);
-  framerate.target->store     ();
+  //
+  // Don't store changes to this preference made while the game is running
+  //
+  //framerate.target->set_value (config.framerate.target);
+  //framerate.target->store     ();
 
 
   render.aspect_addr->set_value (config.render.aspect_addr);

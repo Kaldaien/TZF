@@ -564,7 +564,7 @@ public:
           }
           else if (keys_ [VK_OEM_PERIOD]) {
             command.ProcessCommandLine ("AutoAdjust true");
-            command.ProcessCommandLine ("TickScale 25");
+            command.ProcessCommandLine ("TickScale 30");
           }
         }
 
