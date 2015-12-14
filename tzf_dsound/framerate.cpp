@@ -337,6 +337,8 @@ tzf::FrameRateFix::Init (void)
 {
   CommandProcessor* comm_proc = CommandProcessor::getInstance ();
 
+  InitializeCriticalSectionAndSpinCount (&alter_speed_cs, 1000UL);
+
   target_fps = config.framerate.target;
 
   TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
@@ -360,8 +362,6 @@ tzf::FrameRateFix::Init (void)
 
   TZF_EnableHook (pfnBinkOpen);
   TZF_EnableHook (pfnBinkClose);
-
-  InitializeCriticalSectionAndSpinCount (&alter_speed_cs, 1000UL);
 
   if (true) {
     if (*((DWORD *)config.framerate.speedresetcode_addr) != 0x428CB08D) {
@@ -637,7 +637,7 @@ tzf::FrameRateFix::Begin30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
-  if (variable_speed_installed && (! forced_30)) {
+  if (variable_speed_installed/* && (! forced_30)*/) {
     forced_30    = true;
     fps_before   = target_fps;
     target_fps   = 30;
@@ -653,7 +653,7 @@ tzf::FrameRateFix::End30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
-  if (variable_speed_installed && (forced_30)) {
+  if (variable_speed_installed/* && (forced_30)*/) {
     forced_30  = false;
     target_fps = fps_before;
     char szRescale [32];
@@ -856,18 +856,19 @@ bool loading = false;
 void
 tzf::FrameRateFix::RenderTick (void)
 {
-  if (! forced_30) {
-    if (config.framerate.cutscene_target != config.framerate.target)
-      if (game_state.inCutscene ())
-        SetFPS (config.framerate.cutscene_target);
+  //if (! forced_30) {
+  if (config.framerate.cutscene_target != config.framerate.target)
+    if (game_state.inCutscene ())
+      SetFPS (config.framerate.cutscene_target);
 
-    if (config.framerate.battle_target != config.framerate.target)
-      if (game_state.inBattle ())
-        SetFPS (config.framerate.battle_target);
+  if (config.framerate.battle_target != config.framerate.target)
+    if (game_state.inBattle ())
+      SetFPS (config.framerate.battle_target);
 
-    if (! (game_state.inBattle () || game_state.inCutscene ()))
-      SetFPS (config.framerate.target);
-  }
+  if (tzf::RenderFix::bink)
+    SetFPS (30);
+  else if (! (game_state.inBattle () || game_state.inCutscene ()))
+    SetFPS (config.framerate.target);
 
 
   static long last_scale = 1;
@@ -899,10 +900,10 @@ tzf::FrameRateFix::RenderTick (void)
   QueryPerformanceCounter (&time);
 
 
-  if (forced_30) {
-    last_time.QuadPart = time.QuadPart;
-    return;
-  }
+  //if (forced_30) {
+    //last_time.QuadPart = time.QuadPart;
+    //return;
+  //}
 
 
   double dt = ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0);
