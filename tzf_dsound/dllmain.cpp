@@ -74,8 +74,8 @@ DllMain (HMODULE hModule,
     DWORD speedresetcode2_addr = 0x0056EB41; //0x0056E441;  0x217B464
     DWORD speedresetcode3_addr = 0x0056E03E; //0x0056D93F;
     DWORD limiter_branch_addr  = 0x00990F53; //0x00990873;
-    DWORD    aspect_addr        = 0x00D52388;//0x00D52398;
-    DWORD    fovy_addr          = 0x00D5238C;//0x00D5239C;
+    DWORD aspect_addr          = 0x00D52388; //0x00D52398;
+    DWORD fovy_addr            = 0x00D5238C; //0x00D5239C;
 
     if (! TZF_LoadConfig ()) {
       config.audio.channels                 = 8;
@@ -94,13 +94,17 @@ DllMain (HMODULE hModule,
       config.framerate.speedresetcode3_addr = 0x0056E03E;
       config.framerate.limiter_branch_addr  = 0x00990873;
       config.framerate.disable_limiter      = true;
-      config.framerate.auto_adjust          = true;
+      config.framerate.auto_adjust          = false;
       config.framerate.target               = 60;
+      config.framerate.battle_target        = 60;
+      config.framerate.battle_adaptive      = true;
       config.framerate.cutscene_target      = 30;
 
       config.file_io.capture                = false;
 
       config.steam.allow_broadcasts         = false;
+
+      config.lua.fix_priest                 = true;
 
       config.render.aspect_ratio            = 1.777778f;
       config.render.fovy                    = 0.785398f;
@@ -113,7 +117,8 @@ DllMain (HMODULE hModule,
       config.render.postproc_ratio          =  1.0f;
       config.render.shadow_rescale          = -2;
       config.render.env_shadow_rescale      =  0;
-      config.render.disable_scissor         = false;
+      config.render.disable_scissor         = false; // OBSOLETE 1.2.0
+      config.render.clear_blackbars         = true;
 
       // Save a new config if none exists
       TZF_SaveConfig ();

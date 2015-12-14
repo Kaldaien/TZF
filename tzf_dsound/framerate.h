@@ -51,6 +51,7 @@ namespace tzf
     void Begin30FPSEvent (void);
     void End30FPSEvent   (void);
 
+    void SetFPS          (int fps);
 
     class CommandProcessor : public eTB_iVariableListener {
     public:

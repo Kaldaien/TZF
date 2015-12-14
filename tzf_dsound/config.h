@@ -51,6 +51,8 @@ struct tzf_config_t
     bool  disable_limiter      = true;
     bool  auto_adjust          = true;
     int   target               = 60;
+    int   battle_target        = 60;
+    bool  battle_adaptive      = true;
     int   cutscene_target      = 30;
   } framerate;
 
@@ -63,16 +65,21 @@ struct tzf_config_t
   } steam;
 
   struct {
+    bool fix_priest         = true;
+  } lua;
+
+  struct {
     float    fovy               = 0.785398f;
     float    aspect_ratio       = 1.777778f;
     DWORD    aspect_addr        = 0x00D56494;//0x00D52398;
     DWORD    fovy_addr          = 0x00D56498;//0x00D5239C;
-    bool     blackbar_videos    = true;
+    bool     blackbar_videos    = true;  // OBSOLETE
     bool     aspect_correction  = false;
     bool     complete_mipmaps   = false;
     int32_t  shadow_rescale     = -2;
     float    postproc_ratio     =  1.0f;
-    bool     disable_scissor    = false;
+    bool     disable_scissor    = false; // OBSOLETE
+    bool     clear_blackbars    = true;
     int32_t  env_shadow_rescale = 0;
   } render;
 

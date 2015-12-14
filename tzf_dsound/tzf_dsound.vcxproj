@@ -172,6 +172,7 @@
     <ClInclude Include="log.h" />
     <ClInclude Include="MinHook\include\MinHook.h" />
     <ClInclude Include="parameter.h" />
+    <ClInclude Include="priest.lua.h" />
     <ClInclude Include="render.h" />
     <ClInclude Include="scanner.h" />
     <ClInclude Include="sound.h" />

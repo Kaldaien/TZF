@@ -26,6 +26,8 @@
 #include "hook.h"
 #include "scanner.h"
 
+#include "priest.lua.h"
+
 #include "render.h"
 #include <d3d9.h>
 
@@ -268,6 +270,68 @@ TZF_InjectByteCode ( LPVOID   base_addr,
   TZF_FlushInstructionCache (base_addr, code_size);
 }
 
+LPVOID pLuaReturn = nullptr;
+
+void
+__declspec(naked)
+TZF_LuaHook (void)
+{
+  char   *name;
+  size_t *pSz;
+  char  **pBuffer;
+
+  __asm
+  {
+    pushad
+    pushfd
+
+    // save Lua loader's stack frame because we need some stuff on it
+    mov  ebx, ebp
+
+    push ebp
+    mov  ebp, esp
+    sub  esp, __LOCAL_SIZE
+
+    // I don't think this is actually luaL_loadbuffer, name shouldn't be passed in eax,
+    // but we can get it here 100% of the time anyway
+    // more insight definitely welcome
+    mov  name, eax
+
+    mov  eax, ebx
+    add  eax, 0xC
+    mov  pSz, eax
+    mov  eax, ebx
+    add  eax, 0x8
+    mov  pBuffer, eax
+  }
+
+#if 0
+  dll_log.Log (L"Lua script loaded: \"%S\"", name);
+#endif
+
+  if (! strcmp (name, "MEP_100_130_010_PF_Script")) {
+    dll_log.Log (L" * Replacing priest script...");
+
+    *pSz     = lua_bytecode_priest_size;
+    *pBuffer = lua_bytecode_priest;
+  }
+
+  __asm
+  {
+    mov esp, ebp
+    pop ebp
+
+    popfd
+    popad
+
+    // overwritten instructions from original function
+    mov ecx, [ebp + 0x8]
+    mov [esp + 0x4], ecx
+
+    jmp pLuaReturn
+  }
+}
+
 void
 tzf::FrameRateFix::Init (void)
 {
@@ -426,8 +490,11 @@ tzf::FrameRateFix::Init (void)
                   CalcTickScale (1000.0f * (1.0f / target_fps)) );
     command.ProcessCommandLine (scale);
 
-    dll_log.LogEx (false, L" Target=%lu FPS\n",
-      target_fps);
+    dll_log.LogEx ( false, L"Field=%lu FPS, Battle=%lu FPS (%s), Cutscene=%lu FPS\n",
+                      target_fps,
+                        config.framerate.battle_target,
+                          config.framerate.battle_adaptive ? L"Adaptive" : L"Fixed",
+                            config.framerate.cutscene_target );
   }
 
   variable_speed_installed = true;
@@ -462,7 +529,33 @@ tzf::FrameRateFix::Init (void)
                                PAGE_EXECUTE_READWRITE );
   }
 
-  command.AddVariable ("TargetFPS", new eTB_VarStub <int> ((int *)&target_fps));
+  if (config.lua.fix_priest) {
+    uint8_t sig[14] = {  0x8B, 0x4D, 0x08,        // mov ecx, [ebp+08]
+                         0x89, 0x4C, 0x24, 0x04,  // mov [esp+04], ecx
+                         0x8B, 0x4D, 0x0C,        // mov ecx, [ebp+0C]
+                         0x89, 0x4C, 0x24, 0x08   // mov [esp+08], ecx
+                      };
+    uint8_t new_code[7] = { 0xE9, 0x00, 0x00, 0x00, 0x00, 0x90, 0x90 };
+
+    void *addr = TZF_Scan (sig, 14);
+
+    if (addr != NULL) {
+      dll_log.Log (L"Scanned Lua Loader Address: %06Xh", addr);
+
+      DWORD hookOffset = (PtrToUlong (&TZF_LuaHook) - (intptr_t)addr - 5);
+      memcpy (new_code + 1, &hookOffset, 4);
+      TZF_InjectByteCode (addr, new_code, 7, PAGE_EXECUTE_READWRITE);
+      pLuaReturn = (LPVOID)((intptr_t)addr + 7);
+    }
+    else {
+      dll_log.Log (L" >> ERROR: Unable to find Lua loader address! Priest bug will occur.");
+    }
+  }
+
+  command.AddVariable ("TargetFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.target));
+  command.AddVariable ("BattleFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.battle_target));
+  command.AddVariable ("BattleAdaptive", new eTB_VarStub <bool> ((bool *)&config.framerate.battle_adaptive));
+  command.AddVariable ("CutsceneFPS",    new eTB_VarStub <int>  ( (int *)&config.framerate.cutscene_target));
 
   // No matter which technique we use, these things need to be options
   command.AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
@@ -565,6 +658,21 @@ tzf::FrameRateFix::End30FPSEvent (void)
     target_fps = fps_before;
     char szRescale [32];
     sprintf (szRescale, "TickScale %i", scale_before);
+    command.ProcessCommandLine (szRescale);
+  }
+
+  LeaveCriticalSection (&alter_speed_cs);
+}
+
+void
+tzf::FrameRateFix::SetFPS (int fps)
+{
+  EnterCriticalSection (&alter_speed_cs);
+
+  if (variable_speed_installed && (target_fps != fps)) {
+    target_fps = fps;
+    char szRescale [32];
+    sprintf (szRescale, "TickScale %i", CalcTickScale (1000.0f * (1.0f / fps)));
     command.ProcessCommandLine (szRescale);
   }
 
@@ -748,24 +856,19 @@ bool loading = false;
 void
 tzf::FrameRateFix::RenderTick (void)
 {
-  if (config.framerate.cutscene_target == 30) {
-    if (game_state.inCutscene ())
-      Begin30FPSEvent ();
-    else
-      End30FPSEvent ();
+  if (! forced_30) {
+    if (config.framerate.cutscene_target != config.framerate.target)
+      if (game_state.inCutscene ())
+        SetFPS (config.framerate.cutscene_target);
+
+    if (config.framerate.battle_target != config.framerate.target)
+      if (game_state.inBattle ())
+        SetFPS (config.framerate.battle_target);
+
+    if (! (game_state.inBattle () || game_state.inCutscene ()))
+      SetFPS (config.framerate.target);
   }
-#if 0
-  if (*game_state.Loading && (! loading)) {
-    loading = true;
-    dll_log.Log (L" ### Loading caused 30 FPS limit");
-    tzf::FrameRateFix::Begin30FPSEvent ();
-  }
-  else if (loading && (! *game_state.Loading)) {
-    loading = false;
-    dll_log.Log (L" ### Loading complete");
-    tzf::FrameRateFix::End30FPSEvent ();
-  }
-#endif
+
 
   static long last_scale = 1;
 
@@ -778,42 +881,9 @@ tzf::FrameRateFix::RenderTick (void)
   QueryPerformanceCounter   (&time);
 
   const double inv_rate = 1.0 / target_fps;
-  const double epsilon  = 0.0;//freq.QuadPart * (1.0 / 60.0) * 0.5;//(accum / freq.QuadPart / (1.0 / 60.0));
+  const double epsilon  = 0.0;
 
 
-#if 0
-  // If available (Windows 7+), wait on the swapchain
-  IDirect3DDevice9Ex* d3d9ex = nullptr;
-  if (tzf::RenderFix::pDevice != nullptr) {
-    if ( SUCCEEDED ( tzf::RenderFix::pDevice->QueryInterface ( 
-                       __uuidof (IDirect3DDevice9Ex),
-                         (void **)&d3d9ex )
-                   ) && d3d9ex != nullptr
-       ) {
-      d3d9ex->SetMaximumFrameLatency (max_latency);
-    }
-  }
-
-  QueryPerformanceCounter (&time);
-
-  bool first_wait = true;
-  double remaining =  ((last_time.QuadPart + (freq.QuadPart * inv_rate) - epsilon) - time.QuadPart) / freq.QuadPart;
-
-  // Busy-wait because we are rendering too fast...
-  while (remaining > 0) {
-    remaining =  ((last_time.QuadPart + (freq.QuadPart * inv_rate) - epsilon) - time.QuadPart) / freq.QuadPart;
-
-    if (wait_for_vblank && d3d9ex != nullptr &&
-        first_wait      && remaining > 0.008 && max_latency > 0) {
-      d3d9ex->WaitForVBlank (0);
-      first_wait = false;
-    }
-
-    QueryPerformanceCounter (&time);
-  }
-
-  if (d3d9ex != nullptr) d3d9ex->Release ();
-#else
   static uint32_t last_limit = target_fps;
 
   if (limiter == nullptr)
@@ -827,7 +897,6 @@ tzf::FrameRateFix::RenderTick (void)
   limiter->wait ();
 
   QueryPerformanceCounter (&time);
-#endif
 
 
   if (forced_30) {
@@ -866,25 +935,25 @@ tzf::FrameRateFix::RenderTick (void)
   static bool last_frame_battle   = false;
   static int  scale_before_battle = 0;
 
-  if (config.framerate.auto_adjust || game_state.inBattle ()) {
-    if (game_state.inBattle ()) {
-      if (! last_frame_battle) {
-        scale_before_battle = last_scale;
-        last_frame_battle   = true;
-      }
+  if (scale != last_scale) {
+    if (config.framerate.auto_adjust || (config.framerate.battle_adaptive && game_state.inBattle ())) {
+      if (config.framerate.battle_adaptive && game_state.inBattle ()) {
+        if (! last_frame_battle) {
+          scale_before_battle = last_scale;
+          last_frame_battle   = true;
+        }
 
 #if 0
-      if (scale != last_scale) {
         dll_log.Log ( L" ** Adjusting TickScale because of battle framerate change "
                       L"(Expected: ~%4.2f ms, Got: %4.2f ms)",
                         last_scale * 16.666667f, dt * (1.0 / 60.0) * 1000.0 );
-      }
 #endif
-    }
+      }
 
-    char rescale [32];
-    sprintf (rescale, "TickScale %li", scale);
-    command.ProcessCommandLine (rescale);
+      char rescale [32];
+      sprintf (rescale, "TickScale %li", scale);
+      command.ProcessCommandLine (rescale);
+    }
   }
 
   if (last_frame_battle && (! game_state.inBattle ())) {

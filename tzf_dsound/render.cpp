@@ -329,7 +329,11 @@ HRESULT
 STDMETHODCALLTYPE
 D3D9EndScene_Detour (IDirect3DDevice9* This)
 {
-  if (game_state.hasFixedAspect () && (config.render.aspect_correction || (config.render.blackbar_videos && tzf::RenderFix::bink))) {
+  if ( game_state.hasFixedAspect () &&
+       (config.render.aspect_correction ||
+       (config.render.blackbar_videos   &&
+        tzf::RenderFix::bink))      &&
+       config.render.clear_blackbars ) {
     D3DCOLOR color = 0xff000000;
 
     int width = tzf::RenderFix::width;
@@ -1455,6 +1459,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
   eTB_Variable* disable_scissor     = new eTB_VarStub <bool>  (&config.render.disable_scissor);
   eTB_Variable* prelimit            = new eTB_VarStub <bool>  (&pre_limit);
+  eTB_Variable* clear_blackbars     = new eTB_VarStub <bool>  (&config.render.clear_blackbars);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
   command.AddVariable ("FOVY",                fovy_);
@@ -1467,6 +1472,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
   command.AddVariable ("DisableScissor",      disable_scissor);
   command.AddVariable ("PreLimitFPS",         prelimit);
+  command.AddVariable ("ClearBlackbars",      clear_blackbars);
 
    uint8_t signature [] = { 0x39, 0x8E, 0xE3, 0x3F,
                             0xDB, 0x0F, 0x49, 0x3F };

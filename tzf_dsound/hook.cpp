@@ -530,36 +530,50 @@ public:
           else if (keys_ ['1'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust false");
             command.ProcessCommandLine ("TargetFPS 60");
+            command.ProcessCommandLine ("BattleFPS 60");
+            command.ProcessCommandLine ("CutsceneFPS 60");
             command.ProcessCommandLine ("TickScale 1");
           }
           else if (keys_ ['2'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust false");
             command.ProcessCommandLine ("TargetFPS 30");
+            command.ProcessCommandLine ("BattleFPS 30");
+            command.ProcessCommandLine ("CutsceneFPS 30");
             command.ProcessCommandLine ("TickScale 2");
           }
           else if (keys_ ['3'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust false");
             command.ProcessCommandLine ("TargetFPS 20");
+            command.ProcessCommandLine ("BattleFPS 20");
+            command.ProcessCommandLine ("CutsceneFPS 20");
             command.ProcessCommandLine ("TickScale 3");
           }
           else if (keys_ ['4'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust false");
             command.ProcessCommandLine ("TargetFPS 15");
+            command.ProcessCommandLine ("BattleFPS 15");
+            command.ProcessCommandLine ("CutsceneFPS 15");
             command.ProcessCommandLine ("TickScale 4");
           }
           else if (keys_ ['5'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust false");
             command.ProcessCommandLine ("TargetFPS 12");
+            command.ProcessCommandLine ("BattleFPS 12");
+            command.ProcessCommandLine ("CutsceneFPS 12");
             command.ProcessCommandLine ("TickScale 5");
           }
           else if (keys_ ['6'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust false");
             command.ProcessCommandLine ("TargetFPS 10");
+            command.ProcessCommandLine ("BattleFPS 10");
+            command.ProcessCommandLine ("CutsceneFPS 10");
             command.ProcessCommandLine ("TickScale 6");
           }
           else if (keys_ ['9'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust true");
             command.ProcessCommandLine ("TargetFPS 60");
+            command.ProcessCommandLine ("BattleFPS 60");
+            command.ProcessCommandLine ("CutsceneFPS 60");
             command.ProcessCommandLine ("TickScale 1");
           }
           else if (keys_ [VK_OEM_PERIOD]) {

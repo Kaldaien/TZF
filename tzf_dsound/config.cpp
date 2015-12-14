@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.1.6";
+std::wstring TZF_VER_STR = L"1.2.0";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -55,6 +55,8 @@ struct {
   tzf::ParameterBool*    disable_limiter;
   tzf::ParameterBool*    auto_adjust;
   tzf::ParameterInt*     target;
+  tzf::ParameterInt*     battle_target;
+  tzf::ParameterBool*    battle_adaptive;
   tzf::ParameterInt*     cutscene_target;
 } framerate;
 
@@ -69,13 +71,19 @@ struct {
   tzf::ParameterInt*     rescale_shadows;
   tzf::ParameterInt*     rescale_env_shadows;
   tzf::ParameterFloat*   postproc_ratio;
-  tzf::ParameterBool*    disable_scissor;
+  tzf::ParameterBool*    disable_scissor; // OBSOLETE
+  tzf::ParameterBool*    clear_blackbars;
 } render;
 
 
 struct {
   tzf::ParameterBool*    allow_broadcasts;
 } steam;
+
+
+struct {
+  tzf::ParameterBool*    fix_priest;
+} lua;
 
 struct {
   tzf::ParameterStringW* intro_video;
@@ -266,6 +274,26 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.FrameRate",
          L"Target" );
 
+   framerate.battle_target =
+     static_cast <tzf::ParameterInt *>
+       (g_ParameterFactory.create_parameter <int> (
+         L"Battle Target FPS")
+       );
+   framerate.battle_target->register_to_ini (
+     dll_ini,
+       L"TZFIX.FrameRate",
+         L"BattleTarget" );
+
+   framerate.battle_adaptive =
+     static_cast <tzf::ParameterBool *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Battle Adaptive Scaling")
+       );
+   framerate.battle_adaptive->register_to_ini (
+     dll_ini,
+       L"TZFIX.FrameRate",
+         L"BattleAdaptive" );
+
    framerate.cutscene_target =
      static_cast <tzf::ParameterInt *>
        (g_ParameterFactory.create_parameter <int> (
@@ -387,6 +415,16 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.Render",
          L"RescaleEnvShadows" );
 
+   render.clear_blackbars =
+     static_cast <tzf::ParameterBool *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Clear Blackbar Regions (Aspect Ratio Correction)")
+       );
+   render.clear_blackbars->register_to_ini (
+     dll_ini,
+       L"TZFIX.Render",
+         L"ClearBlackbars" );
+
 
   steam.allow_broadcasts =
     static_cast <tzf::ParameterBool *>
@@ -397,6 +435,18 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.Steam",
         L"AllowBroadcasts" );
+
+
+  lua.fix_priest =   
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Fix Lastonbell Priest")
+      );
+  lua.fix_priest->register_to_ini (
+    dll_ini,
+      L"TZFIX.Lua",
+        L"FixPriest" );
+
 
   sys.version =
     static_cast <tzf::ParameterStringW *>
@@ -473,6 +523,12 @@ TZF_LoadConfig (std::wstring name) {
   if (framerate.target->load ())
     config.framerate.target = framerate.target->get_value ();
 
+  if (framerate.battle_target->load ())
+    config.framerate.battle_target = framerate.battle_target->get_value ();
+
+  if (framerate.battle_adaptive->load ())
+    config.framerate.battle_adaptive = framerate.battle_adaptive->get_value ();
+
   if (framerate.cutscene_target->load ())
     config.framerate.cutscene_target = framerate.cutscene_target->get_value ();
 
@@ -511,9 +567,17 @@ TZF_LoadConfig (std::wstring name) {
   if (render.rescale_env_shadows->load ())
     config.render.env_shadow_rescale = render.rescale_env_shadows->get_value ();
 
+  if (render.clear_blackbars->load ())
+    config.render.clear_blackbars = render.clear_blackbars->get_value ();
+
 
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
+
+
+  if (lua.fix_priest->load ())
+    config.lua.fix_priest = lua.fix_priest->get_value ();
+
 
   if (sys.version->load ())
     config.system.version = sys.version->get_value ();
@@ -542,11 +606,11 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   audio.enable_fix->store     ();
 
 
-  framerate.stutter_fix->set_value (config.framerate.stutter_fix);
-  framerate.stutter_fix->store     ();
+//  framerate.stutter_fix->set_value (config.framerate.stutter_fix);
+//  framerate.stutter_fix->store     ();
 
-  framerate.fudge_factor->set_value (config.framerate.fudge_factor);
-  framerate.fudge_factor->store     ();
+//  framerate.fudge_factor->set_value (config.framerate.fudge_factor);
+//  framerate.fudge_factor->store     ();
 
   framerate.allow_fake_sleep->set_value (config.framerate.allow_fake_sleep);
   framerate.allow_fake_sleep->store     ();
@@ -554,8 +618,8 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   framerate.yield_processor->set_value (config.framerate.yield_processor);
   framerate.yield_processor->store     ();
 
-  framerate.allow_windowed_mode->set_value (config.framerate.allow_windowed_mode);
-  framerate.allow_windowed_mode->store     ();
+//  framerate.allow_windowed_mode->set_value (config.framerate.allow_windowed_mode);
+//  framerate.allow_windowed_mode->store     ();
 
   framerate.minimize_latency->set_value (config.framerate.minimize_latency);
   framerate.minimize_latency->store     ();
@@ -584,6 +648,15 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   //framerate.target->set_value (config.framerate.target);
   //framerate.target->store     ();
 
+  //framerate.battle_target->set_value (config.framerate.battle_target);
+  //framerate.battle_target->store     ();
+
+  //framerate.battle_adaptive->set_value (config.framerate.battle_adaptive);
+  //framerate.battle_adaptive->store     ();
+
+  //framerate.cutscene_target->set_value (config.framerate.cutscene_target);
+  //framerate.cutscene_target->store     ();
+
 
   render.aspect_addr->set_value (config.render.aspect_addr);
   render.aspect_addr->store     ();
@@ -597,8 +670,8 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   render.fovy->set_value (config.render.fovy);
   render.fovy->store     ();
 
-  render.aspect_correct_vids->set_value (config.render.blackbar_videos);
-  render.aspect_correct_vids->store     ();
+//  render.aspect_correct_vids->set_value (config.render.blackbar_videos);
+//  render.aspect_correct_vids->store     ();
 
   render.aspect_correction->set_value (config.render.aspect_correction);
   render.aspect_correction->store     ();
@@ -612,16 +685,23 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   render.rescale_shadows->set_value (config.render.shadow_rescale);
   render.rescale_shadows->store     ();
 
-  render.disable_scissor->set_value (config.render.disable_scissor);
-  render.disable_scissor->store     ();
+//  render.disable_scissor->set_value (config.render.disable_scissor);
+//  render.disable_scissor->store     ();
 
   render.rescale_env_shadows->set_value (config.render.env_shadow_rescale);
   render.rescale_env_shadows->store     ();
 
+  render.clear_blackbars->set_value (config.render.clear_blackbars);
+  render.clear_blackbars->store     ();
 
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
   steam.allow_broadcasts->store     ();
+
+
+  lua.fix_priest->set_value (config.lua.fix_priest);
+  lua.fix_priest->store     ();
+
 
   sys.version->set_value       (TZF_VER_STR);
   sys.version->store           ();
