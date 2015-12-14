@@ -214,11 +214,9 @@ BinkOpen_Detour ( const char* filename,
                       L" %s!\n",
                         bink_ret != nullptr ? L"Success" :
                                               L"Failed" );
-
-    return bink_ret;
   }
 
-  bink_ret = BinkOpen_Original (filename, unknown0);
+  //bink_ret = BinkOpen_Original (filename, unknown0);
 
   if (bink_ret != nullptr) {
     dll_log.Log (L" * Disabling TargetFPS -- Bink Video Opened");
