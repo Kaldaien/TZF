@@ -188,32 +188,46 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
   return ret;
 }
 
-typedef void (__stdcall *BinkOpen_t)(const char* filename, DWORD unknown0);
+typedef void* (__stdcall *BinkOpen_t)(const char* filename, DWORD unknown0);
 BinkOpen_t BinkOpen_Original = nullptr;
 
-void
+void*
 __stdcall
 BinkOpen_Detour ( const char* filename,
                   DWORD       unknown0 )
 {
-  dll_log.Log (L" * Disabling TargetFPS -- Bink Video Opened");
+  // non-null on success
+  void* bink_ret = nullptr;
 
-  tzf::RenderFix::bink = true;
-  tzf::FrameRateFix::Begin30FPSEvent ();
-
-  // Optionally play some other video...
+  // Optionally play some other video (or no video)...
   if (! stricmp (filename, "RAW\\MOVIE\\AM_TOZ_OP_001.BK2")) {
-    dll_log.Log ( L" >> Bypassing Opening Movie with %ws",
+    dll_log.LogEx (true, L" >> Using %ws for Opening Movie ...",
                    config.system.intro_video.c_str ());
 
     static char szBypassName [MAX_PATH] = { '\0' };
 
     sprintf (szBypassName, "%ws", config.system.intro_video.c_str ());
 
-    return BinkOpen_Original (szBypassName, unknown0);
+    bink_ret = BinkOpen_Original (szBypassName, unknown0);
+
+    dll_log.LogEx ( false,
+                      L" %s!\n",
+                        bink_ret != nullptr ? L"Success" :
+                                              L"Failed" );
+
+    return bink_ret;
   }
 
-  return BinkOpen_Original (filename, unknown0);
+  bink_ret = BinkOpen_Original (filename, unknown0);
+
+  if (bink_ret != nullptr) {
+    dll_log.Log (L" * Disabling TargetFPS -- Bink Video Opened");
+
+    tzf::RenderFix::bink = true;
+    tzf::FrameRateFix::Begin30FPSEvent ();
+  }
+
+  return bink_ret;
 }
 
 typedef void (__stdcall *BinkClose_t)(DWORD unknown);
@@ -637,7 +651,7 @@ tzf::FrameRateFix::Begin30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
-  if (variable_speed_installed/* && (! forced_30)*/) {
+  if (variable_speed_installed && (! forced_30)) {
     forced_30    = true;
     fps_before   = target_fps;
     target_fps   = 30;
@@ -653,7 +667,7 @@ tzf::FrameRateFix::End30FPSEvent (void)
 {
   EnterCriticalSection (&alter_speed_cs);
 
-  if (variable_speed_installed/* && (forced_30)*/) {
+  if (variable_speed_installed && (forced_30)) {
     forced_30  = false;
     target_fps = fps_before;
     char szRescale [32];
@@ -856,19 +870,18 @@ bool loading = false;
 void
 tzf::FrameRateFix::RenderTick (void)
 {
-  //if (! forced_30) {
-  if (config.framerate.cutscene_target != config.framerate.target)
-    if (game_state.inCutscene ())
-      SetFPS (config.framerate.cutscene_target);
+  if (! forced_30) {
+    if (config.framerate.cutscene_target != config.framerate.target)
+      if (game_state.inCutscene ())
+        SetFPS (config.framerate.cutscene_target);
 
-  if (config.framerate.battle_target != config.framerate.target)
-    if (game_state.inBattle ())
-      SetFPS (config.framerate.battle_target);
+    if (config.framerate.battle_target != config.framerate.target)
+      if (game_state.inBattle ())
+        SetFPS (config.framerate.battle_target);
 
-  if (tzf::RenderFix::bink)
-    SetFPS (30);
-  else if (! (game_state.inBattle () || game_state.inCutscene ()))
-    SetFPS (config.framerate.target);
+    if (! (game_state.inBattle () || game_state.inCutscene ()))
+      SetFPS (config.framerate.target);
+  }
 
 
   static long last_scale = 1;
@@ -900,10 +913,10 @@ tzf::FrameRateFix::RenderTick (void)
   QueryPerformanceCounter (&time);
 
 
-  //if (forced_30) {
-    //last_time.QuadPart = time.QuadPart;
-    //return;
-  //}
+  if (forced_30) {
+    last_time.QuadPart = time.QuadPart;
+    return;
+  }
 
 
   double dt = ((double)(time.QuadPart - last_time.QuadPart) / (double)freq.QuadPart) / (1.0 / 60.0);
