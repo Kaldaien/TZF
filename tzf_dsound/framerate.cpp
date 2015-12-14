@@ -542,7 +542,7 @@ tzf::FrameRateFix::Init (void)
       DWORD hookOffset = (PtrToUlong(&TZF_LuaHook) - (DWORD)addr - 5);
       memcpy(new_code + 1, &hookOffset, 4);
       TZF_InjectByteCode(addr, new_code, 7, PAGE_EXECUTE_READWRITE);
-      pLuaReturn = (LPVOID)(0x85FE39 + 7);
+      pLuaReturn = (LPVOID)((DWORD)addr + 7);
     }
     else {
       dll_log.Log (L" >> ERROR: Unable to find Lua loader address! Priest bug will occur.");
