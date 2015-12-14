@@ -297,16 +297,14 @@ TZF_LuaHook (void)
     pushad
     pushfd
 
-    // save Lua loader's stack frame because we need some stuff on it
+    // save luaL_loadbuffer's stack frame because we need some stuff on it
     mov  ebx, ebp
 
     push ebp
     mov  ebp, esp
     sub  esp, __LOCAL_SIZE
 
-    // I don't think this is actually luaL_loadbuffer, name shouldn't be passed in eax,
-    // but we can get it here 100% of the time anyway
-    // more insight definitely welcome
+    // compiler must've optimised away the calling convention here
     mov  name, eax
 
     mov  eax, ebx
