@@ -66,16 +66,16 @@ TZF_ComputeAspectCoeffs (float& x, float& y, float& xoff, float& yoff)
 
   // Wider
   if (config.render.aspect_ratio > 1.7777f) {
-    float width = (16.0f / 9.0f) * tzf::RenderFix::height;
-    float x_off = (tzf::RenderFix::width - width) / 2.0f;
+    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
+    int x_off = (tzf::RenderFix::width - width) / 2;
 
-    x    = (float)tzf::RenderFix::width / width;
+    x    = (float)tzf::RenderFix::width / (float)width;
     xoff = x_off;
   } else {
-    float height = (9.0f / 16.0f) * tzf::RenderFix::width;
-    float y_off  = (tzf::RenderFix::height - height) / 2.0f;
+    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
+    int y_off  = (tzf::RenderFix::height - height) / 2;
 
-    y    = (float)tzf::RenderFix::height / height;
+    y    = (float)tzf::RenderFix::height / (float)height;
     yoff = y_off;
   }
 }
@@ -115,6 +115,10 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
                             D3DSAMPLERSTATETYPE Type,
                             DWORD               Value)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
+
   static int aniso = 1;
 
   //dll_log.Log ( L" [!] IDirect3DDevice9::SetSamplerState (%lu, %lu, %lu)",
@@ -241,6 +245,10 @@ STDMETHODCALLTYPE
 D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
                             IDirect3DVertexShader9* pShader)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9SetVertexShader_Original (This, pShader);
+
   if (g_pVS != pShader) {
     if (pShader != nullptr) {
       if (vs_checksums.find (pShader) == vs_checksums.end ()) {
@@ -272,6 +280,10 @@ STDMETHODCALLTYPE
 D3D9SetPixelShader_Detour (IDirect3DDevice9*      This,
                            IDirect3DPixelShader9* pShader)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9SetPixelShader_Original (This, pShader);
+
   if (g_pPS != pShader) {
     if (pShader != nullptr) {
       if (ps_checksums.find (pShader) == ps_checksums.end ()) {
@@ -329,6 +341,10 @@ HRESULT
 STDMETHODCALLTYPE
 D3D9EndScene_Detour (IDirect3DDevice9* This)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9EndScene_Original (This);
+
   if ( game_state.hasFixedAspect () &&
        (config.render.aspect_correction ||
        (config.render.blackbar_videos   &&
@@ -336,8 +352,8 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
        config.render.clear_blackbars ) {
     D3DCOLOR color = 0xff000000;
 
-    DWORD width = tzf::RenderFix::width;
-    DWORD height = (9.0f / 16.0f) * width;
+    int width = tzf::RenderFix::width;
+    int height = (9.0f / 16.0f) * width;
 
     // We can't do this, so instead we need to sidebar the stuff
     if (height > tzf::RenderFix::height) {
@@ -751,7 +767,7 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
     float left_ndc  = 2.0f * ((float)pRect->left  / (float)tzf::RenderFix::width) - 1.0f;
     float right_ndc = 2.0f * ((float)pRect->right / (float)tzf::RenderFix::width) - 1.0f;
 
-    float width = (16.0f / 9.0f) * tzf::RenderFix::height;
+    int width = (16.0f / 9.0f) * tzf::RenderFix::height;
 
     fixed_scissor.left  = (left_ndc  * width + width) / 2.0f + x_off;
     fixed_scissor.right = (right_ndc * width + width) / 2.0f + x_off;
@@ -759,7 +775,7 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
     float top_ndc    = 2.0f * ((float)pRect->top    / (float)tzf::RenderFix::height) - 1.0f;
     float bottom_ndc = 2.0f * ((float)pRect->bottom / (float)tzf::RenderFix::height) - 1.0f;
 
-    float height = (9.0f / 16.0f) * tzf::RenderFix::width;
+    int height = (9.0f / 16.0f) * tzf::RenderFix::width;
 
     fixed_scissor.top    = (top_ndc    * height + height) / 2.0f + y_off;
     fixed_scissor.bottom = (bottom_ndc * height + height) / 2.0f + y_off;
@@ -941,6 +957,14 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
                                  UINT              startIndex,
                                  UINT              primCount)
 {
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice) {
+    return D3D9DrawIndexedPrimitive_Original ( This, Type,
+                                                 BaseVertexIndex, MinVertexIndex,
+                                                   NumVertices, startIndex,
+                                                     primCount );
+  }
+
   if ((config.render.aspect_correction && Type == D3DPT_TRIANGLESTRIP && (vs_checksums [g_pVS] == 0x52BD224A ||
                                                                           vs_checksums [g_pVS] == 0x272A71B0 || // Splash Screen
                                                                           vs_checksums [g_pVS] == 0x66E0873 // Fadein / Fadeout Effect
@@ -1175,23 +1199,6 @@ D3D9SetPixelShaderConstantF_Detour (IDirect3DDevice9* This,
 
 
 
-typedef BOOL (WINAPI *SetWindowDisplayAffinity_t)
-  (HWND  hWnd,
-   DWORD dwAffinity);
-
-SetWindowDisplayAffinity_t SetWindowDisplayAffinity_Original = nullptr;
-
-BOOL
-WINAPI
-SetWindowDisplayAffinity_Detour (HWND hWnd, DWORD dwAffinity)
-{
-  // Override attempts to copy-protect the window.
-  SetWindowDisplayAffinity_Original (hWnd, WDA_NONE);
-
-  return TRUE;
-}
-
-
 #define D3DX_DEFAULT ((UINT) -1)
 struct D3DXIMAGE_INFO;
 
@@ -1374,13 +1381,6 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( L"d3d9.dll", "BMF_EndBufferSwap",
                       D3D9EndFrame_Post,
             (LPVOID*)&BMF_EndBufferSwap );
-
-#if 0
-  TZF_CreateDLLHook ( L"user32.dll", "SetWindowDisplayAffinity",
-                      SetWindowDisplayAffinity_Detour,
-            (LPVOID*)&SetWindowDisplayAffinity_Original );
-#endif
-
 
 
 
