@@ -47,6 +47,110 @@ uint32_t         tzf::FrameRateFix::target_fps               = 30;
 HMODULE          tzf::FrameRateFix::bink_dll                 = 0;
 HMODULE          tzf::FrameRateFix::kernel32_dll             = 0;
 
+int  max_latency     = 1;//2
+bool wait_for_vblank = false;
+
+class FramerateLimiter
+{
+public:
+  FramerateLimiter (double target = 60.0) {
+     init (target);
+   }
+  ~FramerateLimiter (void) {
+   }
+
+  void init (double target) {
+    ms  = 1000.0 / target;
+    fps = target;
+
+    frames = 0;
+
+    IDirect3DDevice9Ex* d3d9ex = nullptr;
+    if (tzf::RenderFix::pDevice != nullptr) {
+      tzf::RenderFix::pDevice->QueryInterface ( 
+                         __uuidof (IDirect3DDevice9Ex),
+                           (void **)&d3d9ex );
+    }
+
+    QueryPerformanceFrequency (&freq);
+
+    // Align the start to VBlank for minimum input latency
+    if (d3d9ex != nullptr) {
+      d3d9ex->SetMaximumFrameLatency (max_latency);
+      d3d9ex->WaitForVBlank          (0);
+      d3d9ex->Release                ();
+    }
+
+    QueryPerformanceCounter (&start);
+
+    next.QuadPart = 0ULL;
+    time.QuadPart = 0ULL;
+    last.QuadPart = 0ULL;
+
+    last.QuadPart = start.QuadPart - (ms / 1000.0) * freq.QuadPart;
+    next.QuadPart = start.QuadPart + (ms / 1000.0) * freq.QuadPart;
+  }
+
+  void wait (void) {
+    frames++;
+
+    QueryPerformanceCounter (&time);
+
+    // Restart timing if a frame runs 15x longer than expected,
+    //   this should help with alt+tab scenarios and other oddities.
+    if ((time.QuadPart - next.QuadPart) / freq.QuadPart / (ms / 1000.0) > fps) {
+      dll_log.Log ( L" * Frame ran long (%3.01fx expected) - restarting"
+                    L" limiter...",
+             (time.QuadPart - next.QuadPart) / freq.QuadPart / (ms / 1000.0) / fps );
+      start.QuadPart = time.QuadPart;
+      frames         = 0;
+    }
+
+    next.QuadPart = (start.QuadPart + frames * (ms / 1000.0) * freq.QuadPart);
+
+    if (next.QuadPart > 0ULL) {
+      // If available (Windows 7+), wait on the swapchain
+      IDirect3DDevice9Ex* d3d9ex = nullptr;
+      if (tzf::RenderFix::pDevice != nullptr) {
+        tzf::RenderFix::pDevice->QueryInterface ( 
+                           __uuidof (IDirect3DDevice9Ex),
+                             (void **)&d3d9ex );
+      }
+
+      while (time.QuadPart < next.QuadPart) {
+        if (wait_for_vblank) {
+          if (d3d9ex != nullptr)
+            d3d9ex->WaitForVBlank (0);
+        }
+        //if (config.framerate.yield_processor)
+          //YieldProcessor        ();
+        QueryPerformanceCounter (&time);
+      }
+
+      if (d3d9ex != nullptr)
+        d3d9ex->Release ();
+    }
+
+    else {
+      dll_log.Log (L"Lost time");
+      start.QuadPart += -next.QuadPart;
+    }
+
+    last.QuadPart = time.QuadPart;
+  }
+
+  void change_limit (double target) {
+    init (target);
+  }
+
+private:
+    double ms, fps;
+
+    LARGE_INTEGER start, last, next, time, freq;
+
+    uint32_t frames;
+} *limiter = nullptr;
+
 
 typedef D3DPRESENT_PARAMETERS* (__stdcall *BMF_SetPresentParamsD3D9_t)
   (IDirect3DDevice9*      device,
@@ -600,10 +704,6 @@ tzf::FrameRateFix::SetFPS (int fps)
 
 
 bool use_accumulator = false;
-bool floating_target = true;
-
-int  max_latency     = 1;//2
-bool wait_for_vblank = false;
 
 tzf::FrameRateFix::CommandProcessor* tzf::FrameRateFix::CommandProcessor::pCommProc;
 
@@ -682,113 +782,22 @@ tzf::FrameRateFix::CalcTickScale (double elapsed_ms)
   return scale;
 }
 
-class FramerateLimiter
-{
-public:
-  FramerateLimiter (double target = 60.0) {
-     init (target);
-   }
-  ~FramerateLimiter (void) {
-   }
-
-  void init (double target) {
-    ms  = 1000.0 / target;
-    fps = target;
-
-    frames = 0;
-
-    IDirect3DDevice9Ex* d3d9ex = nullptr;
-    if (tzf::RenderFix::pDevice != nullptr) {
-      tzf::RenderFix::pDevice->QueryInterface ( 
-                         __uuidof (IDirect3DDevice9Ex),
-                           (void **)&d3d9ex );
-    }
-
-    QueryPerformanceFrequency (&freq);
-
-    // Align the start to VBlank for minimum input latency
-    if (d3d9ex != nullptr) {
-      d3d9ex->SetMaximumFrameLatency (max_latency);
-      d3d9ex->WaitForVBlank          (0);
-      d3d9ex->Release                ();
-    }
-
-    QueryPerformanceCounter   (&start);
-
-    next.QuadPart = 0ULL;
-    time.QuadPart = 0ULL;
-    last.QuadPart = 0ULL;
-
-    last.QuadPart = start.QuadPart - (ms / 1000.0) * freq.QuadPart;
-  }
-
-  void wait (void) {
-    frames++;
-
-    QueryPerformanceCounter (&time);
-
-    last.QuadPart = time.QuadPart;
-    next.QuadPart = (start.QuadPart + frames * (ms / 1000.0) * freq.QuadPart);
-
-    if (next.QuadPart > 0ULL) {
-      // If available (Windows 7+), wait on the swapchain
-      IDirect3DDevice9Ex* d3d9ex = nullptr;
-      if (tzf::RenderFix::pDevice != nullptr) {
-        tzf::RenderFix::pDevice->QueryInterface ( 
-                           __uuidof (IDirect3DDevice9Ex),
-                             (void **)&d3d9ex );
-      }
-
-      while (time.QuadPart < next.QuadPart) {
-        if (wait_for_vblank) {
-          if (d3d9ex != nullptr)
-            d3d9ex->WaitForVBlank (0);
-        }
-        //if (config.framerate.yield_processor)
-          //YieldProcessor        ();
-        QueryPerformanceCounter (&time);
-      }
-
-      if (d3d9ex != nullptr)
-        d3d9ex->Release ();
-    }
-
-    else {
-      start.QuadPart += -next.QuadPart;
-    }
-  }
-
-  void change_limit (double target) {
-    init (target);
-  }
-
-private:
-    double ms, fps;
-
-    LARGE_INTEGER start, last, next, time, freq;
-
-    uint32_t frames;
-} *limiter = nullptr;
-
 
 void
 tzf::FrameRateFix::RenderTick (void)
 {
   if (! forced_30) {
-    if (config.framerate.cutscene_target != config.framerate.target)
+    //if (config.framerate.cutscene_target != config.framerate.target)
       if (game_state.inCutscene ())
         SetFPS (config.framerate.cutscene_target);
 
-    if (config.framerate.battle_target != config.framerate.target)
-      if (game_state.inBattle ())
+    //if (config.framerate.battle_target != config.framerate.target)
+      else if (game_state.inBattle ())
         SetFPS (config.framerate.battle_target);
 
-    if (! (game_state.inBattle () || game_state.inCutscene ()))
+    else //if (! (game_state.inBattle () || game_state.inCutscene ()))
       SetFPS (config.framerate.target);
   }
-
-
-  static long last_scale = 1;
 
   static LARGE_INTEGER last_time  = { 0 };
   static LARGE_INTEGER freq       = { 0 };
@@ -803,7 +812,14 @@ tzf::FrameRateFix::RenderTick (void)
     limiter = new FramerateLimiter ();
 
   if (last_limit != target_fps) {
+#if 1
     limiter->change_limit (target_fps);
+#else
+    // Full reset would be nice, but VSYNC timing tends to
+    //   make the limiter behave poorly if we do this.
+    limiter->init (target_fps);
+#endif
+
     last_limit = target_fps;
   }
 
@@ -845,16 +861,12 @@ tzf::FrameRateFix::RenderTick (void)
 
   long scale = CalcTickScale (dt * (1.0 / 60.0) * 1000.0);
 
-  static bool last_frame_battle   = false;
-  static int  scale_before_battle = 0;
+  static bool last_frame_battle = false;
 
-  if (scale != last_scale) {
+  if (scale != tick_scale) {
     if (config.framerate.auto_adjust || (config.framerate.battle_adaptive && game_state.inBattle ())) {
       if (config.framerate.battle_adaptive && game_state.inBattle ()) {
-        if (! last_frame_battle) {
-          scale_before_battle = last_scale;
-          last_frame_battle   = true;
-        }
+        last_frame_battle = true;
 
 #if 0
         dll_log.Log ( L" ** Adjusting TickScale because of battle framerate change "
@@ -869,15 +881,11 @@ tzf::FrameRateFix::RenderTick (void)
     }
   }
 
-  if (last_frame_battle && (! game_state.inBattle ())) {
-    char rescale [32];
-    sprintf (rescale, "TickScale %li", scale_before_battle);
-    command.ProcessCommandLine (rescale);
-  }
+  if (last_frame_battle && (! game_state.inBattle ()))
+    target_fps = 1; // Reset FPS and TickScale on the next frame.
 
   if (! game_state.inBattle ())
     last_frame_battle = false;
 
-  last_scale         = scale;
   last_time.QuadPart = time.QuadPart;
 }

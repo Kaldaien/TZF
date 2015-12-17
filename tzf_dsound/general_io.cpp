@@ -10,7 +10,7 @@
  * useful,
  *
  * But WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -20,49 +20,62 @@
  *
 **/
 
+#include <Windows.h>
+
 #include "general_io.h"
+#include "log.h"
+#include "hook.h"
 
 //#define LOG_FILE_IO
 #ifdef LOG_FILE_IO
-typedef BOOL (WINAPI *ReadFile_t)(_In_        HANDLE       hFile,
-  _Out_       LPVOID       lpBuffer,
-  _In_        DWORD        nNumberOfBytesToRead,
-  _Out_opt_   LPDWORD      lpNumberOfBytesRead,
-  _Inout_opt_ LPOVERLAPPED lpOverlapped);
+typedef BOOL (WINAPI *ReadFile_fn)
+      ( _In_        HANDLE       hFile,
+        _Out_       LPVOID       lpBuffer,
+        _In_        DWORD        nNumberOfBytesToRead,
+        _Out_opt_   LPDWORD      lpNumberOfBytesRead,
+        _Inout_opt_ LPOVERLAPPED lpOverlapped );
 
-ReadFile_t ReadFile_Original = nullptr;
+ReadFile_fn ReadFile_Original = nullptr;
 
 #include <memory>
 
 BOOL
-GetFileNameFromHandle (HANDLE hFile, WCHAR *pszFileName, const unsigned int uiMaxLen)
+GetFileNameFromHandle ( HANDLE hFile,
+                        WCHAR *pszFileName,
+            const unsigned int uiMaxLen )
 {
-  pszFileName[0]=0;
+  pszFileName [0] = 0;
 
-  std::unique_ptr <WCHAR> ptrcFni (new WCHAR[_MAX_PATH + sizeof(FILE_NAME_INFO)]);
-  FILE_NAME_INFO *pFni = reinterpret_cast <FILE_NAME_INFO *>(ptrcFni.get ());
+  std::unique_ptr <WCHAR> ptrcFni (
+      new WCHAR [_MAX_PATH + sizeof FILE_NAME_INFO]
+  );
 
-  BOOL b = GetFileInformationByHandleEx (hFile, 
-    FileNameInfo,
-    pFni,
-    sizeof(FILE_NAME_INFO) + (_MAX_PATH * sizeof (WCHAR)) );
-  if ( b )
-  {
-    wcsncpy_s(pszFileName, 
-      min(uiMaxLen, (pFni->FileNameLength / sizeof(pFni->FileName[0])) + 1 ), 
-      pFni->FileName, 
-      _TRUNCATE);
+  FILE_NAME_INFO *pFni =
+    reinterpret_cast <FILE_NAME_INFO *>(ptrcFni.get ());
+
+  BOOL b = GetFileInformationByHandleEx ( hFile, 
+                                            FileNameInfo,
+                                              pFni,
+                                                sizeof (FILE_NAME_INFO) +
+                                   (_MAX_PATH * sizeof (WCHAR)) );
+  if (b) {
+    wcsncpy_s ( pszFileName,
+                  min (uiMaxLen,
+                        (pFni->FileNameLength / sizeof pFni->FileName[0])+1),
+                    pFni->FileName,
+                      _TRUNCATE );
   }
+
   return b;
 }
 
 BOOL
 WINAPI
-ReadFile_Detour (_In_        HANDLE       hFile,
-  _Out_       LPVOID       lpBuffer,
-  _In_        DWORD        nNumberOfBytesToRead,
-  _Out_opt_   LPDWORD      lpNumberOfBytesRead,
-  _Inout_opt_ LPOVERLAPPED lpOverlapped)
+ReadFile_Detour ( _In_      HANDLE       hFile,
+                  _Out_     LPVOID       lpBuffer,
+                  _In_      DWORD        nNumberOfBytesToRead,
+                  _Out_opt_ LPDWORD      lpNumberOfBytesRead,
+                _Inout_opt_ LPOVERLAPPED lpOverlapped )
 {
   wchar_t wszFileName [MAX_PATH] = { L'\0' };
 
@@ -70,89 +83,86 @@ ReadFile_Detour (_In_        HANDLE       hFile,
 
   dll_log.Log (L"Reading: %s ...", wszFileName);
 
-  return ReadFile_Original (hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead, lpOverlapped);
+  return
+    ReadFile_Original ( hFile,
+                          lpBuffer,
+                            nNumberOfBytesToRead,
+                              lpNumberOfBytesRead,
+                                lpOverlapped );
 }
 
-typedef HANDLE (WINAPI *CreateFileW_t)(_In_     LPCTSTR               lpFileName,
+typedef HANDLE (WINAPI *CreateFileW_fn)(
+  _In_     LPCTSTR               lpFileName,
   _In_     DWORD                 dwDesiredAccess,
   _In_     DWORD                 dwShareMode,
   _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
   _In_     DWORD                 dwCreationDisposition,
   _In_     DWORD                 dwFlagsAndAttributes,
-  _In_opt_ HANDLE                hTemplateFile);
+  _In_opt_ HANDLE                hTemplateFile
+);
 
-CreateFileW_t CreateFileW_Original = nullptr;
+CreateFileW_fn CreateFileW_Original = nullptr;
 
 HANDLE
 WINAPI
-CreateFileW_Detour (_In_     LPCWSTR               lpFileName,
-  _In_     DWORD                 dwDesiredAccess,
-  _In_     DWORD                 dwShareMode,
-  _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-  _In_     DWORD                 dwCreationDisposition,
-  _In_     DWORD                 dwFlagsAndAttributes,
-  _In_opt_ HANDLE                hTemplateFile)
+CreateFileW_Detour ( _In_     LPCWSTR               lpFileName,
+                     _In_     DWORD                 dwDesiredAccess,
+                     _In_     DWORD                 dwShareMode,
+                     _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+                     _In_     DWORD                 dwCreationDisposition,
+                     _In_     DWORD                 dwFlagsAndAttributes,
+                     _In_opt_ HANDLE                hTemplateFile )
 {
   dll_log.Log (L" [!] CreateFile (%s, ...)", lpFileName);
 
-  if (! _wcsicmp (lpFileName, L"raw\\movie\\am_toz_op_001.bk2")) {
-    dll_log.Log (L"Opening Intro Movie!\n");
-  }
-
   return CreateFileW_Original (lpFileName, dwDesiredAccess, dwShareMode,
-    lpSecurityAttributes, dwCreationDisposition,
-    dwFlagsAndAttributes, hTemplateFile);
+                               lpSecurityAttributes, dwCreationDisposition,
+                               dwFlagsAndAttributes, hTemplateFile);
 }
 
-typedef HANDLE (WINAPI *CreateFileA_t)(_In_     LPCSTR                lpFileName,
-  _In_     DWORD                 dwDesiredAccess,
-  _In_     DWORD                 dwShareMode,
-  _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-  _In_     DWORD                 dwCreationDisposition,
-  _In_     DWORD                 dwFlagsAndAttributes,
-  _In_opt_ HANDLE                hTemplateFile);
+typedef HANDLE (WINAPI *CreateFileA_fn)(
+   _In_     LPCSTR                lpFileName,
+   _In_     DWORD                 dwDesiredAccess,
+   _In_     DWORD                 dwShareMode,
+   _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+   _In_     DWORD                 dwCreationDisposition,
+   _In_     DWORD                 dwFlagsAndAttributes,
+   _In_opt_ HANDLE                hTemplateFile );
 
-CreateFileA_t CreateFileA_Original = nullptr;
+CreateFileA_fn CreateFileA_Original = nullptr;
 
 HANDLE
 WINAPI
-CreateFileA_Detour (_In_     LPCSTR                lpFileName,
-  _In_     DWORD                 dwDesiredAccess,
-  _In_     DWORD                 dwShareMode,
-  _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-  _In_     DWORD                 dwCreationDisposition,
-  _In_     DWORD                 dwFlagsAndAttributes,
-  _In_opt_ HANDLE                hTemplateFile)
+CreateFileA_Detour ( _In_     LPCSTR                lpFileName,
+                     _In_     DWORD                 dwDesiredAccess,
+                     _In_     DWORD                 dwShareMode,
+                     _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+                     _In_     DWORD                 dwCreationDisposition,
+                     _In_     DWORD                 dwFlagsAndAttributes,
+                     _In_opt_ HANDLE                hTemplateFile )
 {
   dll_log.Log (L" [!] CreateFile (%hs, ...)", lpFileName);
 
-  if (! stricmp (lpFileName, "raw\\movie\\am_toz_op_001.bk2")) {
-    dll_log.Log (L"Opening Intro Movie!\n");
-  }
-
-  return CreateFileA_Original (lpFileName, dwDesiredAccess, dwShareMode,
-    lpSecurityAttributes, dwCreationDisposition,
-    dwFlagsAndAttributes, hTemplateFile);
+  return CreateFileA_Original ( lpFileName,           dwDesiredAccess,
+                                dwShareMode,
+                                lpSecurityAttributes, dwCreationDisposition,
+                                dwFlagsAndAttributes, hTemplateFile );
 }
 
 
-typedef HFILE (WINAPI *OpenFile_t)(_In_    LPCSTR     lpFileName,
-  _Inout_ LPOFSTRUCT lpReOpenBuff,
-  _In_    UINT       uStyle);
+typedef HFILE (WINAPI *OpenFile_fn)( _In_    LPCSTR     lpFileName,
+                                     _Inout_ LPOFSTRUCT lpReOpenBuff,
+                                     _In_    UINT       uStyle );
 
-OpenFile_t OpenFile_Original = nullptr;
+OpenFile_fn OpenFile_Original = nullptr;
 
 HFILE
 WINAPI
-OpenFile_Detour (_In_    LPCSTR     lpFileName,
-  _Inout_ LPOFSTRUCT lpReOpenBuff,
-  _In_    UINT       uStyle)
+OpenFile_Detour ( _In_    LPCSTR     lpFileName,
+                  _Inout_ LPOFSTRUCT lpReOpenBuff,
+                  _In_    UINT       uStyle )
 {
   dll_log.Log (L" [!] OpenFile (%hs, ...)", lpFileName);
-
-  if (! stricmp (lpFileName, "raw\\movie\\am_toz_op_001.bk2")) {
-    dll_log.Log (L"Opening Intro Movie!\n");
-  }
 
   return OpenFile_Original (lpFileName, lpReOpenBuff, uStyle);
 }

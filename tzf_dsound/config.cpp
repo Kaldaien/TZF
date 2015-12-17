@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.2.1";
+std::wstring TZF_VER_STR = L"1.2.2";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -498,6 +498,11 @@ TZF_LoadConfig (std::wstring name) {
 
   if (render.aspect_correction->load ())
     config.render.aspect_correction = render.aspect_correction->get_value ();
+
+  // The video aspect ratio correction option is scheduled for removal anyway, so
+  //   this hack is okay...
+  if (config.render.clear_blackbars && config.render.aspect_correction)
+    config.render.blackbar_videos = true;
 
   if (render.complete_mipmaps->load ())
     config.render.complete_mipmaps = render.complete_mipmaps->get_value ();

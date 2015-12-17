@@ -10,7 +10,7 @@
  * useful,
  *
  * But WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -29,7 +29,21 @@ WORD
 TZF_Timestamp (wchar_t* const out)
 {
   SYSTEMTIME stLogTime;
-  GetLocalTime (&stLogTime);
+
+  // Check for Windows 8 / Server 2012
+  static bool __hasSystemTimePrecise =
+    (LOBYTE (LOWORD (GetVersion ())) == 6  &&
+     HIBYTE (LOWORD (GetVersion ())) >= 2) ||
+     LOBYTE (LOWORD (GetVersion () > 6));
+
+  // More accurate timestamp is available on Windows 6.2+
+  if (__hasSystemTimePrecise) {
+    FILETIME   ftLogTime;
+    GetSystemTimePreciseAsFileTime (&ftLogTime);
+    FileTimeToSystemTime           (&ftLogTime, &stLogTime);
+  } else {
+    GetSystemTime (&stLogTime);
+  }
 
   wchar_t date [64] = { L'\0' };
   wchar_t time [64] = { L'\0' };
