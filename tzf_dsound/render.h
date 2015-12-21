@@ -78,26 +78,37 @@ struct game_state_t {
   BYTE*  base_addr    =  (BYTE *)0x2130309;
 
   struct data_t {
-    BYTE  Title;
-    BYTE  OpeningMovie;
-    BYTE  Game;
-    BYTE  GamePause;
-    BYTE  Loading0;
-    BYTE  Loading1;
-    BYTE  Explanation;
-    BYTE  Menu;
-    BYTE  Unknown0;
-    BYTE  Unknown1;
-    BYTE  Unknown2;
-    BYTE  Battle;
-    BYTE  BattlePause;
-    BYTE  Unknown3;
-    BYTE  Unknown4;
-    BYTE  Unknown5;
-    BYTE  Unknown6;
-    BYTE  Unknown7;
-    BYTE  Unknown8;
-    BYTE  Cutscene;
+    /*  0 */ BYTE  Title;
+    /*  1 */ BYTE  OpeningMovie;
+    /*  2 */ BYTE  Game;
+    /*  3 */ BYTE  GamePause;
+    /*  4 */ BYTE  Loading0;
+    /*  5 */ BYTE  Loading1;
+    /*  6 */ BYTE  Explanation;
+    /*  7 */ BYTE  Menu;
+    /*  8 */ BYTE  Unknown0;
+    /*  9 */ BYTE  Unknown1;
+    /* 10 */ BYTE  Unknown2;
+    /* 11 */ BYTE  Battle;
+    /* 12 */ BYTE  BattlePause;
+    /* 13 */ BYTE  BattleSummary;
+    /* 14 */ BYTE  Unknown3;
+    /* 15 */ BYTE  Unknown4;
+    /* 16 */ BYTE  Unknown5;
+    /* 17 */ BYTE  Unknown6;
+    /* 18 */ BYTE  Unknown7;
+    /* 19 */ BYTE  Cutscene;
+    /* 20 */ BYTE  Unknown8;
+    /* 21 */ BYTE  Unknown9;
+    /* 22 */ BYTE  Unknown10;
+    /* 23 */ BYTE  Unknown11;
+    /* 24 */ BYTE  Unknown12;
+    /* 25 */ BYTE  Unknown13;
+    /* 26 */ BYTE  Unknown14;
+    /* 27 */ BYTE  Unknown15;
+    /* 28 */ BYTE  Unknown16;
+    /* 29 */ BYTE  Unknown17;
+    /* 30 */ BYTE  GameMenu;
   };
 
 #if 0
@@ -134,12 +145,8 @@ struct game_state_t {
 
   bool hasFixedAspect (void) {
     if (((data_t *)base_addr)->OpeningMovie ||
-        ((data_t *)base_addr)->GamePause    ||
-        ((data_t *)base_addr)->Loading0     ||
-        ((data_t *)base_addr)->Loading1     ||
-        ((data_t *)base_addr)->Explanation  ||
-        ((data_t *)base_addr)->Menu         ||
-        ((data_t *)base_addr)->BattlePause)
+        ((data_t *)base_addr)->Title        ||
+        ((data_t *)base_addr)->Menu)
       return true;
     return false;
   }

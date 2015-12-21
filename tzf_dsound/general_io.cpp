@@ -23,11 +23,77 @@
 #include <Windows.h>
 
 #include "general_io.h"
+
+#include "config.h"
 #include "log.h"
 #include "hook.h"
 
-//#define LOG_FILE_IO
-#ifdef LOG_FILE_IO
+#include <string>
+#include <vector>
+#include <set>
+
+namespace tzf
+{
+class FileTracer {
+public:
+   FileTracer (void) {  
+     addTracePattern  (L"Tales of Zestiria");
+     addIgnorePattern (L"\\\\?\\");
+     addIgnorePattern (L"NVIDIA");
+  }
+
+  ~FileTracer (void) {
+  }
+
+  void addIgnorePattern (std::wstring ignore) {
+    ignore_names_.push_back (ignore);
+  }
+
+  void addTracePattern (std::wstring trace) {
+    trace_names_.push_back (trace);
+  }
+
+  void addFile (std::wstring name, HANDLE file) {
+    if (isTracedName (name)) {
+      trace_handles_.insert (file);
+    }
+  }
+
+  bool isTracedName (std::wstring name) {
+    bool trace = false;
+
+    for (int i = 0; i < trace_names_.size (); i++) {
+      if (name.find (trace_names_ [i]) != std::wstring::npos) {
+        trace = true;
+        break;
+      }
+    }
+
+    for (int i = 0; i < ignore_names_.size (); i++) {
+      if (name.find (ignore_names_ [i]) != std::wstring::npos) {
+        trace = false;
+        break;
+      }
+    }
+
+    return trace;
+  }
+
+  bool isTracedFile (HANDLE file) {
+    if (trace_handles_.find (file) != trace_handles_.end ())
+      return true;
+    return false;
+  }
+
+protected:
+  std::vector <std::wstring> ignore_names_;
+  std::vector <std::wstring> trace_names_;
+
+private:
+  std::set    <HANDLE>       trace_handles_;
+} *tracer = nullptr;
+};
+
 typedef BOOL (WINAPI *ReadFile_fn)
       ( _In_        HANDLE       hFile,
         _Out_       LPVOID       lpBuffer,
@@ -40,33 +106,34 @@ ReadFile_fn ReadFile_Original = nullptr;
 #include <memory>
 
 BOOL
-GetFileNameFromHandle ( HANDLE hFile,
-                        WCHAR *pszFileName,
-            const unsigned int uiMaxLen )
+GetFileNameFromHandle ( HANDLE   hFile,
+                        wchar_t *pwszFileName,
+            const unsigned int   uiMaxLen )
 {
-  pszFileName [0] = 0;
+  *pwszFileName = L'\0';
 
-  std::unique_ptr <WCHAR> ptrcFni (
-      new WCHAR [_MAX_PATH + sizeof FILE_NAME_INFO]
+  std::unique_ptr <wchar_t> ptrcFni (
+      new wchar_t [_MAX_PATH + sizeof FILE_NAME_INFO]
   );
 
   FILE_NAME_INFO *pFni =
     reinterpret_cast <FILE_NAME_INFO *>(ptrcFni.get ());
 
-  BOOL b = GetFileInformationByHandleEx ( hFile, 
-                                            FileNameInfo,
-                                              pFni,
-                                                sizeof (FILE_NAME_INFO) +
-                                   (_MAX_PATH * sizeof (WCHAR)) );
-  if (b) {
-    wcsncpy_s ( pszFileName,
+  BOOL success =
+    GetFileInformationByHandleEx ( hFile, 
+                                     FileNameInfo,
+                                       pFni,
+                                         sizeof FILE_NAME_INFO +
+                            (_MAX_PATH * sizeof (wchar_t)) );
+  if (success) {
+    wcsncpy_s ( pwszFileName,
                   min (uiMaxLen,
-                        (pFni->FileNameLength / sizeof pFni->FileName[0])+1),
-                    pFni->FileName,
-                      _TRUNCATE );
+                    (pFni->FileNameLength / sizeof pFni->FileName [0]) + 1),
+                     pFni->FileName,
+                       _TRUNCATE );
   }
 
-  return b;
+  return success;
 }
 
 BOOL
@@ -77,11 +144,19 @@ ReadFile_Detour ( _In_      HANDLE       hFile,
                   _Out_opt_ LPDWORD      lpNumberOfBytesRead,
                 _Inout_opt_ LPOVERLAPPED lpOverlapped )
 {
-  wchar_t wszFileName [MAX_PATH] = { L'\0' };
+  if (tzf::tracer->isTracedFile (hFile)) {
+    wchar_t wszFileName [MAX_PATH] = { L'\0' };
 
-  GetFileNameFromHandle (hFile, wszFileName, MAX_PATH);
+    GetFileNameFromHandle (hFile, wszFileName, MAX_PATH);
 
-  dll_log.Log (L"Reading: %s ...", wszFileName);
+    DWORD dwPos =
+      SetFilePointer (hFile, 0L, nullptr, FILE_CURRENT);
+
+    dll_log.Log ( L"Reading: %-90s (%10lu bytes at 0x%06X)",
+                    wszFileName,
+                      nNumberOfBytesToRead,
+                        dwPos );
+  }
 
   return
     ReadFile_Original ( hFile,
@@ -113,11 +188,23 @@ CreateFileW_Detour ( _In_     LPCWSTR               lpFileName,
                      _In_     DWORD                 dwFlagsAndAttributes,
                      _In_opt_ HANDLE                hTemplateFile )
 {
-  dll_log.Log (L" [!] CreateFile (%s, ...)", lpFileName);
+  dll_log.Log (L" [!] CreateFileW (%s, ...)", lpFileName);
 
-  return CreateFileW_Original (lpFileName, dwDesiredAccess, dwShareMode,
-                               lpSecurityAttributes, dwCreationDisposition,
-                               dwFlagsAndAttributes, hTemplateFile);
+  HANDLE hFile =
+    CreateFileW_Original ( lpFileName, dwDesiredAccess, dwShareMode,
+                           lpSecurityAttributes, dwCreationDisposition,
+                           dwFlagsAndAttributes, hTemplateFile );
+
+  if (hFile != 0) {
+    wchar_t wszFileName [MAX_PATH] = { L'\0' };
+
+    GetFileNameFromHandle (hFile, wszFileName, MAX_PATH);
+
+    if (wcslen (wszFileName))
+      tzf::tracer->addFile (wszFileName, hFile);
+  }
+
+  return hFile;
 }
 
 typedef HANDLE (WINAPI *CreateFileA_fn)(
@@ -141,12 +228,26 @@ CreateFileA_Detour ( _In_     LPCSTR                lpFileName,
                      _In_     DWORD                 dwFlagsAndAttributes,
                      _In_opt_ HANDLE                hTemplateFile )
 {
-  dll_log.Log (L" [!] CreateFile (%hs, ...)", lpFileName);
+  dll_log.Log ( L" [!] CreateFileA (%hs, 0x%X, 0x%X, ..., 0x%X, 0x%X)",
+                lpFileName, dwDesiredAccess, dwShareMode,
+                dwCreationDisposition, dwFlagsAndAttributes );
 
-  return CreateFileA_Original ( lpFileName,           dwDesiredAccess,
-                                dwShareMode,
-                                lpSecurityAttributes, dwCreationDisposition,
-                                dwFlagsAndAttributes, hTemplateFile );
+  HANDLE hFile =
+    CreateFileA_Original ( lpFileName,           dwDesiredAccess,
+                           dwShareMode,
+                           lpSecurityAttributes, dwCreationDisposition,
+                           dwFlagsAndAttributes, hTemplateFile );
+
+  if (hFile != 0) {
+    wchar_t wszFileName [MAX_PATH] = { L'\0' };
+
+    GetFileNameFromHandle (hFile, wszFileName, MAX_PATH);
+
+    if (wcslen (wszFileName))
+      tzf::tracer->addFile (wszFileName, hFile);
+  }
+
+  return hFile;
 }
 
 
@@ -164,14 +265,30 @@ OpenFile_Detour ( _In_    LPCSTR     lpFileName,
 {
   dll_log.Log (L" [!] OpenFile (%hs, ...)", lpFileName);
 
-  return OpenFile_Original (lpFileName, lpReOpenBuff, uStyle);
+  HFILE hFile =
+    OpenFile_Original (lpFileName, lpReOpenBuff, uStyle);
+
+  if (hFile != 0) {
+    wchar_t wszFileName [MAX_PATH] = { L'\0' };
+
+    GetFileNameFromHandle ((HANDLE)hFile, wszFileName, MAX_PATH);
+
+    if (wcslen (wszFileName))
+      tzf::tracer->addFile (wszFileName, (HANDLE)hFile);
+  }
+
+  return hFile;
 }
-#endif
 
 void
 tzf::FileIO::Init (void)
 {
-#ifdef LOG_FILE_IO
+  //config.file_io.capture = true;
+  if (config.file_io.capture) {
+
+    if (tracer == nullptr)
+      tracer = new FileTracer ();
+
     TZF_CreateDLLHook ( L"kernel32.dll", "OpenFile",
                         OpenFile_Detour,
              (LPVOID *)&OpenFile_Original );
@@ -187,11 +304,14 @@ tzf::FileIO::Init (void)
     TZF_CreateDLLHook ( L"kernel32.dll", "ReadFile",
                         ReadFile_Detour,
              (LPVOID *)&ReadFile_Original );
-#endif
-
+  }
 }
 
 void
 tzf::FileIO::Shutdown (void)
 {
+  if (tracer != nullptr) {
+    delete tracer;
+    tracer = nullptr;
+  }
 }

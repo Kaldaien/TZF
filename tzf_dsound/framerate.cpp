@@ -41,6 +41,7 @@ int32_t          tzf::FrameRateFix::tick_scale               = 2; // 30 FPS
 CRITICAL_SECTION tzf::FrameRateFix::alter_speed_cs           = { 0 };
 
 bool             tzf::FrameRateFix::variable_speed_installed = false;
+bool             tzf::FrameRateFix::fullscreen               = false;
 
 uint32_t         tzf::FrameRateFix::target_fps               = 30;
 
@@ -92,6 +93,8 @@ public:
   }
 
   void wait (void) {
+    static bool restart = false;
+
     frames++;
 
     QueryPerformanceCounter (&time);
@@ -102,8 +105,13 @@ public:
       dll_log.Log ( L" * Frame ran long (%3.01fx expected) - restarting"
                     L" limiter...",
              (time.QuadPart - next.QuadPart) / freq.QuadPart / (ms / 1000.0) / fps );
-      start.QuadPart = time.QuadPart;
+      restart = true;
+    }
+
+    if (restart) {
       frames         = 0;
+      start.QuadPart = time.QuadPart;
+      restart        = false;
     }
 
     next.QuadPart = (start.QuadPart + frames * (ms / 1000.0) * freq.QuadPart);
@@ -122,6 +130,14 @@ public:
           if (d3d9ex != nullptr)
             d3d9ex->WaitForVBlank (0);
         }
+
+        if (GetForegroundWindow () != tzf::RenderFix::hWndDevice &&
+            tzf::FrameRateFix::fullscreen) {
+          //dll_log.Log (L" # Restarting framerate limiter; fullscreen Alt+Tab...");
+          restart = true;
+          break;
+        }
+
         //if (config.framerate.yield_processor)
           //YieldProcessor        ();
         QueryPerformanceCounter (&time);
@@ -197,6 +213,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
 
     tzf::RenderFix::width  = present_params.BackBufferWidth;
     tzf::RenderFix::height = present_params.BackBufferHeight;
+    tzf::FrameRateFix::fullscreen = (! pparams->Windowed);
 
     // Change the Aspect Ratio
     char szAspectCommand [64];
