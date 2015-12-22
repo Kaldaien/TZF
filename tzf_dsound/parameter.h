@@ -59,7 +59,7 @@ public:
   {
     bool ret = false;
 
-    wcsncpy_s (backing_string, get_value_str ().c_str (), 64);
+    wcsncpy_s (backing_string, get_value_str ().c_str (), MAX_PATH);
 
     if (ini != nullptr) {
       INI::File::Section& section = ini->get_section (ini_section);
@@ -91,7 +91,7 @@ public:
   }
 
 protected:
-  wchar_t                  backing_string [64]; // Required by XML
+  wchar_t                  backing_string [MAX_PATH]; // Required by XML
 
 private:
   INI::File*               ini;
