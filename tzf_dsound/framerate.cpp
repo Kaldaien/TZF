@@ -48,8 +48,14 @@ uint32_t         tzf::FrameRateFix::target_fps               = 30;
 HMODULE          tzf::FrameRateFix::bink_dll                 = 0;
 HMODULE          tzf::FrameRateFix::kernel32_dll             = 0;
 
-int  max_latency     = 1;//2
+int  max_latency     = 2;
 bool wait_for_vblank = false;
+
+typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
+Sleep_t Sleep_Original = nullptr;
+
+typedef BOOL(WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
+QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
 
 class FramerateLimiter
 {
@@ -77,12 +83,13 @@ public:
 
     // Align the start to VBlank for minimum input latency
     if (d3d9ex != nullptr) {
-      d3d9ex->SetMaximumFrameLatency (max_latency);
+      d3d9ex->SetMaximumFrameLatency (1);
       d3d9ex->WaitForVBlank          (0);
+      d3d9ex->SetMaximumFrameLatency (max_latency);
       d3d9ex->Release                ();
     }
 
-    QueryPerformanceCounter (&start);
+    QueryPerformanceCounter_Original (&start);
 
     next.QuadPart = 0ULL;
     time.QuadPart = 0ULL;
@@ -97,7 +104,7 @@ public:
 
     frames++;
 
-    QueryPerformanceCounter (&time);
+    QueryPerformanceCounter_Original (&time);
 
     // Restart timing if a frame runs 15x longer than expected,
     //   this should help with alt+tab scenarios and other oddities.
@@ -138,9 +145,11 @@ public:
           break;
         }
 
+        //if (config.framerate.allow_fake_sleep)
+          //Sleep_Original (0);
         //if (config.framerate.yield_processor)
           //YieldProcessor        ();
-        QueryPerformanceCounter (&time);
+        QueryPerformanceCounter_Original (&time);
       }
 
       if (d3d9ex != nullptr)
@@ -225,19 +234,63 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   return BMF_SetPresentParamsD3D9_Original (device, pparams);
 }
 
-typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
-Sleep_t Sleep_Original = nullptr;
+bool          render_sleep0  = false;
+LARGE_INTEGER last_perfCount = { 0 };
 
 void
 WINAPI
 Sleep_Detour (DWORD dwMilliseconds)
 {
+  if (GetCurrentThreadId () == tzf::RenderFix::dwRenderThreadID) {
+    if (dwMilliseconds == 0)
+      render_sleep0 = true;
+    else {
+      render_sleep0 = false;
+    }
+  }
+
   if (config.framerate.yield_processor && dwMilliseconds == 0)
     YieldProcessor ();
 
   if (dwMilliseconds != 0 || config.framerate.allow_fake_sleep) {
     Sleep_Original (dwMilliseconds);
   }
+}
+
+BOOL
+WINAPI
+QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
+{
+  BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
+
+  DWORD dwThreadId = GetCurrentThreadId ();
+
+  //
+  // Handle threads that aren't render-related NORMALLY as well as the render
+  //   thread when it DID NOT just voluntarily relinquish its scheduling
+  //     timeslice
+  //
+  if (dwThreadId != tzf::RenderFix::dwRenderThreadID || (! render_sleep0) || tzf::RenderFix::bink) {
+    if (dwThreadId == tzf::RenderFix::dwRenderThreadID)
+      memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
+
+    return ret;
+  }
+
+  //
+  // At this point, we're fixing up the thread that throttles the swapchain.
+  //
+  render_sleep0 = false;
+
+  LARGE_INTEGER freq;
+  QueryPerformanceFrequency (&freq);
+
+  // Mess with the numbers slightly to prevent scheduling from wreaking havoc
+  lpPerformanceCount->QuadPart += 2.0f * (double)freq.QuadPart * ((double)tzf::FrameRateFix::target_fps / 1000.0);
+
+  memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
+
+  return ret;
 }
 
 typedef void* (__stdcall *BinkOpen_t)(const char* filename, DWORD unknown0);
@@ -295,6 +348,8 @@ BinkClose_Detour (DWORD unknown)
 }
 
 
+
+LPVOID pfnQueryPerformanceCounter  = nullptr;
 LPVOID pfnSleep                    = nullptr;
 LPVOID pfnBMF_SetPresentParamsD3D9 = nullptr;
 
@@ -418,6 +473,12 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&BinkClose_Original,
                      &pfnBinkClose );
 
+  TZF_CreateDLLHook ( L"kernel32.dll", "QueryPerformanceCounter",
+                      QueryPerformanceCounter_Detour, 
+           (LPVOID *)&QueryPerformanceCounter_Original,
+           (LPVOID *)&pfnQueryPerformanceCounter );
+
+  TZF_EnableHook (pfnQueryPerformanceCounter);
   TZF_EnableHook (pfnBMF_SetPresentParamsD3D9);
 
   TZF_EnableHook (pfnBinkOpen);
@@ -666,55 +727,49 @@ tzf::FrameRateFix::Shutdown (void)
   ////TZF_DisableHook (pfnSleep);
 }
 
-static int scale_before = 2;
 static int fps_before   = 60;
 bool       forced_30    = false;
 
 void
 tzf::FrameRateFix::Begin30FPSEvent (void)
 {
-  EnterCriticalSection (&alter_speed_cs);
+  //EnterCriticalSection (&alter_speed_cs);
 
   if (variable_speed_installed && (! forced_30)) {
     forced_30    = true;
     fps_before   = target_fps;
-    target_fps   = 30;
-    scale_before = tick_scale;
-    command.ProcessCommandLine ("TickScale 2");
+    SetFPS (30);
   }
 
-  LeaveCriticalSection (&alter_speed_cs);
+  //LeaveCriticalSection (&alter_speed_cs);
 }
 
 void
 tzf::FrameRateFix::End30FPSEvent (void)
 {
-  EnterCriticalSection (&alter_speed_cs);
+  //EnterCriticalSection (&alter_speed_cs);
 
   if (variable_speed_installed && (forced_30)) {
     forced_30  = false;
-    target_fps = fps_before;
-    char szRescale [32];
-    sprintf (szRescale, "TickScale %i", scale_before);
-    command.ProcessCommandLine (szRescale);
+    SetFPS (fps_before);
   }
 
-  LeaveCriticalSection (&alter_speed_cs);
+  //LeaveCriticalSection (&alter_speed_cs);
 }
 
 void
 tzf::FrameRateFix::SetFPS (int fps)
 {
-  EnterCriticalSection (&alter_speed_cs);
+  //EnterCriticalSection (&alter_speed_cs);
 
   if (variable_speed_installed && (target_fps != fps)) {
     target_fps = fps;
     char szRescale [32];
-    sprintf (szRescale, "TickScale %i", CalcTickScale (1000.0f * (1.0f / fps)));
+    sprintf (szRescale, "TickScale %li", CalcTickScale (1000.0f * (1.0f / fps)));
     command.ProcessCommandLine (szRescale);
   }
 
-  LeaveCriticalSection (&alter_speed_cs);
+  //LeaveCriticalSection (&alter_speed_cs);
 }
 
 
@@ -794,7 +849,7 @@ tzf::FrameRateFix::CalcTickScale (double elapsed_ms)
   long scale = min (max (elapsed_ms / tick_ms, 1), 7);
 
   if (scale > 6)
-    scale = inv_rate / (1.0 / 60.0);
+    scale = max (inv_rate / (1.0 / 60.0), 1);
 
   return scale;
 }
@@ -825,24 +880,20 @@ tzf::FrameRateFix::RenderTick (void)
 
   static uint32_t last_limit = target_fps;
 
-  if (limiter == nullptr)
-    limiter = new FramerateLimiter ();
+  if (limiter == nullptr) {
+    limiter    = new FramerateLimiter ();
+    last_limit = 0;
+  }
 
   if (last_limit != target_fps) {
-#if 1
     limiter->change_limit (target_fps);
-#else
-    // Full reset would be nice, but VSYNC timing tends to
-    //   make the limiter behave poorly if we do this.
-    limiter->init (target_fps);
-#endif
 
     last_limit = target_fps;
   }
 
   limiter->wait ();
 
-  QueryPerformanceCounter (&time);
+  QueryPerformanceCounter_Original (&time);
 
 
   if (forced_30) {
@@ -891,6 +942,8 @@ tzf::FrameRateFix::RenderTick (void)
                         last_scale * 16.666667f, dt * (1.0 / 60.0) * 1000.0 );
 #endif
       }
+
+	  dll_log.Log(L"scale: %li", scale);
 
       char rescale [32];
       sprintf (rescale, "TickScale %li", scale);

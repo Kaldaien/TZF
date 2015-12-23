@@ -38,11 +38,8 @@ std::set <IDirect3DBaseTexture9 *> incomplete_textures;
 bool pre_limit      = false;
 
 bool fullscreen_blit = false;
-bool worldspace_ui   = false;
 bool needs_aspect    = false;
-bool drawn_radials   = false;
 bool world_radial    = false;
-bool discard = false;
 int TEST_VS = 107874419;
 
 uint32_t
@@ -240,6 +237,11 @@ crc32(uint32_t crc, const void *buf, size_t size)
 std::unordered_map <LPVOID, uint32_t> vs_checksums;
 std::unordered_map <LPVOID, uint32_t> ps_checksums;
 
+// Store the CURRENT shader's checksum instead of repeatedly
+//   looking it up in the above hashmaps.
+uint32_t vs_checksum = 0;
+uint32_t ps_checksum = 0;
+
 typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
   (IDirect3DDevice9*       This,
    IDirect3DVertexShader9* pShader);
@@ -269,6 +271,11 @@ D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
 
         vs_checksums [pShader] = crc32 (0, szFunc, len);
       }
+      else {
+        vs_checksum = 0;
+      }
+
+      vs_checksum = vs_checksums [pShader];
     }
   }
 
@@ -304,7 +311,11 @@ D3D9SetPixelShader_Detour (IDirect3DDevice9*      This,
 
         ps_checksums [pShader] = crc32 (0, szFunc, len);
       }
+    } else {
+      ps_checksum = 0;
     }
+
+    ps_checksum = ps_checksums [pShader];
   }
 
   g_pPS = pShader;
@@ -364,10 +375,13 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
     return D3D9EndScene_Original (This);
 
   needs_aspect    = false;
-  worldspace_ui   = false;
-  drawn_radials   = false;
   draw_count      = 0;
   next_draw       = 0;
+
+  g_pPS           = nullptr;
+  g_pVS           = nullptr;
+  vs_checksum     = 0;
+  ps_checksum     = 0;
 
   if ( game_state.hasFixedAspect () &&
        (config.render.aspect_correction ||
@@ -1004,74 +1018,75 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
   //756074953   /// Shrubberyneed
 
   ++draw_count;
-  //dll_log.Log (L" VS: %u, PS: %u, Draw: %u", vs_checksums [g_pVS], ps_checksums [g_pPS], ++draw_count);
 
-  //if (draw_count >= TEST_VS) {//vs_checksums [g_pVS] == 3093808335 && ps_checksums [g_pPS] == 2137164652 && primCount == 1 && NumVertices == 3 && Type == D3DPT_TRIANGLELIST && TEST_VS == 0) {
+  //dll_log.Log (L" VS: %u, PS: %u, Draw: %u", vs_checksum, ps_checksum, ++draw_count);
+
+  //if (draw_count >= TEST_VS) {//vs_checksum == 3093808335 && ps_checksum == 2137164652 && primCount == 1 && NumVertices == 3 && Type == D3DPT_TRIANGLELIST && TEST_VS == 0) {
     //needs_aspect = true;
     //return S_OK;
     //needs_aspect = true;
   //}
 
-  if (vs_checksums [g_pVS] == 3486499850 && ps_checksums [g_pPS] == 2539463060)
-    worldspace_ui = true;
+  //if (vs_checksum == 3486499850 && ps_checksum == 2539463060)
+    //worldspace_ui = true;
 
-  //if (vs_checksums [g_pVS] == 107874419 && ps_checksums [g_pPS] == 3087596655)
+  //if (vs_checksum == 107874419 && ps_checksum == 3087596655)
     //needs_aspect = true;
 
-  //if (vs_checksums [g_pVS] == 3463109298 && ps_checksums [g_pPS] == 2460564076)
+  //if (vs_checksum == 3463109298 && ps_checksum == 2460564076)
     //needs_aspect = true;
 
 // Battle Works Well
 #if 0
-  if (vs_checksums [g_pVS] == 107874419/* && ps_checksums [g_pPS] == 3087596655*/)
+  if (vs_checksum == 107874419/* && ps_checksum == 3087596655*/)
     needs_aspect = true;
-  if (vs_checksums [g_pVS] == 3486499850 && ps_checksums [g_pPS] == 2539463060)
+  if (vs_checksum == 3486499850 && ps_checksum == 2539463060)
     needs_aspect = true;
 #endif
 
-  //if (vs_checksums [g_pVS] == 446150694 && ps_checksums [g_pPS] == 342156133)
+  //if (vs_checksum == 446150694 && ps_checksum == 342156133)
     //needs_aspect = true;
-  //if (vs_checksums [g_pVS] == 1388126794 && ps_checksums [g_pPS] == 3134602014)
+  //if (vs_checksum == 1388126794 && ps_checksum == 3134602014)
     //needs_aspect = true;
 
-  if (vs_checksums [g_pVS] == VS_CHECKSUM_TITLE && *game_state.base_addr)
+  if (vs_checksum == VS_CHECKSUM_TITLE && *game_state.base_addr)
     needs_aspect = true;
 
-  if (vs_checksums [g_pVS] == 657093040 && ps_checksums [g_pPS] == 363447431)
+  if (vs_checksum == 657093040 && ps_checksum == 363447431)
     needs_aspect = true;
 
 #if 0
-  if (vs_checksums [g_pVS] == VS_CHECKSUM_RADIAL) {
+  if (vs_checksum == VS_CHECKSUM_RADIAL) {
     next_draw = draw_count + 2;
-    if (ps_checksums [g_pPS] != 363447431) {
+    if (ps_checksum != 363447431) {
     } else {
       TZF_AdjustViewport (This, false);
     }
   }
 #endif
 
-  if ((config.render.aspect_correction && Type == D3DPT_TRIANGLESTRIP && ((//vs_checksums [g_pVS] == 446150694 ||
-                                                                          //vs_checksums [g_pVS] == 3486499850 ||
-                                                                          //vs_checksums [g_pVS] == 1388126794 ||
-                                                                          //vs_checksums [g_pVS] == 657093040  ||
+  if ((config.render.aspect_correction && Type == D3DPT_TRIANGLESTRIP && ((//vs_checksum == 446150694 ||
+                                                                          //vs_checksum == 3486499850 ||
+                                                                          //vs_checksum == 1388126794 ||
+                                                                          //vs_checksum == 657093040  ||
 
-                                                                          vs_checksums [g_pVS] == 0x52BD224A ||
-                                                                          vs_checksums [g_pVS] == 0x272A71B0 || // Splash Screen
-                                                                          (vs_checksums [g_pVS] == VS_CHECKSUM_TITLE && *game_state.base_addr) ||
-                                                                          vs_checksums [g_pVS] == VS_CHECKSUM_SUBS ||
-                                                                          vs_checksums [g_pVS] == 107874419) || vs_checksums [g_pVS] == VS_CHECKSUM_RADIAL)) ||
-     (config.render.blackbar_videos && tzf::RenderFix::bink && vs_checksums [g_pVS] == VS_CHECKSUM_BINK)) {
+                                                                          vs_checksum == 0x52BD224A ||
+                                                                          vs_checksum == 0x272A71B0 || // Splash Screen
+                                                                          (vs_checksum == VS_CHECKSUM_TITLE && *game_state.base_addr) ||
+                                                                          vs_checksum == VS_CHECKSUM_SUBS ||
+                                                                          vs_checksum == 107874419) || vs_checksum == VS_CHECKSUM_RADIAL)) ||
+     (config.render.blackbar_videos && tzf::RenderFix::bink && vs_checksum == VS_CHECKSUM_BINK)) {
     D3DVIEWPORT9 vp9_orig;
     This->GetViewport (&vp9_orig);
 
-    if (vs_checksums [g_pVS] == VS_CHECKSUM_RADIAL) {
+    if (vs_checksum == VS_CHECKSUM_RADIAL) {
       if (world_radial) {
         TZF_AdjustViewport (This, false);
       } else {
         TZF_AdjustViewport (This, true);
       }
     } else {
-      if ((vs_checksums [g_pVS] != 107874419) || (! fullscreen_blit))
+      if ((vs_checksum != 107874419) || (! fullscreen_blit))
         TZF_AdjustViewport (This, true);
       else
         TZF_AdjustViewport (This, false);
@@ -1083,14 +1098,14 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
                                               NumVertices, startIndex,
                                                 primCount );
 
-    //if (vs_checksums [g_pVS] != 107874419)
+    //if (vs_checksum != 107874419)
     //This->SetViewport (&vp9_orig);
     //TZF_AdjustViewport (This, false);
 
     return hr;
   }
   else if (Type == D3DPT_TRIANGLESTRIP) {
-    //dll_log.Log (L" Consider Vertex Shader %4i...", vs_checksums [g_pVS]);
+    //dll_log.Log (L" Consider Vertex Shader %4i...", vs_checksum);
   }
 
   return D3D9DrawIndexedPrimitive_Original ( This, Type,
@@ -1124,7 +1139,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
                                                          Vector4fCount );
   }
 
-  if (vs_checksums [g_pVS] == VS_CHECKSUM_RADIAL) 
+  if (vs_checksum == VS_CHECKSUM_RADIAL) 
   {
 #if 0
     dll_log.LogEx (false, L" Draw Call %u: Radial\n", draw_count);
@@ -1150,7 +1165,15 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       Vector4fCount == 5) {
     if (pConstantData [ 0] == 2.0f / 1280.0f &&
         pConstantData [ 5] == 2.0f / 720.0f) {
-      if (pConstantData [12] == 0.0f && pConstantData [15] == 1.0f)
+      //
+      // If the origin is translated all the way to the left, we assume this
+      //   is an effect that covers the entire screen.
+      //
+      //  (Also anything that is not horizontally translated)
+      //
+      if ((pConstantData [12] == -pConstantData [15]) ||
+          (pConstantData [12] ==  pConstantData [15]) ||
+          (pConstantData [12] == 0.0f && pConstantData [15] == 1.0f))
         fullscreen_blit = true;
       else {
         fullscreen_blit = false;
@@ -1168,12 +1191,12 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [0] == -1.0f / 64.0f) {
       dim = 64UL;
-      //dll_log.Log (L" 64x64 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+      //dll_log.Log (L" 64x64 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     if (pConstantData [0] == -1.0f / 128.0f) {
       dim = 128UL;
-      //dll_log.Log (L" 128x128 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+      //dll_log.Log (L" 128x128 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     shift = TZF_MakeShadowBitShift (dim);
@@ -1232,17 +1255,17 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [0] == -1.0f / 512.0f) {
       dim = 512UL;
-      //dll_log.Log (L" 512x512 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+      //dll_log.Log (L" 512x512 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     if (pConstantData [0] == -1.0f / 1024.0f) {
       dim = 1024UL;
-      //dll_log.Log (L" 1024x1024 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+      //dll_log.Log (L" 1024x1024 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     if (pConstantData [0] == -1.0f / 2048.0f) {
       dim = 2048UL;
-      //dll_log.Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksums [g_pVS], ps_checksums [g_pPS]);
+      //dll_log.Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     shift = config.render.env_shadow_rescale;
