@@ -891,7 +891,10 @@ tzf::FrameRateFix::RenderTick (void)
     last_limit = target_fps;
   }
 
-  limiter->wait ();
+  // Loading will go faster if we don't limit the framerate while it
+  //   is going on...
+  if (! game_state.isLoading ())
+    limiter->wait ();
 
   QueryPerformanceCounter_Original (&time);
 
@@ -942,8 +945,6 @@ tzf::FrameRateFix::RenderTick (void)
                         last_scale * 16.666667f, dt * (1.0 / 60.0) * 1000.0 );
 #endif
       }
-
-	  dll_log.Log(L"scale: %li", scale);
 
       char rescale [32];
       sprintf (rescale, "TickScale %li", scale);

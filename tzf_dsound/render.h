@@ -76,6 +76,7 @@ namespace tzf
 
 struct game_state_t {
   BYTE*  base_addr    =  (BYTE *)0x2130309;
+  bool   in_skit      = false;
 
   struct data_t {
     /*  0 */ BYTE  Title;
@@ -140,13 +141,18 @@ struct game_state_t {
   BYTE*  Cutscene     =  (BYTE *)(base_addr + 19); // Cutscene
 #endif
 
-  bool inBattle   (void) { return ((data_t *)base_addr)->Battle   & 0x1; }
-  bool inCutscene (void) { return ((data_t *)base_addr)->Cutscene & 0x1; }
+  bool inBattle      (void) { return ((data_t *)base_addr)->Battle      & 0x1; }
+  bool inCutscene    (void) { return ((data_t *)base_addr)->Cutscene    & 0x1; }
+  bool inExplanation (void) { return ((data_t *)base_addr)->Explanation & 0x1; }
+  bool inSkit        (void) { return in_skit;                                  }
+  bool isLoading     (void) { return (((data_t *)base_addr)->Loading0 & 0x1) ||
+                                     (((data_t *)base_addr)->Loading1 & 0x1); }
 
   bool hasFixedAspect (void) {
     if (((data_t *)base_addr)->OpeningMovie ||
         ((data_t *)base_addr)->Title        ||
-        ((data_t *)base_addr)->Menu)
+        ((data_t *)base_addr)->Menu         ||
+        in_skit)
       return true;
     return false;
   }

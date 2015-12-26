@@ -35,11 +35,11 @@
 
 // Textures that are missing mipmaps
 std::set <IDirect3DBaseTexture9 *> incomplete_textures;
-bool pre_limit      = false;
+bool pre_limit        = false;
 
-bool fullscreen_blit = false;
-bool needs_aspect    = false;
-bool world_radial    = false;
+bool fullscreen_blit  = false;
+bool needs_aspect     = false;
+bool world_radial     = false;
 int TEST_VS = 107874419;
 
 uint32_t
@@ -259,8 +259,6 @@ D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetVertexShader_Original (This, pShader);
 
-  fullscreen_blit = false;
-
   if (g_pVS != pShader) {
     if (pShader != nullptr) {
       if (vs_checksums.find (pShader) == vs_checksums.end ()) {
@@ -362,8 +360,9 @@ typedef HRESULT (STDMETHODCALLTYPE *EndScene_t)
 
 EndScene_t D3D9EndScene_Original = nullptr;
 
-int draw_count = 0;
-int next_draw  = 0;
+int draw_count  = 0;
+int next_draw   = 0;
+int scene_count = 0;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -374,19 +373,15 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
   if (This != tzf::RenderFix::pDevice)
     return D3D9EndScene_Original (This);
 
-  needs_aspect    = false;
-  draw_count      = 0;
-  next_draw       = 0;
+  // EndScene is invoked multiple times per-frame, but we
+  //   are only interested in the first.
+  if (scene_count++ > 0)
+    return D3D9EndScene_Original (This);
 
-  g_pPS           = nullptr;
-  g_pVS           = nullptr;
-  vs_checksum     = 0;
-  ps_checksum     = 0;
-
-  if ( game_state.hasFixedAspect () &&
-       (config.render.aspect_correction ||
-       (config.render.blackbar_videos   &&
-        tzf::RenderFix::bink))      &&
+  if ( ((game_state.hasFixedAspect ()     &&
+         config.render.aspect_correction) ||
+        (config.render.blackbar_videos    &&
+         tzf::RenderFix::bink))           &&
        config.render.clear_blackbars ) {
     D3DCOLOR color = 0xff000000;
 
@@ -449,6 +444,18 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
 
   HRESULT hr = D3D9EndScene_Original (This);
 
+  game_state.in_skit = false;
+
+  needs_aspect       = false;
+  fullscreen_blit    = false;
+  draw_count         = 0;
+  next_draw          = 0;
+
+  g_pPS           = nullptr;
+  g_pVS           = nullptr;
+  vs_checksum     = 0;
+  ps_checksum     = 0;
+
   return hr;
 }
 
@@ -471,6 +478,8 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
   // Ignore anything that's not the primary render device.
   if (device != tzf::RenderFix::pDevice)
     return BMF_EndBufferSwap (hr, device);
+
+  scene_count = 0;
 
   tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
 
@@ -1005,36 +1014,7 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
                                                      primCount );
   }
 
-  // -653456248  /// Main menu
-  //  107874419  /// Progress Bar
-  // -18938562   /// Radial Gauge
-
-  //-1572371231 /// Post-Process
-  // 812841639  /// Post-Process
-  //-305112128  /// Post-Process
-  //-261874135  /// Shrubbery
-  //-469433589  /// Shrubbery
-  //-653456248  /// Shrubbery
-  //756074953   /// Shrubberyneed
-
   ++draw_count;
-
-  //dll_log.Log (L" VS: %u, PS: %u, Draw: %u", vs_checksum, ps_checksum, ++draw_count);
-
-  //if (draw_count >= TEST_VS) {//vs_checksum == 3093808335 && ps_checksum == 2137164652 && primCount == 1 && NumVertices == 3 && Type == D3DPT_TRIANGLELIST && TEST_VS == 0) {
-    //needs_aspect = true;
-    //return S_OK;
-    //needs_aspect = true;
-  //}
-
-  //if (vs_checksum == 3486499850 && ps_checksum == 2539463060)
-    //worldspace_ui = true;
-
-  //if (vs_checksum == 107874419 && ps_checksum == 3087596655)
-    //needs_aspect = true;
-
-  //if (vs_checksum == 3463109298 && ps_checksum == 2460564076)
-    //needs_aspect = true;
 
 // Battle Works Well
 #if 0
@@ -1044,38 +1024,19 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
     needs_aspect = true;
 #endif
 
-  //if (vs_checksum == 446150694 && ps_checksum == 342156133)
-    //needs_aspect = true;
-  //if (vs_checksum == 1388126794 && ps_checksum == 3134602014)
-    //needs_aspect = true;
-
   if (vs_checksum == VS_CHECKSUM_TITLE && *game_state.base_addr)
     needs_aspect = true;
 
   if (vs_checksum == 657093040 && ps_checksum == 363447431)
     needs_aspect = true;
 
-#if 0
-  if (vs_checksum == VS_CHECKSUM_RADIAL) {
-    next_draw = draw_count + 2;
-    if (ps_checksum != 363447431) {
-    } else {
-      TZF_AdjustViewport (This, false);
-    }
-  }
-#endif
-
-  if ((config.render.aspect_correction && Type == D3DPT_TRIANGLESTRIP && ((//vs_checksum == 446150694 ||
-                                                                          //vs_checksum == 3486499850 ||
-                                                                          //vs_checksum == 1388126794 ||
-                                                                          //vs_checksum == 657093040  ||
-
-                                                                          vs_checksum == 0x52BD224A ||
-                                                                          vs_checksum == 0x272A71B0 || // Splash Screen
+  if ((config.render.aspect_correction && Type == D3DPT_TRIANGLESTRIP && ((vs_checksum == 0x52BD224A ||
+                                                                           vs_checksum == 0x272A71B0 || // Splash Screen
                                                                           (vs_checksum == VS_CHECKSUM_TITLE && *game_state.base_addr) ||
-                                                                          vs_checksum == VS_CHECKSUM_SUBS ||
-                                                                          vs_checksum == 107874419) || vs_checksum == VS_CHECKSUM_RADIAL)) ||
+                                                                           vs_checksum == VS_CHECKSUM_SUBS ||
+                                                                           vs_checksum == 107874419) || vs_checksum == VS_CHECKSUM_RADIAL)) ||
      (config.render.blackbar_videos && tzf::RenderFix::bink && vs_checksum == VS_CHECKSUM_BINK)) {
+
     D3DVIEWPORT9 vp9_orig;
     This->GetViewport (&vp9_orig);
 
@@ -1163,6 +1124,8 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
   //
   if (StartRegister == 0 &&
       Vector4fCount == 5) {
+    fullscreen_blit = false;
+
     if (pConstantData [ 0] == 2.0f / 1280.0f &&
         pConstantData [ 5] == 2.0f / 720.0f) {
       //
@@ -1171,15 +1134,18 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       //
       //  (Also anything that is not horizontally translated)
       //
-      if ((pConstantData [12] == -pConstantData [15]) ||
-          (pConstantData [12] ==  pConstantData [15]) ||
-          (pConstantData [12] == 0.0f && pConstantData [15] == 1.0f))
-        fullscreen_blit = true;
-      else {
-        fullscreen_blit = false;
+      if (vs_checksum == 107874419 && ps_checksum == 3087596655) {
+        if ((pConstantData [12] == -pConstantData [15]) ||
+            (pConstantData [12] ==  pConstantData [15]) ||
+            (pConstantData [12] == 0.0f && pConstantData [15] == 1.0f)) {
+        // Do not stretch skits
+        if (game_state.inExplanation () && pConstantData [19] == 0.4f) {
+          game_state.in_skit = true;
+        } else
+          fullscreen_blit    = true;
+        }
       }
-    } //else if (pConstantData [0] == 1.0f && pConstantData [5] == 1.0f && pConstantData [10] == 1.0f)
-      //needs_aspect = true;
+    }
   }
 
   //
