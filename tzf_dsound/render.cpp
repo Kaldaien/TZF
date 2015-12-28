@@ -35,6 +35,15 @@
 
 // Textures that are missing mipmaps
 std::set <IDirect3DBaseTexture9 *> incomplete_textures;
+
+struct pad_buttons_t {
+  const uint32_t     crc32_ps3  = 0x8D7A5256;
+  const uint32_t     crc32_xbox = 0x74F5352D;
+
+  IDirect3DTexture9* tex_ps3    = nullptr;
+  IDirect3DTexture9* tex_xbox   = nullptr;
+} pad_buttons;
+
 bool pre_limit        = false;
 
 bool fullscreen_blit  = false;
@@ -248,7 +257,6 @@ typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
 
 SetVertexShader_t D3D9SetVertexShader_Original = nullptr;
 
-__declspec (dllexport)
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -288,7 +296,6 @@ typedef HRESULT (STDMETHODCALLTYPE *SetPixelShader_t)
 
 SetPixelShader_t D3D9SetPixelShader_Original = nullptr;
 
-__declspec (dllexport)
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -564,6 +571,101 @@ typedef HRESULT (STDMETHODCALLTYPE *D3DXSaveTextureToFile_t)(
 D3DXSaveTextureToFile_t
   D3DXSaveTextureToFile = nullptr;
 
+typedef HRESULT (STDMETHODCALLTYPE *SetTexture_t)
+  (     IDirect3DDevice9      *This,
+   _In_ DWORD                  Sampler,
+   _In_ IDirect3DBaseTexture9 *pTexture);
+
+SetTexture_t D3D9SetTexture_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+__declspec (noinline)
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetTexture_Detour ( IDirect3DDevice9      *This,
+                  _In_  DWORD                  Sampler,
+                  _In_  IDirect3DBaseTexture9 *pTexture )
+{
+  static std::set <IDirect3DBaseTexture9*> textures;
+  if (textures.find (pTexture) == textures.end ()) {
+    textures.insert (pTexture);
+
+    if (D3DXSaveTextureToFile == nullptr) {
+      D3DXSaveTextureToFile =
+        (D3DXSaveTextureToFile_t)
+        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+          "D3DXSaveTextureToFileW" );
+    }
+
+    if (D3DXSaveTextureToFile != nullptr) {
+      wchar_t wszFileName [MAX_PATH] = { L'\0' };
+      _swprintf ( wszFileName, L"textures\\SetTexture_%x.dds",
+        pTexture );
+    }
+  }
+
+  return D3D9SetTexture_Original (This, Sampler, pTexture);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *UpdateSurface_t)
+  ( _In_       IDirect3DDevice9  *This,
+    _In_       IDirect3DSurface9 *pSourceSurface,
+    _In_ const RECT              *pSourceRect,
+    _In_       IDirect3DSurface9 *pDestinationSurface,
+    _In_ const POINT             *pDestinationPoint );
+
+UpdateSurface_t D3D9UpdateSurface_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9UpdateSurface_Detour ( IDirect3DDevice9  *This,
+                _In_       IDirect3DSurface9 *pSourceSurface,
+                _In_ const RECT              *pSourceRect,
+                _In_       IDirect3DSurface9 *pDestinationSurface,
+                _In_ const POINT             *pDestinationPoint )
+{
+  HRESULT hr =
+    D3D9UpdateSurface_Original ( This,
+                                   pSourceSurface,
+                                     pSourceRect,
+                                       pDestinationSurface,
+                                         pDestinationPoint );
+
+//#define DUMP_TEXTURES
+  if (SUCCEEDED (hr)) {
+#ifdef DUMP_TEXTURES
+    IDirect3DTexture9 *pBase = nullptr;
+
+    HRESULT hr2 =
+      pDestinationSurface->GetContainer (
+            __uuidof (IDirect3DTexture9),
+              (void **)&pBase
+          );
+
+    if (SUCCEEDED (hr2) && pBase != nullptr) {
+      if (D3DXSaveTextureToFile == nullptr) {
+        D3DXSaveTextureToFile =
+          (D3DXSaveTextureToFile_t)
+          GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+            "D3DXSaveTextureToFileW" );
+      }
+
+      if (D3DXSaveTextureToFile != nullptr) {
+        wchar_t wszFileName [MAX_PATH] = { L'\0' };
+        _swprintf ( wszFileName, L"textures\\UpdateSurface_%x.png",
+          pBase );
+        D3DXSaveTextureToFile (wszFileName, D3DXIFF_PNG, pBase, NULL);
+      }
+
+      pBase->Release ();
+    }
+#endif
+  }
+
+  return hr;
+}
+
 typedef HRESULT (STDMETHODCALLTYPE *UpdateTexture_t)
   (IDirect3DDevice9      *This,
    IDirect3DBaseTexture9 *pSourceTexture,
@@ -581,6 +683,7 @@ D3D9UpdateTexture_Detour (IDirect3DDevice9      *This,
   HRESULT hr = D3D9UpdateTexture_Original (This, pSourceTexture,
                                                  pDestinationTexture);
 
+//#define DUMP_TEXTURES
   if (SUCCEEDED (hr)) {
 #if 0
     if ( incomplete_textures.find (pDestinationTexture) != 
@@ -600,9 +703,9 @@ D3D9UpdateTexture_Detour (IDirect3DDevice9      *This,
 
       if (D3DXSaveTextureToFile != nullptr) {
         wchar_t wszFileName [MAX_PATH] = { L'\0' };
-        _swprintf ( wszFileName, L"textures\\%x.png",
+        _swprintf ( wszFileName, L"textures\\UpdateTexture_%x.dds",
           pSourceTexture );
-        D3DXSaveTextureToFile (wszFileName, D3DXIFF_PNG, pDestinationTexture, NULL);
+        D3DXSaveTextureToFile (wszFileName, D3DXIFF_DDS, pDestinationTexture, NULL);
       }
     }
 #endif
@@ -1342,7 +1445,25 @@ D3D9SetPixelShaderConstantF_Detour (IDirect3DDevice9* This,
 
 
 #define D3DX_DEFAULT ((UINT) -1)
-struct D3DXIMAGE_INFO;
+typedef struct D3DXIMAGE_INFO {
+  UINT                 Width;
+  UINT                 Height;
+  UINT                 Depth;
+  UINT                 MipLevels;
+  D3DFORMAT            Format;
+  D3DRESOURCETYPE      ResourceType;
+  D3DXIMAGE_FILEFORMAT ImageFileFormat;
+} D3DXIMAGE_INFO, *LPD3DXIMAGE_INFO;
+
+typedef HRESULT (WINAPI *D3DXCreateTextureFromFile_t)
+(
+  _In_  LPDIRECT3DDEVICE9  pDevice,
+  _In_  LPCWSTR            pSrcFile,
+  _Out_ LPDIRECT3DTEXTURE9 *ppTexture
+);
+
+D3DXCreateTextureFromFile_t
+  D3DXCreateTextureFromFile = nullptr;
 
 typedef HRESULT (STDMETHODCALLTYPE *D3DXCreateTextureFromFileInMemoryEx_t)
 (
@@ -1393,13 +1514,29 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
   if (config.render.complete_mipmaps && Levels > 1)
     Levels = D3DX_DEFAULT;
 
+//#define DUMP_TEXTURES
+#ifdef DUMP_TEXTURES
+  if (Usage == 0)
+    Usage = D3DUSAGE_DYNAMIC; // So the dump succeeds
+#endif
+
+  uint32_t img_crc32 = crc32 (0, pSrcData, SrcDataSize);
+
+// Dump button textures
+//#define DUMP_BUTTONS
+#ifdef DUMP_BUTTONS
+  if (img_crc32 == pad_buttons.crc32_ps3 ||
+      img_crc32 == pad_buttons.crc32_xbox) {
+    Usage = D3DUSAGE_DYNAMIC;
+  }
+#endif
+
   HRESULT hr =
     D3DXCreateTextureFromFileInMemoryEx_Original (
       pDevice, pSrcData, SrcDataSize, Width, Height,
-      Levels, Usage, Format, Pool,
+      Levels, Usage/*D3DUSAGE_DYNAMIC*/, Format, Pool,
       Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
 
-#ifdef DUMP_TEXTURES
   if (SUCCEEDED (hr)) {
     if (D3DXSaveTextureToFile == nullptr) {
       D3DXSaveTextureToFile =
@@ -1408,14 +1545,55 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
           "D3DXSaveTextureToFileW" );
     }
 
+    if (img_crc32 == pad_buttons.crc32_ps3) {
+      pad_buttons.tex_ps3 = *ppTexture;
+
+#ifdef DUMP_BUTTONS
+      if (D3DXSaveTextureToFile != nullptr)
+        D3DXSaveTextureToFile (L"ps3_buttons.dds", D3DXIFF_DDS, *ppTexture, pPalette);
+#endif
+    }
+
+    if (img_crc32 == pad_buttons.crc32_xbox) {
+      pad_buttons.tex_xbox = *ppTexture;
+
+#ifdef DUMP_BUTTONS
+      if (D3DXSaveTextureToFile != nullptr)
+        D3DXSaveTextureToFile (L"xbox_buttons.dds", D3DXIFF_DDS, *ppTexture, pPalette);
+#endif
+
+      if (D3DXCreateTextureFromFile == nullptr) {
+        D3DXCreateTextureFromFile =
+          (D3DXCreateTextureFromFile_t)
+          GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+            "D3DXCreateTextureFromFileW" );
+      }
+
+      if (D3DXCreateTextureFromFile != nullptr) {
+        FILE* fCustom = nullptr;
+        fCustom = fopen ("custom_buttons.dds", "r+");
+
+        if (fCustom != nullptr) {
+          fclose (fCustom);
+
+          // We do not need the old texture anymore
+          (*ppTexture)->Release ();
+
+          hr =
+            D3DXCreateTextureFromFile (pDevice, L"custom_buttons.dds", ppTexture);
+        }
+      }
+    }
+
+#ifdef DUMP_TEXTURES
     if (D3DXSaveTextureToFile != nullptr) {
       wchar_t wszFileName [MAX_PATH] = { L'\0' };
-      _swprintf ( wszFileName, L"textures\\%x.png",
+      _swprintf ( wszFileName, L"textures\\D3DX_TexFromFileInMemoryEx_%x.png",
                     pSrcData );
       D3DXSaveTextureToFile (wszFileName, D3DXIFF_PNG, *ppTexture, pPalette);
     }
-  }
 #endif
+  }
 
   return hr;
 }
@@ -1501,9 +1679,19 @@ tzf::RenderFix::Init (void)
                       D3D9CreateDepthStencilSurface_Detour,
             (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
 
+#if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9UpdateTexture_Override",
                       D3D9UpdateTexture_Detour,
             (LPVOID*)&D3D9UpdateTexture_Original );
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9UpdateSurface_Override",
+                      D3D9UpdateSurface_Detour,
+            (LPVOID*)&D3D9UpdateSurface_Original );
+
+  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetTexture_Override",
+                      D3D9SetTexture_Detour,
+            (LPVOID*)&D3D9SetTexture_Original );
+#endif
 #endif
 
 
@@ -1514,7 +1702,6 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXCreateTextureFromFileInMemoryEx",
                       D3DXCreateTextureFromFileInMemoryEx_Detour,
            (LPVOID *)&D3DXCreateTextureFromFileInMemoryEx_Original );
-
 
   TZF_CreateDLLHook ( L"d3d9.dll", "BMF_BeginBufferSwap",
                       D3D9EndFrame_Pre,

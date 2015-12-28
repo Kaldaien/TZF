@@ -49,7 +49,7 @@ HMODULE          tzf::FrameRateFix::bink_dll                 = 0;
 HMODULE          tzf::FrameRateFix::kernel32_dll             = 0;
 
 int  max_latency     = 2;
-bool wait_for_vblank = false;
+bool wait_for_vblank = true;
 
 typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
 Sleep_t Sleep_Original = nullptr;
@@ -106,22 +106,22 @@ public:
 
     QueryPerformanceCounter_Original (&time);
 
-    // Restart timing if a frame runs 15x longer than expected,
-    //   this should help with alt+tab scenarios and other oddities.
-    if ((time.QuadPart - next.QuadPart) / freq.QuadPart / (ms / 1000.0) > fps) {
-      dll_log.Log ( L" * Frame ran long (%3.01fx expected) - restarting"
-                    L" limiter...",
-             (time.QuadPart - next.QuadPart) / freq.QuadPart / (ms / 1000.0) / fps );
+#if 1
+    if ((double)(time.QuadPart - next.QuadPart) / (double)freq.QuadPart / (ms / 1000.0) > (0.75 * fps)) {
+      //dll_log.Log ( L" * Frame ran long (%3.01fx expected) - restarting"
+                    //L" limiter...",
+             //(double)(time.QuadPart - next.QuadPart) / (double)freq.QuadPart / (ms / 1000.0) / fps );
       restart = true;
     }
+#endif
 
     if (restart) {
       frames         = 0;
-      start.QuadPart = time.QuadPart;
+      start.QuadPart = time.QuadPart + (ms / 1000.0) * (double)freq.QuadPart;
       restart        = false;
     }
 
-    next.QuadPart = (start.QuadPart + frames * (ms / 1000.0) * freq.QuadPart);
+    next.QuadPart = (start.QuadPart + (double)frames * (ms / 1000.0) * (double)freq.QuadPart);
 
     if (next.QuadPart > 0ULL) {
       // If available (Windows 7+), wait on the swapchain
@@ -133,9 +133,10 @@ public:
       }
 
       while (time.QuadPart < next.QuadPart) {
-        if (wait_for_vblank) {
-          if (d3d9ex != nullptr)
+        if (wait_for_vblank && (next.QuadPart - time.QuadPart) > (0.0166667 * (double)freq.QuadPart)) {
+          if (d3d9ex != nullptr) {
             d3d9ex->WaitForVBlank (0);
+          }
         }
 
         if (GetForegroundWindow () != tzf::RenderFix::hWndDevice &&
@@ -891,10 +892,7 @@ tzf::FrameRateFix::RenderTick (void)
     last_limit = target_fps;
   }
 
-  // Loading will go faster if we don't limit the framerate while it
-  //   is going on...
-  if (! game_state.isLoading ())
-    limiter->wait ();
+  limiter->wait ();
 
   QueryPerformanceCounter_Original (&time);
 

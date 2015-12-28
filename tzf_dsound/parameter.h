@@ -59,6 +59,8 @@ public:
   {
     bool ret = false;
 
+    wcsncpy_s (backing_string, get_value_str ().c_str (), MAX_PATH);
+
     if (ini != nullptr) {
       INI::File::Section& section = ini->get_section (ini_section);
 
@@ -67,13 +69,13 @@ public:
       section.name = ini_section;
 
       if (section.contains_key (ini_key)) {
-        section.get_value (ini_key) = get_value_str ().c_str ();
+        section.get_value (ini_key) = backing_string;
         ret = true;
       }
 
       // Add this key/value if it doesn't already exist.
       else {
-        section.add_key_value (ini_key, get_value_str ().c_str ());
+        section.add_key_value (ini_key, backing_string);
         ret = true;// +1;
       }
     }
@@ -89,6 +91,8 @@ public:
   }
 
 protected:
+  wchar_t                  backing_string [MAX_PATH]; // Required by XML
+
 private:
   INI::File*               ini;
   std::wstring             ini_section;

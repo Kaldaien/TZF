@@ -109,17 +109,29 @@ DetourWindowProc ( _In_  HWND   hWnd,
                    _In_  WPARAM wParam,
                    _In_  LPARAM lParam )
 {
-  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
-    if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) {
-      POINT p;
+  if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) {
+    static POINT last_p = { LONG_MIN, LONG_MIN };
 
-      p.x = MAKEPOINTS (lParam).x;
-      p.y = MAKEPOINTS (lParam).y;
+    POINT p;
 
-      CalcCursorPos (&p);
+    p.x = MAKEPOINTS (lParam).x;
+    p.y = MAKEPOINTS (lParam).y;
+
+    if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
+      // Only do this if cursor actually moved!
+      //
+      //   Otherwise, it tricks the game into thinking the input device changed
+      //     from gamepad to mouse (and changes button icons).
+      if (last_p.x != p.x || last_p.y != p.y) {
+        CalcCursorPos (&p);
+
+        last_p = p;
+      }
 
       return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, MAKELPARAM (p.x, p.y));
     }
+
+    last_p = p;
   }
 
   return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, lParam);
