@@ -28,6 +28,7 @@
 #include "sound.h"
 #include "framerate.h"
 #include "general_io.h"
+#include "keyboard.h"
 #include "steam.h"
 #include "render.h"
 #include "scanner.h"
@@ -48,6 +49,7 @@ DllThread (LPVOID user)
     tzf::SteamFix::Init     ();
     tzf::RenderFix::Init    ();
     tzf::FrameRateFix::Init ();
+    tzf::KeyboardFix::Init  ();
   }
 
   return 0;
@@ -150,6 +152,7 @@ DllMain (HMODULE hModule,
     tzf::SteamFix::Shutdown     ();
     tzf::RenderFix::Shutdown    ();
     tzf::FrameRateFix::Shutdown ();
+    tzf::KeyboardFix::Shutdown  ();
 
     TZF_UnInit_MinHook ();
     TZF_SaveConfig     ();

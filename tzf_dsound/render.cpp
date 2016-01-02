@@ -133,6 +133,7 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 
+#if 0
   static int aniso = 1;
 
   //dll_log.Log ( L" [!] IDirect3DDevice9::SetSamplerState (%lu, %lu, %lu)",
@@ -158,15 +159,6 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
                   D3DSAMP_MINFILTER)
         if (Value != D3DTEXF_POINT)
           Value = D3DTEXF_ANISOTROPIC;
-    } else {
-      float bias = *(float *)&Value;
-
-      // Bad game, bad! Negative LOD Bias is UGLY AS HELL!
-      if (bias < 0.0f)
-        bias = 0.0f;
-
-      Value = *(DWORD *)&bias;
-      //dll_log.Log (L" Mip Bias: %f", (double)*(float *)&Value);
     }
   }
   if (Type == D3DSAMP_MAXANISOTROPY) {
@@ -175,6 +167,7 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
   }
   //if (Type == D3DSAMP_MAXMIPLEVEL)
     //Value = 0;
+#endif
 
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 }
@@ -1510,9 +1503,23 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
 {
   UINT Levels = MipLevels;
 
+  // NOTE: DXT2 and DXT4 have pre-multiplied alpha, and any attempt
+  //         to automagically generate mipmaps for them tends to fail
+  //           spectacularly!
+
   // Forcefully complete mipmap chains?
-  if (config.render.complete_mipmaps && Levels > 1)
-    Levels = D3DX_DEFAULT;
+  if ((Format == D3DFMT_DXT1 ||
+       Format == D3DFMT_DXT3 ||
+       Format == D3DFMT_DXT5) && config.render.complete_mipmaps) {
+    // The game streams some textures in during normal rendering,
+    //   we cannot afford to complete mipmaps then, so skip it...
+    if (game_state.isLoading ()) {
+      Levels    = D3DX_DEFAULT;
+      MipFilter = D3DX_DEFAULT;
+    }
+  }
+
+  Pool = D3DPOOL_DEFAULT;
 
 //#define DUMP_TEXTURES
 #ifdef DUMP_TEXTURES
@@ -1531,11 +1538,48 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
   }
 #endif
 
-  HRESULT hr =
-    D3DXCreateTextureFromFileInMemoryEx_Original (
+  HRESULT hr;
+
+  //if (! incomplete) {
+    hr = D3DXCreateTextureFromFileInMemoryEx_Original (
       pDevice, pSrcData, SrcDataSize, Width, Height,
-      Levels, Usage/*D3DUSAGE_DYNAMIC*/, Format, Pool,
-      Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
+        Levels, Usage/*D3DUSAGE_DYNAMIC*/, Format, Pool,
+          Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
+
+#if 0
+  } else {
+    if (D3DXCreateTextureFromFile == nullptr) {
+      D3DXCreateTextureFromFile =
+        (D3DXCreateTextureFromFile_t)
+        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+          "D3DXCreateTextureFromFileW" );
+    }
+    if (D3DXSaveTextureToFile == nullptr) {
+      D3DXSaveTextureToFile =
+        (D3DXSaveTextureToFile_t)
+        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+          "D3DXSaveTextureToFileW" );
+    }
+
+    wchar_t wszCache [MAX_PATH];
+    wsprintf (wszCache, L"cache\\%X.dds", img_crc32);
+
+    hr = D3DXCreateTextureFromFile (pDevice, wszCache, ppTexture);
+
+    if (FAILED (hr)) {
+      hr = D3DXCreateTextureFromFileInMemoryEx_Original (
+        pDevice, pSrcData, SrcDataSize, Width, Height,
+          Levels, D3DUSAGE_DYNAMIC, Format, Pool,
+            Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
+
+      if (SUCCEEDED (hr)) {
+        D3DXSaveTextureToFile (wszCache, D3DXIFF_DDS, *ppTexture, pPalette);
+      }
+    } else {
+      dll_log.Log (L" * Loaded Cached Texture...");
+    }
+  }
+#endif
 
   if (SUCCEEDED (hr)) {
     if (D3DXSaveTextureToFile == nullptr) {
@@ -1617,8 +1661,6 @@ tzf::RenderFix::Init (void)
 
   TZF_EnableHook (SetSamplerState);
 #endif
-
-
 
 #if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShaderConstantF_Override",

@@ -44,7 +44,7 @@ TZF_Timestamp (wchar_t* const out)
     FileTimeToSystemTime           (&ftLogTime, &stLogTime);
   } else {
 #else
-    GetSystemTime (&stLogTime);
+    GetLocalTime (&stLogTime);
 #endif
   //}
 

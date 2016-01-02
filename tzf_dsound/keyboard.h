@@ -23,16 +23,16 @@
 #ifndef __TZF__KEYBOARD_H__
 #define __TZF__KEYBOARD_H__
 
-#include <unordered_map>
-#include <string>
+#include <set>
+#include <vector>
 
 namespace tzf {
-  namespace Keyboard {
+  namespace KeyboardFix {
     void Init     (void);
     void Shutdown (void);
 
-    extern std::unordered_map <std::wstring, short> name_to_virtkey;
-    extern std::unordered_map <short, std::wstring> virtkey_to_name;
+    extern std::set    <uint16_t>                        remapped_scancodes;
+    extern std::vector <std::pair <uint16_t, uint16_t> > swapped_keys;
   }
 }
 

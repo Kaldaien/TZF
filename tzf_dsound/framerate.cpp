@@ -48,8 +48,9 @@ uint32_t         tzf::FrameRateFix::target_fps               = 30;
 HMODULE          tzf::FrameRateFix::bink_dll                 = 0;
 HMODULE          tzf::FrameRateFix::kernel32_dll             = 0;
 
-int  max_latency     = 2;
-bool wait_for_vblank = true;
+float limiter_tolerance = 0.75f;
+int   max_latency       = 2;
+bool  wait_for_vblank   = true;
 
 typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
 Sleep_t Sleep_Original = nullptr;
@@ -106,14 +107,12 @@ public:
 
     QueryPerformanceCounter_Original (&time);
 
-#if 1
-    if ((double)(time.QuadPart - next.QuadPart) / (double)freq.QuadPart / (ms / 1000.0) > (0.75 * fps)) {
+    if ((double)(time.QuadPart - next.QuadPart) / (double)freq.QuadPart / (ms / 1000.0) > (limiter_tolerance * fps)) {
       //dll_log.Log ( L" * Frame ran long (%3.01fx expected) - restarting"
                     //L" limiter...",
              //(double)(time.QuadPart - next.QuadPart) / (double)freq.QuadPart / (ms / 1000.0) / fps );
       restart = true;
     }
-#endif
 
     if (restart) {
       frames         = 0;
@@ -133,7 +132,7 @@ public:
       }
 
       while (time.QuadPart < next.QuadPart) {
-        if (wait_for_vblank && (next.QuadPart - time.QuadPart) > (0.0166667 * (double)freq.QuadPart)) {
+        if (wait_for_vblank && (double)(next.QuadPart - time.QuadPart) > (0.0166667 * (double)freq.QuadPart)) {
           if (d3d9ex != nullptr) {
             d3d9ex->WaitForVBlank (0);
           }
@@ -242,7 +241,7 @@ void
 WINAPI
 Sleep_Detour (DWORD dwMilliseconds)
 {
-  if (GetCurrentThreadId () == tzf::RenderFix::dwRenderThreadID) {
+  if ((! config.framerate.disable_limiter) && GetCurrentThreadId () == tzf::RenderFix::dwRenderThreadID) {
     if (dwMilliseconds == 0)
       render_sleep0 = true;
     else {
@@ -287,7 +286,7 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
   QueryPerformanceFrequency (&freq);
 
   // Mess with the numbers slightly to prevent scheduling from wreaking havoc
-  lpPerformanceCount->QuadPart += 2.0f * (double)freq.QuadPart * ((double)tzf::FrameRateFix::target_fps / 1000.0);
+  lpPerformanceCount->QuadPart += (double)freq.QuadPart * ((double)tzf::FrameRateFix::target_fps / 1000.0);
 
   memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER));
 
@@ -786,9 +785,10 @@ tzf::FrameRateFix::CommandProcessor::CommandProcessor (void)
 
   command.AddVariable ("TickScale", tick_scale_);
 
-  command.AddVariable ("UseAccumulator",  new eTB_VarStub <bool> (&use_accumulator));
-  command.AddVariable ("MaxFrameLatency", new eTB_VarStub <int>  (&max_latency));
-  command.AddVariable ("WaitForVBLANK",   new eTB_VarStub <bool> (&wait_for_vblank));
+  command.AddVariable ("UseAccumulator",   new eTB_VarStub <bool>  (&use_accumulator));
+  command.AddVariable ("MaxFrameLatency",  new eTB_VarStub <int>   (&max_latency));
+  command.AddVariable ("WaitForVBLANK",    new eTB_VarStub <bool>  (&wait_for_vblank));
+  command.AddVariable ("LimiterTolerance", new eTB_VarStub <float> (&limiter_tolerance));
 }
 
 bool
@@ -892,7 +892,10 @@ tzf::FrameRateFix::RenderTick (void)
     last_limit = target_fps;
   }
 
-  limiter->wait ();
+  // Skip the limiter while loading, it needlessly
+  //   prolongs loading screens otherwise.
+  if (! game_state.isLoading ())
+    limiter->wait ();
 
   QueryPerformanceCounter_Original (&time);
 

@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.2.6";
+std::wstring TZF_VER_STR = L"1.2.7";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -75,6 +75,11 @@ struct {
 struct {
   tzf::ParameterBool*    allow_broadcasts;
 } steam;
+
+
+struct {
+  tzf::ParameterStringW* swap_keys;
+} keyboard;
 
 
 struct {
@@ -381,6 +386,16 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.Render",
          L"ClearBlackbars" );
 
+  keyboard.swap_keys =
+    static_cast <tzf::ParameterStringW *>
+      (g_ParameterFactory.create_parameter <std::wstring> (
+        L"Swap SDL Scancodes")
+      );
+  keyboard.swap_keys->register_to_ini (
+    dll_ini,
+      L"TZFIX.Keyboard",
+        L"SwapKeys" );
+
 
   steam.allow_broadcasts =
     static_cast <tzf::ParameterBool *>
@@ -522,6 +537,9 @@ TZF_LoadConfig (std::wstring name) {
 
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
+
+  if (keyboard.swap_keys->load ())
+    config.keyboard.swap_keys = keyboard.swap_keys->get_value ();
 
 
   if (lua.fix_priest->load ())

@@ -145,6 +145,7 @@ struct game_state_t {
   bool inCutscene    (void) { return ((data_t *)base_addr)->Cutscene    & 0x1; }
   bool inExplanation (void) { return ((data_t *)base_addr)->Explanation & 0x1; }
   bool inSkit        (void) { return in_skit;                                  }
+  bool inMenu        (void) { return ((data_t *)base_addr)->Menu        & 0x1; }
   bool isLoading     (void) { return (((data_t *)base_addr)->Loading0 & 0x1) ||
                                      (((data_t *)base_addr)->Loading1 & 0x1); }
 

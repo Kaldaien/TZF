@@ -80,6 +80,10 @@ struct tzf_config_t
   } render;
 
   struct {
+    std::wstring swap_keys = L"";
+  } keyboard;
+
+  struct {
     std::wstring
             version         = TZF_VER_STR;
     std::wstring
