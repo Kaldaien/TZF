@@ -96,7 +96,7 @@ DllMain (HMODULE hModule,
       config.framerate.auto_adjust          = false;
       config.framerate.target               = 60;
       config.framerate.battle_target        = 60;
-      config.framerate.battle_adaptive      = true;
+      config.framerate.battle_adaptive      = false;
       config.framerate.cutscene_target      = 30;
 
       config.file_io.capture                = false;
@@ -111,8 +111,8 @@ DllMain (HMODULE hModule,
       config.render.aspect_addr             = 0x00D56494;
       config.render.fovy_addr               = 0x00D56498;
       config.render.blackbar_videos         = true;
-      config.render.aspect_correction       = false;
-      config.render.complete_mipmaps        = false;
+      config.render.aspect_correction       = true;
+      config.render.remaster_textures       = false;
       config.render.postproc_ratio          =  1.0f;
       config.render.shadow_rescale          = -2;
       config.render.env_shadow_rescale      =  0;

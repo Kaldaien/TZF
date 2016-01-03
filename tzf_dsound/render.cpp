@@ -36,6 +36,16 @@
 // Textures that are missing mipmaps
 std::set <IDirect3DBaseTexture9 *> incomplete_textures;
 
+struct frame_texture_t {
+  const uint32_t         crc32_corner = 0x6465f296;
+  const uint32_t         crc32_side   = 0xace25896;
+
+  IDirect3DBaseTexture9* tex_corner   = (IDirect3DBaseTexture9 *)1;
+  IDirect3DBaseTexture9* tex_side     = (IDirect3DBaseTexture9 *)1;
+
+  bool in_use                         = false;
+} cutscene_frame;
+
 struct pad_buttons_t {
   const uint32_t     crc32_ps3  = 0x8D7A5256;
   const uint32_t     crc32_xbox = 0x74F5352D;
@@ -43,8 +53,6 @@ struct pad_buttons_t {
   IDirect3DTexture9* tex_ps3    = nullptr;
   IDirect3DTexture9* tex_xbox   = nullptr;
 } pad_buttons;
-
-bool pre_limit        = false;
 
 bool fullscreen_blit  = false;
 bool needs_aspect     = false;
@@ -464,7 +472,7 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
-  if (pre_limit)
+  if (! config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
   return BMF_BeginBufferSwap ();
@@ -487,9 +495,10 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 
   hr = BMF_EndBufferSwap (hr, device);
 
-  if (! pre_limit)
+  if (config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
+#if 0
   // Don't do the silly stuff below if this option is not enabled
   if (! config.framerate.minimize_latency) 
     return hr;
@@ -537,6 +546,7 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
       pDev->Release ();
     }
   }
+#endif
 
   return hr;
 }
@@ -579,22 +589,15 @@ D3D9SetTexture_Detour ( IDirect3DDevice9      *This,
                   _In_  DWORD                  Sampler,
                   _In_  IDirect3DBaseTexture9 *pTexture )
 {
-  static std::set <IDirect3DBaseTexture9*> textures;
-  if (textures.find (pTexture) == textures.end ()) {
-    textures.insert (pTexture);
-
-    if (D3DXSaveTextureToFile == nullptr) {
-      D3DXSaveTextureToFile =
-        (D3DXSaveTextureToFile_t)
-        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-          "D3DXSaveTextureToFileW" );
-    }
-
-    if (D3DXSaveTextureToFile != nullptr) {
-      wchar_t wszFileName [MAX_PATH] = { L'\0' };
-      _swprintf ( wszFileName, L"textures\\SetTexture_%x.dds",
-        pTexture );
-    }
+  //
+  // Hacky way of detecting the fullscreen frame border
+  //
+  if (Sampler == 0) {
+    if (pTexture == cutscene_frame.tex_corner ||
+        pTexture == cutscene_frame.tex_side)
+      cutscene_frame.in_use = true;
+    else
+      cutscene_frame.in_use = false;
   }
 
   return D3D9SetTexture_Original (This, Sampler, pTexture);
@@ -687,13 +690,6 @@ D3D9UpdateTexture_Detour (IDirect3DDevice9      *This,
 #endif
 #ifdef DUMP_TEXTURES
     if (SUCCEEDED (hr)) {
-      if (D3DXSaveTextureToFile == nullptr) {
-        D3DXSaveTextureToFile =
-          (D3DXSaveTextureToFile_t)
-          GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-            "D3DXSaveTextureToFileW" );
-      }
-
       if (D3DXSaveTextureToFile != nullptr) {
         wchar_t wszFileName [MAX_PATH] = { L'\0' };
         _swprintf ( wszFileName, L"textures\\UpdateTexture_%x.dds",
@@ -1130,7 +1126,8 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
                                                                            vs_checksum == 0x272A71B0 || // Splash Screen
                                                                           (vs_checksum == VS_CHECKSUM_TITLE && *game_state.base_addr) ||
                                                                            vs_checksum == VS_CHECKSUM_SUBS ||
-                                                                           vs_checksum == 107874419) || vs_checksum == VS_CHECKSUM_RADIAL)) ||
+                                                                           vs_checksum == 107874419) || vs_checksum == VS_CHECKSUM_RADIAL) ||
+                                                                           cutscene_frame.in_use) ||
      (config.render.blackbar_videos && tzf::RenderFix::bink && vs_checksum == VS_CHECKSUM_BINK)) {
 
     D3DVIEWPORT9 vp9_orig;
@@ -1148,6 +1145,9 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
       else
         TZF_AdjustViewport (This, false);
     }
+
+    if (cutscene_frame.in_use)
+      TZF_AdjustViewport (This, false);
 
     HRESULT hr = 
       D3D9DrawIndexedPrimitive_Original ( This, Type,
@@ -1510,7 +1510,7 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
   // Forcefully complete mipmap chains?
   if ((Format == D3DFMT_DXT1 ||
        Format == D3DFMT_DXT3 ||
-       Format == D3DFMT_DXT5) && config.render.complete_mipmaps) {
+       Format == D3DFMT_DXT5) && config.render.remaster_textures) {
     // The game streams some textures in during normal rendering,
     //   we cannot afford to complete mipmaps then, so skip it...
     if (game_state.isLoading ()) {
@@ -1538,56 +1538,46 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
   }
 #endif
 
-  HRESULT hr;
+#if 0
+  bool dump_cache = false;
 
-  //if (! incomplete) {
-    hr = D3DXCreateTextureFromFileInMemoryEx_Original (
+  wchar_t wszCache [MAX_PATH];
+  wsprintf (wszCache, L"cache\\%X.dds", img_crc32);
+
+  FILE* fTest = _wfopen (wszCache, L"r+");
+
+  if (fTest == nullptr)
+    dump_cache = true;
+
+  if (dump_cache) {
+    if (Usage == 0)
+      Usage = D3DUSAGE_DYNAMIC; // So the dump succeeds
+  } else {
+    fclose (fTest);
+  }
+#endif
+
+  HRESULT hr = D3DXCreateTextureFromFileInMemoryEx_Original (
       pDevice, pSrcData, SrcDataSize, Width, Height,
         Levels, Usage/*D3DUSAGE_DYNAMIC*/, Format, Pool,
           Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
 
 #if 0
-  } else {
-    if (D3DXCreateTextureFromFile == nullptr) {
-      D3DXCreateTextureFromFile =
-        (D3DXCreateTextureFromFile_t)
-        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-          "D3DXCreateTextureFromFileW" );
-    }
-    if (D3DXSaveTextureToFile == nullptr) {
-      D3DXSaveTextureToFile =
-        (D3DXSaveTextureToFile_t)
-        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-          "D3DXSaveTextureToFileW" );
-    }
-
-    wchar_t wszCache [MAX_PATH];
-    wsprintf (wszCache, L"cache\\%X.dds", img_crc32);
-
-    hr = D3DXCreateTextureFromFile (pDevice, wszCache, ppTexture);
-
-    if (FAILED (hr)) {
-      hr = D3DXCreateTextureFromFileInMemoryEx_Original (
-        pDevice, pSrcData, SrcDataSize, Width, Height,
-          Levels, D3DUSAGE_DYNAMIC, Format, Pool,
-            Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
-
-      if (SUCCEEDED (hr)) {
+  if (dump_cache) {
+    if (SUCCEEDED (hr)) {
+      if (D3DXSaveTextureToFile != nullptr) {
         D3DXSaveTextureToFile (wszCache, D3DXIFF_DDS, *ppTexture, pPalette);
       }
-    } else {
-      dll_log.Log (L" * Loaded Cached Texture...");
     }
   }
 #endif
 
   if (SUCCEEDED (hr)) {
-    if (D3DXSaveTextureToFile == nullptr) {
-      D3DXSaveTextureToFile =
-        (D3DXSaveTextureToFile_t)
-        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-          "D3DXSaveTextureToFileW" );
-    }
+    if (img_crc32 == cutscene_frame.crc32_side)
+      cutscene_frame.tex_side = *ppTexture;
+
+    if (img_crc32 == cutscene_frame.crc32_corner)
+      cutscene_frame.tex_corner = *ppTexture;
 
     if (img_crc32 == pad_buttons.crc32_ps3) {
       pad_buttons.tex_ps3 = *ppTexture;
@@ -1605,14 +1595,6 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
       if (D3DXSaveTextureToFile != nullptr)
         D3DXSaveTextureToFile (L"xbox_buttons.dds", D3DXIFF_DDS, *ppTexture, pPalette);
 #endif
-
-      if (D3DXCreateTextureFromFile == nullptr) {
-        D3DXCreateTextureFromFile =
-          (D3DXCreateTextureFromFile_t)
-          GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-            "D3DXCreateTextureFromFileW" );
-      }
-
       if (D3DXCreateTextureFromFile != nullptr) {
         FILE* fCustom = nullptr;
         fCustom = fopen ("custom_buttons.dds", "r+");
@@ -1729,11 +1711,11 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9UpdateSurface_Override",
                       D3D9UpdateSurface_Detour,
             (LPVOID*)&D3D9UpdateSurface_Original );
+#endif
 
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetTexture_Override",
                       D3D9SetTexture_Detour,
             (LPVOID*)&D3D9SetTexture_Original );
-#endif
 #endif
 
 
@@ -1753,6 +1735,20 @@ tzf::RenderFix::Init (void)
                       D3D9EndFrame_Post,
             (LPVOID*)&BMF_EndBufferSwap );
 
+
+  if (D3DXSaveTextureToFile == nullptr) {
+    D3DXSaveTextureToFile =
+      (D3DXSaveTextureToFile_t)
+        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                           "D3DXSaveTextureToFileW" );
+  }
+
+  if (D3DXCreateTextureFromFile == nullptr) {
+    D3DXCreateTextureFromFile =
+      (D3DXCreateTextureFromFile_t)
+        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                           "D3DXCreateTextureFromFileW" );
+  }
 
 
 #if 0
@@ -1819,11 +1815,10 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool>  (&config.render.blackbar_videos);
   eTB_Variable* aspect_correction   = new eTB_VarStub <bool>  (&config.render.aspect_correction);
 
-  eTB_Variable* complete_mipmaps    = new eTB_VarStub <bool>  (&config.render.complete_mipmaps);
+  eTB_Variable* remaster_textures   = new eTB_VarStub <bool>  (&config.render.remaster_textures);
   eTB_Variable* rescale_shadows     = new eTB_VarStub <int>   (&config.render.shadow_rescale);
   eTB_Variable* rescale_env_shadows = new eTB_VarStub <int>   (&config.render.env_shadow_rescale);
   eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
-  eTB_Variable* prelimit            = new eTB_VarStub <bool>  (&pre_limit);
   eTB_Variable* clear_blackbars     = new eTB_VarStub <bool>  (&config.render.clear_blackbars);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
@@ -1831,11 +1826,10 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
 
   command.AddVariable ("AspectCorrectVideos", aspect_correct_vids);
   command.AddVariable ("AspectCorrection",    aspect_correction);
-  command.AddVariable ("CompleteMipmaps",     complete_mipmaps);
+  command.AddVariable ("RemasterTextures",    remaster_textures);
   command.AddVariable ("RescaleShadows",      rescale_shadows);
   command.AddVariable ("RescaleEnvShadows",   rescale_env_shadows);
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
-  command.AddVariable ("PreLimitFPS",         prelimit);
   command.AddVariable ("ClearBlackbars",      clear_blackbars);
 
   command.AddVariable ("TestVS", new eTB_VarStub <int> (&TEST_VS));

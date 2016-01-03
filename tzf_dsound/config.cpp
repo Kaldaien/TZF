@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.2.7";
+std::wstring TZF_VER_STR = L"1.3.0";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -64,7 +64,7 @@ struct {
   tzf::ParameterFloat*   aspect_ratio;
   tzf::ParameterBool*    aspect_correct_vids;
   tzf::ParameterBool*    aspect_correction;
-  tzf::ParameterBool*    complete_mipmaps;
+  tzf::ParameterBool*    remaster_textures;
   tzf::ParameterInt*     rescale_shadows;
   tzf::ParameterInt*     rescale_env_shadows;
   tzf::ParameterFloat*   postproc_ratio;
@@ -336,15 +336,15 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.Render",
          L"AspectCorrection" );
 
-  render.complete_mipmaps =
+  render.remaster_textures =
     static_cast <tzf::ParameterBool *>
       (g_ParameterFactory.create_parameter <bool> (
-        L"Force Complete Mipmaps (FULL MipMap Creation)")
+        L"Various Fixes to Eliminate Texture Aliasing")
       );
-  render.complete_mipmaps->register_to_ini (
+  render.remaster_textures->register_to_ini (
     dll_ini,
       L"TZFIX.Render",
-        L"CompleteMipmaps" );
+        L"RemasterTextures" );
 
   render.rescale_shadows =
     static_cast <tzf::ParameterInt *>
@@ -519,8 +519,8 @@ TZF_LoadConfig (std::wstring name) {
   if (config.render.clear_blackbars && config.render.aspect_correction)
     config.render.blackbar_videos = true;
 
-  if (render.complete_mipmaps->load ())
-    config.render.complete_mipmaps = render.complete_mipmaps->get_value ();
+  if (render.remaster_textures->load ())
+    config.render.remaster_textures = render.remaster_textures->get_value ();
 
   if (render.postproc_ratio->load ())
      config.render.postproc_ratio = render.postproc_ratio->get_value ();
@@ -634,8 +634,8 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   render.aspect_correction->set_value (config.render.aspect_correction);
   render.aspect_correction->store     ();
 
-  render.complete_mipmaps->set_value (config.render.complete_mipmaps);
-  render.complete_mipmaps->store     ();
+  render.remaster_textures->set_value (config.render.remaster_textures);
+  render.remaster_textures->store     ();
 
   render.postproc_ratio->set_value (config.render.postproc_ratio);
   render.postproc_ratio->store     ();

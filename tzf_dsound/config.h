@@ -46,10 +46,10 @@ struct tzf_config_t
     DWORD speedresetcode3_addr = 0x0056E03F; //0x0056D93F;
     DWORD limiter_branch_addr  = 0x00990F53; //0x00990873;
     bool  disable_limiter      = true;
-    bool  auto_adjust          = true;
+    bool  auto_adjust          = false;
     int   target               = 60;
     int   battle_target        = 60;
-    bool  battle_adaptive      = true;
+    bool  battle_adaptive      = false;
     int   cutscene_target      = 30;
   } framerate;
 
@@ -71,8 +71,8 @@ struct tzf_config_t
     DWORD    aspect_addr        = 0x00D56494;//0x00D52398;
     DWORD    fovy_addr          = 0x00D56498;//0x00D5239C;
     bool     blackbar_videos    = true;  // OBSOLETE
-    bool     aspect_correction  = false;
-    bool     complete_mipmaps   = false;
+    bool     aspect_correction  = true;
+    bool     remaster_textures  = false;
     int32_t  shadow_rescale     = -2;
     float    postproc_ratio     =  1.0f;
     bool     clear_blackbars    = true;

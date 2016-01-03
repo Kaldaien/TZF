@@ -48,7 +48,7 @@ uint32_t         tzf::FrameRateFix::target_fps               = 30;
 HMODULE          tzf::FrameRateFix::bink_dll                 = 0;
 HMODULE          tzf::FrameRateFix::kernel32_dll             = 0;
 
-float limiter_tolerance = 0.75f;
+float limiter_tolerance = 0.40f;
 int   max_latency       = 2;
 bool  wait_for_vblank   = true;
 
@@ -145,10 +145,6 @@ public:
           break;
         }
 
-        //if (config.framerate.allow_fake_sleep)
-          //Sleep_Original (0);
-        //if (config.framerate.yield_processor)
-          //YieldProcessor        ();
         QueryPerformanceCounter_Original (&time);
       }
 
