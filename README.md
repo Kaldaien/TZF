@@ -1,7 +1,7 @@
 # TZF
 Tales of Zestiria "Fix" - Community Patch
 
-    Copyright (c) 2015
+    Copyright (c) 2015-2016
 
        Andon "Kaldaien" Coleman,
        Niklas "DrDaxxy" Kielblock,
