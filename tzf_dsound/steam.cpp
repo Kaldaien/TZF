@@ -130,15 +130,15 @@ tzf::SteamFix::Shutdown (void)
 void
 tzf::SteamFix::SetOverlayState (bool active)
 {
-  // Avoid duplicating a BMF feature
-  static HMODULE hD3D9 = GetModuleHandle (L"d3d9.dll");
+  // Avoid duplicating a SK feature
+  static HMODULE hD3D9 = GetModuleHandle (config.system.injector.c_str ());
 
-  typedef void (__stdcall *BMF_SteamAPI_SetOverlayState_t)(bool);
-  static BMF_SteamAPI_SetOverlayState_t BMF_SteamAPI_SetOverlayState =
-    (BMF_SteamAPI_SetOverlayState_t)GetProcAddress ( hD3D9,
-                                                       "BMF_SteamAPI_SetOverlayState" );
+  typedef void (__stdcall *SK_SteamAPI_SetOverlayState_pfn)(bool);
+  static SK_SteamAPI_SetOverlayState_pfn SK_SteamAPI_SetOverlayState =
+    (SK_SteamAPI_SetOverlayState_pfn)GetProcAddress ( hD3D9,
+                                                       "SK_SteamAPI_SetOverlayState" );
 
-  BMF_SteamAPI_SetOverlayState (active);
+  SK_SteamAPI_SetOverlayState (active);
 }
 
 

@@ -92,7 +92,7 @@ tzf_logger_t::init (const char* const szFileName,
   // Split the path, so we can create the log directory if necessary
   //
   if (strstr (szFileName, "\\")) {
-    char* szSplitPath = strdup (szFileName);
+    char* szSplitPath = _strdup (szFileName);
 
     // Replace all instances of '/' with '\'
     size_t len = strlen (szSplitPath);

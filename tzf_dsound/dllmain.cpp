@@ -39,11 +39,114 @@
 
 #pragma comment (lib, "kernel32.lib")
 
+HMODULE hDLLMod      = { 0 }; // Handle to SELF
+HMODULE hInjectorDLL = { 0 }; // Handle to Special K
+
+typedef void (__stdcall *SK_SetPluginName_pfn)(std::wstring name);
+SK_SetPluginName_pfn SK_SetPluginName = nullptr;
+
+extern void TZF_InitCompatBlacklist (void);
+
 DWORD
 WINAPI
 DllThread (LPVOID user)
 {
+  std::wstring plugin_name = L"Tales of Zestiria \"Fix\" v " + TZF_VER_STR;
+
+  dll_log.init  ( "logs/tzfix.log",
+                    "w" );
+  dll_log.LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
+                         L"-------\n" ); // <--- I was bored ;)
+  dll_log.Log   (        L"tzfix.dll Plug-In\n"
+                         L"=========== (Version: v %s) "
+                         L"===========",
+                           TZF_VER_STR.c_str () );
+
+  DWORD speedresetcode_addr  = 0x0046C0F9; //0x0046C529;
+  DWORD speedresetcode2_addr = 0x0056EB41; //0x0056E441;  0x217B464
+  DWORD speedresetcode3_addr = 0x0056E03E; //0x0056D93F;
+  DWORD limiter_branch_addr  = 0x00990F53; //0x00990873;
+  DWORD aspect_addr          = 0x00D52388; //0x00D52398;
+  DWORD fovy_addr            = 0x00D5238C; //0x00D5239C;
+
+  if (! TZF_LoadConfig ()) {
+    config.audio.channels                 = 8;
+    config.audio.sample_hz                = 48000;
+    config.audio.compatibility            = false;
+    config.audio.enable_fix               = true;
+
+    config.framerate.allow_fake_sleep     = false;
+    config.framerate.yield_processor      = true;
+    config.framerate.minimize_latency     = false;
+    config.framerate.speedresetcode_addr  = 0x0046C0F9;
+    config.framerate.speedresetcode2_addr = 0x0056EB41;
+    config.framerate.speedresetcode3_addr = 0x0056E03E;
+    config.framerate.limiter_branch_addr  = 0x00990873;
+    config.framerate.disable_limiter      = true;
+    config.framerate.auto_adjust          = false;
+    config.framerate.target               = 60;
+    config.framerate.battle_target        = 60;
+    config.framerate.battle_adaptive      = false;
+    config.framerate.cutscene_target      = 30;
+
+    config.file_io.capture                = false;
+
+    config.steam.allow_broadcasts         = false;
+
+    config.lua.fix_priest                 = true;
+
+    config.render.aspect_ratio            = 1.777778f;
+    config.render.fovy                    = 0.785398f;
+
+    config.render.aspect_addr             = 0x00D56494;
+    config.render.fovy_addr               = 0x00D56498;
+    config.render.blackbar_videos         = true;
+    config.render.aspect_correction       = true;
+    config.render.postproc_ratio          =  1.0f;
+    config.render.shadow_rescale          = -2;
+    config.render.env_shadow_rescale      =  0;
+    config.render.clear_blackbars         = true;
+
+    config.textures.remaster              = false;
+    config.textures.dump                  = false;
+    config.textures.cache                 = true;
+
+    // Save a new config if none exists
+    TZF_SaveConfig ();
+  }
+
+  hInjectorDLL =
+    GetModuleHandle (config.system.injector.c_str ());
+
+  SK_SetPluginName = 
+    (SK_SetPluginName_pfn)
+      GetProcAddress (hInjectorDLL, "SK_SetPluginName");
+  //SK_GetCommandProcessor =
+    //(SK_GetCommandProcessor_pfn)
+      //GetProcAddress (hInjectorDLL, "SK_GetCommandProcessor");
+
+  //
+  // If this is NULL, the injector system isn't working right!!!
+  //
+  if (SK_SetPluginName != nullptr)
+    SK_SetPluginName (plugin_name);
+
+  // Locate the gamestate address; having this as the first thing in the log
+  //   file is tremendously handy in identifying which client version a user
+  //     is running.
+  {
+    uint8_t  sig [] = { 0x74, 0x42, 0xB1, 0x01, 0x38, 0x1D };
+    intptr_t addr   = (intptr_t)TZF_Scan (sig, 6);
+
+    if (addr != NULL) {
+      game_state.base_addr = (BYTE *)(*(DWORD *)(addr + 6) - 0x13);
+      dll_log.Log (L"[ Sig Scan ] Scanned Gamestate Address: %06Xh", game_state.base_addr);
+    }
+  }
+
   if (TZF_Init_MinHook () == MH_OK) {
+    TZF_InitCompatBlacklist ();
+
     tzf::SoundFix::Init     ();
     tzf::FileIO::Init       ();
     tzf::SteamFix::Init     ();
@@ -55,8 +158,6 @@ DllThread (LPVOID user)
   return 0;
 }
 
-HMODULE hDLLMod = { 0 };
-
 BOOL
 APIENTRY
 DllMain (HMODULE hModule,
@@ -67,79 +168,13 @@ DllMain (HMODULE hModule,
   {
   case DLL_PROCESS_ATTACH:
   {
-    hDLLMod = hModule;
-
-    dll_log.init ("logs/tzfix.log", "w");
-    dll_log.Log  (L"tzfix.log created");
-
-    DWORD speedresetcode_addr  = 0x0046C0F9; //0x0046C529;
-    DWORD speedresetcode2_addr = 0x0056EB41; //0x0056E441;  0x217B464
-    DWORD speedresetcode3_addr = 0x0056E03E; //0x0056D93F;
-    DWORD limiter_branch_addr  = 0x00990F53; //0x00990873;
-    DWORD aspect_addr          = 0x00D52388; //0x00D52398;
-    DWORD fovy_addr            = 0x00D5238C; //0x00D5239C;
-
-    if (! TZF_LoadConfig ()) {
-      config.audio.channels                 = 8;
-      config.audio.sample_hz                = 48000;
-      config.audio.compatibility            = false;
-      config.audio.enable_fix               = true;
-
-      config.framerate.allow_fake_sleep     = false;
-      config.framerate.yield_processor      = true;
-      config.framerate.minimize_latency     = false;
-      config.framerate.speedresetcode_addr  = 0x0046C0F9;
-      config.framerate.speedresetcode2_addr = 0x0056EB41;
-      config.framerate.speedresetcode3_addr = 0x0056E03E;
-      config.framerate.limiter_branch_addr  = 0x00990873;
-      config.framerate.disable_limiter      = true;
-      config.framerate.auto_adjust          = false;
-      config.framerate.target               = 60;
-      config.framerate.battle_target        = 60;
-      config.framerate.battle_adaptive      = false;
-      config.framerate.cutscene_target      = 30;
-
-      config.file_io.capture                = false;
-
-      config.steam.allow_broadcasts         = false;
-
-      config.lua.fix_priest                 = true;
-
-      config.render.aspect_ratio            = 1.777778f;
-      config.render.fovy                    = 0.785398f;
-
-      config.render.aspect_addr             = 0x00D56494;
-      config.render.fovy_addr               = 0x00D56498;
-      config.render.blackbar_videos         = true;
-      config.render.aspect_correction       = true;
-      config.render.remaster_textures       = false;
-      config.render.postproc_ratio          =  1.0f;
-      config.render.shadow_rescale          = -2;
-      config.render.env_shadow_rescale      =  0;
-      config.render.clear_blackbars         = true;
-
-      // Save a new config if none exists
-      TZF_SaveConfig ();
-    }
-
-    // Locate the gamestate address; having this as the first thing in the log
-    //   file is tremendously handy in identifying which client version a user
-    //     is running.
-    {
-      uint8_t  sig [] = { 0x74, 0x42, 0xB1, 0x01, 0x38, 0x1D };
-      intptr_t addr   = (intptr_t)TZF_Scan (sig, 6);
-
-      if (addr != NULL) {
-        game_state.base_addr = (BYTE *)(*(DWORD *)(addr + 6) - 0x13);
-        dll_log.Log (L"Scanned Gamestate Address: %06Xh", game_state.base_addr);
-      }
-    }
+    DisableThreadLibraryCalls ((hDLLMod = hModule));
 
     HANDLE hThread = CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
 
     // Initialization delay
     if (hThread != 0)
-      WaitForSingleObject (hThread, 250UL);
+      WaitForSingleObject (hThread, 125UL);
   } break;
 
   case DLL_THREAD_ATTACH:
@@ -157,8 +192,15 @@ DllMain (HMODULE hModule,
     TZF_UnInit_MinHook ();
     TZF_SaveConfig     ();
 
-    dll_log.LogEx      (true,  L"Closing log file... ");
-    dll_log.close      ();
+
+    dll_log.LogEx ( false, L"=========== (Version: v %s) "
+                           L"===========\n",
+                             TZF_VER_STR.c_str () );
+    dll_log.LogEx ( true,  L"End TZFix Plug-In\n" );
+    dll_log.LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
+                           L"-------\n" );
+
+    dll_log.close ();
     break;
   }
 

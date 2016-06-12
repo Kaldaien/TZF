@@ -130,6 +130,11 @@
       <OmitFramePointers>false</OmitFramePointers>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>SyncCThrow</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -137,6 +142,15 @@
       <OptimizeReferences>true</OptimizeReferences>
       <ModuleDefinitionFile>symbols.def</ModuleDefinitionFile>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <FullProgramDatabaseFile>true</FullProgramDatabaseFile>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>true</MapExports>
+      <LargeAddressAware>true</LargeAddressAware>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>false</DataExecutionPrevention>
+      <SupportUnloadOfDelayLoadedDLL>true</SupportUnloadOfDelayLoadedDLL>
+      <SupportNobindOfDelayLoadedDLL>true</SupportNobindOfDelayLoadedDLL>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -144,11 +158,12 @@
       <WarningLevel>Level3</WarningLevel>
       <PrecompiledHeader>
       </PrecompiledHeader>
-      <Optimization>MaxSpeed</Optimization>
+      <Optimization>Full</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_USRDLL;TZF_DSOUND_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -176,9 +191,11 @@
     <ClInclude Include="scanner.h" />
     <ClInclude Include="sound.h" />
     <ClInclude Include="steam.h" />
+    <ClInclude Include="textures.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="command.cpp" />
+    <ClCompile Include="compatibility.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="dllmain.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</CompileAsManaged>
@@ -206,6 +223,7 @@
     <ClCompile Include="sound.cpp" />
     <ClCompile Include="general_io.cpp" />
     <ClCompile Include="steam.cpp" />
+    <ClCompile Include="textures.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="symbols.def" />

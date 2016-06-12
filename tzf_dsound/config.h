@@ -72,12 +72,17 @@ struct tzf_config_t
     DWORD    fovy_addr          = 0x00D56498;//0x00D5239C;
     bool     blackbar_videos    = true;  // OBSOLETE
     bool     aspect_correction  = true;
-    bool     remaster_textures  = false;
     int32_t  shadow_rescale     = -2;
     float    postproc_ratio     =  1.0f;
     bool     clear_blackbars    = true;
     int32_t  env_shadow_rescale = 0;
   } render;
+
+  struct {
+    bool     dump               = false;
+    bool     remaster           = false;
+    bool     cache              = true;
+  } textures;
 
   struct {
     std::wstring swap_keys = L"";
@@ -88,6 +93,8 @@ struct tzf_config_t
             version         = TZF_VER_STR;
     std::wstring
             intro_video     = DEFAULT_BK2;
+    std::wstring
+            injector        = L"d3d9.dll";
   } system;
 };
 

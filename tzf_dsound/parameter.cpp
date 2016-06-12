@@ -79,7 +79,7 @@ tzf::ParameterInt64::set_value (int64_t val)
 void
 tzf::ParameterInt64::set_value_str (std::wstring str)
 {
-  value = _wtol (str.c_str ());
+  value = _wtoll (str.c_str ());
 }
 
 
@@ -129,6 +129,17 @@ tzf::ParameterFloat::get_value_str (void)
 {
   wchar_t val_str [16];
   swprintf (val_str, L"%f", value);
+
+  // Remove trailing 0's after the .
+  int len = wcslen (val_str);
+  for (int i = (len - 1); i > 1; i--) {
+    if (val_str [i] == L'0' && val_str [i - 1] != L'.')
+      len--;
+    if (val_str [i] != L'0' && val_str [i] != L'\0')
+      break;
+  }
+
+  val_str [len] = L'\0';
 
   return std::wstring (val_str);
 }

@@ -19,6 +19,9 @@
  *   If not, see <http://www.gnu.org/licenses/>.
  *
 **/
+
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <string>
 
 #include "hook.h"
@@ -38,6 +41,32 @@
 #pragma comment (lib, "winmm.lib")
 
 #include <comdef.h>
+
+typedef SHORT (WINAPI *GetAsyncKeyState_pfn)(
+  _In_ int vKey
+);
+
+typedef UINT (WINAPI *GetRawInputData_pfn)(
+  _In_      HRAWINPUT hRawInput,
+  _In_      UINT      uiCommand,
+  _Out_opt_ LPVOID    pData,
+  _Inout_   PUINT     pcbSize,
+  _In_      UINT      cbSizeHeader
+);
+
+typedef BOOL (WINAPI *GetCursorInfo_pfn)
+  (_Inout_ PCURSORINFO pci);
+
+typedef BOOL (WINAPI *GetCursorPos_pfn)
+  (_Out_ LPPOINT lpPoint);
+
+GetCursorInfo_pfn    GetCursorInfo_Original    = nullptr;
+GetCursorPos_pfn     GetCursorPos_Original     = nullptr;
+GetAsyncKeyState_pfn GetAsyncKeyState_Original = nullptr;
+GetRawInputData_pfn  GetRawInputData_Original  = nullptr;
+
+BOOL WINAPI GetCursorInfo_Detour (_Inout_ PCURSORINFO pci);
+BOOL WINAPI GetCursorPos_Detour  (_Out_   LPPOINT     lpPoint);
 
 struct window_t {
   DWORD proc_id;
@@ -97,101 +126,6 @@ CalcCursorPos (LPPOINT pPoint)
   pPoint->y = (pPoint->y - yoff) * yscale;
 
   return *pPoint;
-}
-
-
-WNDPROC original_wndproc = nullptr;
-
-LRESULT
-CALLBACK
-DetourWindowProc ( _In_  HWND   hWnd,
-                   _In_  UINT   uMsg,
-                   _In_  WPARAM wParam,
-                   _In_  LPARAM lParam )
-{
-  if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) {
-    static POINT last_p = { LONG_MIN, LONG_MIN };
-
-    POINT p;
-
-    p.x = MAKEPOINTS (lParam).x;
-    p.y = MAKEPOINTS (lParam).y;
-
-    if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
-      // Only do this if cursor actually moved!
-      //
-      //   Otherwise, it tricks the game into thinking the input device changed
-      //     from gamepad to mouse (and changes button icons).
-      if (last_p.x != p.x || last_p.y != p.y) {
-        CalcCursorPos (&p);
-
-        last_p = p;
-      }
-
-      return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, MAKELPARAM (p.x, p.y));
-    }
-
-    last_p = p;
-  }
-
-  return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, lParam);
-}
-
-
-typedef BOOL (WINAPI *GetCursorInfo_t)
-  (_Inout_ PCURSORINFO pci);
-
-GetCursorInfo_t GetCursorInfo_Original = nullptr;
-
-BOOL
-WINAPI
-GetCursorInfo_Detour (PCURSORINFO pci)
-{
-  BOOL ret = GetCursorInfo_Original (pci);
-
-  // Correct the cursor position for Aspect Ratio
-  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
-    POINT pt;
-
-    pt.x = pci->ptScreenPos.x;
-    pt.y = pci->ptScreenPos.y;
-
-    CalcCursorPos (&pt);
-
-    pci->ptScreenPos.x = pt.x;
-    pci->ptScreenPos.y = pt.y;
-  }
-
-  return ret;
-}
-
-typedef BOOL (WINAPI *GetCursorPos_t)
-  (_Out_ LPPOINT lpPoint);
-
-GetCursorPos_t GetCursorPos_Original = nullptr;
-
-BOOL
-WINAPI
-GetCursorPos_Detour (LPPOINT lpPoint)
-{
-  BOOL ret = GetCursorPos_Original (lpPoint);
-
-  // Correct the cursor position for Aspect Ratio
-  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction)
-    CalcCursorPos (lpPoint);
-
-  // Defer initialization of the Window Message redirection stuff until
-  //   the first time the game calls GetCursorPos (...)
-  if (original_wndproc == nullptr && tzf::RenderFix::hWndDevice != NULL) {
-    original_wndproc =
-      (WNDPROC)GetWindowLong (tzf::RenderFix::hWndDevice, GWL_WNDPROC);
-
-    SetWindowLong ( tzf::RenderFix::hWndDevice,
-                      GWL_WNDPROC,
-                        (LONG)DetourWindowProc );
-  }
-
-  return ret;
 }
 
 
@@ -259,13 +193,13 @@ public:
 
   void Draw (void)
   {
-    typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
+    typedef BOOL (__stdcall *SK_DrawExternalOSD_pfn)(std::string app_name, std::string text);
 
     static HMODULE               hMod =
       GetModuleHandle (L"d3d9.dll");
-    static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
+    static SK_DrawExternalOSD_pfn SK_DrawExternalOSD
       =
-      (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
+      (SK_DrawExternalOSD_pfn)GetProcAddress (hMod, "SK_DrawExternalOSD");
 
     std::string output;
 
@@ -292,13 +226,15 @@ public:
       }
     }
 
-    BMF_DrawExternalOSD ("ToZ Fix", output.c_str ());
+    SK_DrawExternalOSD ("ToZ Fix", output.c_str ());
   }
 
   HANDLE GetThread (void)
   {
     return hMsgPump;
   }
+
+  bool isVisible (void) { return visible; }
 
   static DWORD
   WINAPI
@@ -326,13 +262,22 @@ public:
         continue;
       }
 
+      DWORD dwProc;
+
       dwThreadId =
-        GetWindowThreadProcessId (tzf::RenderFix::hWndDevice, nullptr);
+        GetWindowThreadProcessId (tzf::RenderFix::hWndDevice, &dwProc);
+
+      // Ugly hack, but a different window might be in the foreground...
+      if (dwProc != GetCurrentProcessId ()) {
+        //dll_log.Log (L"[Input Hook] *** Tried to hook the wrong process!!!");
+        Sleep (83);
+        continue;
+      }
 
       break;
     }
 
-    dll_log.Log ( L"  # Found window in %03.01f seconds, "
+    dll_log.Log ( L"[Input Hook]  # Found window in %03.01f seconds, "
                      L"installing keyboard hook...",
                    (float)(timeGetTime () - dwTime) / 1000.0f );
 
@@ -345,13 +290,13 @@ public:
                                                           dwThreadId ))) {
       _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-      dll_log.Log ( L"  @ SetWindowsHookEx failed: 0x%04X (%s)",
+      dll_log.Log ( L"[Input Hook]  @ SetWindowsHookEx failed: 0x%04X (%s)",
                     err.WCode (), err.ErrorMessage () );
 
       ++hits;
 
       if (hits >= 5) {
-        dll_log.Log ( L"  * Failed to install keyboard hook after %lu tries... "
+        dll_log.Log ( L"[Input Hook]  * Failed to install keyboard hook after %lu tries... "
           L"bailing out!",
           hits );
         return 0;
@@ -366,13 +311,13 @@ public:
                                                        dwThreadId ))) {
       _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-      dll_log.Log ( L"  @ SetWindowsHookEx failed: 0x%04X (%s)",
+      dll_log.Log ( L"[Input Hook]  @ SetWindowsHookEx failed: 0x%04X (%s)",
                     err.WCode (), err.ErrorMessage () );
 
       ++hits;
 
       if (hits >= 5) {
-        dll_log.Log ( L"  * Failed to install mouse hook after %lu tries... "
+        dll_log.Log ( L"[Input Hook]  * Failed to install mouse hook after %lu tries... "
           L"bailing out!",
           hits );
         return 0;
@@ -381,7 +326,7 @@ public:
       Sleep (1);
     }
 
-    dll_log.Log ( L"  * Installed keyboard hook for command console... "
+    dll_log.Log ( L"[Input Hook]  * Installed keyboard hook for command console... "
                         L"%lu %s (%lu ms!)",
                   hits,
                     hits > 1 ? L"tries" : L"try",
@@ -440,15 +385,15 @@ public:
   CALLBACK
   KeyboardProc (int nCode, WPARAM wParam, LPARAM lParam)
   {
-    typedef BOOL (__stdcall *BMF_DrawExternalOSD_t)(std::string app_name, std::string text);
+    typedef BOOL (__stdcall *SK_DrawExternalOSD_pfn)(std::string app_name, std::string text);
 
     static HMODULE               hMod =
-      GetModuleHandle (L"d3d9.dll");
-    static BMF_DrawExternalOSD_t BMF_DrawExternalOSD
+      GetModuleHandle (config.system.injector.c_str ());
+    static SK_DrawExternalOSD_pfn SK_DrawExternalOSD
                                       =
-      (BMF_DrawExternalOSD_t)GetProcAddress (hMod, "BMF_DrawExternalOSD");
+      (SK_DrawExternalOSD_pfn)GetProcAddress (hMod, "SK_DrawExternalOSD");
 
-    if (nCode >= 0) {
+    if (nCode == 0) {
       BYTE    vkCode   = LOWORD (wParam) & 0xFF;
       BYTE    scanCode = HIWORD (lParam) & 0x7F;
       bool    repeated = LOWORD (lParam);
@@ -538,7 +483,10 @@ public:
           if (keys_ [VK_TAB] && new_press) {
             visible = ! visible;
             tzf::SteamFix::SetOverlayState (visible);
+
+            return -1;
           }
+
           else if (keys_ ['1'] && new_press) {
             command.ProcessCommandLine ("AutoAdjust false");
             command.ProcessCommandLine ("TargetFPS 60");
@@ -603,7 +551,8 @@ public:
                                 keys_,
                               (LPWORD)key_str,
                                 0,
-                                GetKeyboardLayout (0) )) {
+                                GetKeyboardLayout (0) ) &&
+                                  isprint ( *key_str ) ) {
             strncat (text, key_str, 1);
             command_issued = false;
           }
@@ -613,13 +562,151 @@ public:
       else if ((! keyDown))
         keys_ [vkCode] = 0x00;
 
-      if (visible) return 1;
+      if (visible) return -1;
     }
 
     return CallNextHookEx (TZF_InputHooker::getInstance ()->hooks.keyboard, nCode, wParam, lParam);
   };
 };
 
+
+
+WNDPROC original_wndproc = nullptr;
+
+UINT
+WINAPI
+GetRawInputData_Detour (_In_      HRAWINPUT hRawInput,
+                        _In_      UINT      uiCommand,
+                        _Out_opt_ LPVOID    pData,
+                        _Inout_   PUINT     pcbSize,
+                        _In_      UINT      cbSizeHeader)
+{
+  int size = GetRawInputData_Original (hRawInput, uiCommand, pData, pcbSize, cbSizeHeader);
+
+  // Block keyboard input to the game while the console is active
+  if (TZF_InputHooker::getInstance ()->isVisible () && uiCommand == RID_INPUT) {
+    *pcbSize = 0;
+    return 0;
+  }
+
+  return size;
+}
+
+SHORT
+WINAPI
+GetAsyncKeyState_Detour (_In_ int vKey)
+{
+#define TZF_ConsumeVKey(vKey) { GetAsyncKeyState_Original(vKey); return 0; }
+
+  // Block keyboard input to the game while the console is active
+  if (TZF_InputHooker::getInstance ()->isVisible ()) {
+    TZF_ConsumeVKey (vKey);
+  }
+
+  return GetAsyncKeyState_Original (vKey);
+}
+
+
+LRESULT
+CALLBACK
+DetourWindowProc ( _In_  HWND   hWnd,
+                   _In_  UINT   uMsg,
+                   _In_  WPARAM wParam,
+                   _In_  LPARAM lParam )
+{
+  bool console_visible =
+    TZF_InputHooker::getInstance ()->isVisible ();
+
+  if (console_visible) {
+    if (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST)
+      return DefWindowProc (hWnd, uMsg, wParam, lParam);
+    // Block RAW Input
+    if (uMsg == WM_INPUT)
+      return DefWindowProc (hWnd, uMsg, wParam, lParam);
+  }
+
+  if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) {
+    static POINT last_p = { LONG_MIN, LONG_MIN };
+
+    POINT p;
+
+    p.x = MAKEPOINTS (lParam).x;
+    p.y = MAKEPOINTS (lParam).y;
+
+    if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
+      // Only do this if cursor actually moved!
+      //
+      //   Otherwise, it tricks the game into thinking the input device changed
+      //     from gamepad to mouse (and changes button icons).
+      if (last_p.x != p.x || last_p.y != p.y) {
+        CalcCursorPos (&p);
+
+        last_p = p;
+      }
+
+      return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, MAKELPARAM (p.x, p.y));
+    }
+
+    last_p = p;
+  }
+
+  return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, lParam);
+}
+
+
+BOOL
+WINAPI
+GetCursorInfo_Detour (PCURSORINFO pci)
+{
+  BOOL ret = GetCursorInfo_Original (pci);
+
+  // Correct the cursor position for Aspect Ratio
+  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
+    POINT pt;
+
+    pt.x = pci->ptScreenPos.x;
+    pt.y = pci->ptScreenPos.y;
+
+    CalcCursorPos (&pt);
+
+    pci->ptScreenPos.x = pt.x;
+    pci->ptScreenPos.y = pt.y;
+  }
+
+  return ret;
+}
+
+BOOL
+WINAPI
+GetCursorPos_Detour (LPPOINT lpPoint)
+{
+  BOOL ret = GetCursorPos_Original (lpPoint);
+
+  // Correct the cursor position for Aspect Ratio
+  if (game_state.needsFixedMouseCoords () && config.render.aspect_correction)
+    CalcCursorPos (lpPoint);
+
+  // Defer initialization of the Window Message redirection stuff until
+  //   the first time the game calls GetCursorPos (...)
+  if (original_wndproc == nullptr && tzf::RenderFix::hWndDevice != NULL) {
+    original_wndproc =
+      (WNDPROC)GetWindowLong (tzf::RenderFix::hWndDevice, GWL_WNDPROC);
+
+    SetWindowLong ( tzf::RenderFix::hWndDevice,
+                      GWL_WNDPROC,
+                        (LONG)DetourWindowProc );
+
+    TZF_CreateDLLHook ( L"user32.dll", "GetRawInputData",
+                        GetRawInputData_Detour,
+              (LPVOID*)&GetRawInputData_Original );
+
+    TZF_CreateDLLHook ( L"user32.dll", "GetAsyncKeyState",
+                        GetAsyncKeyState_Detour,
+              (LPVOID*)&GetAsyncKeyState_Original );
+  }
+
+  return ret;
+}
 
 MH_STATUS
 WINAPI
@@ -630,14 +717,14 @@ TZF_CreateFuncHook ( LPCWSTR pwszFuncName,
 {
   static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  typedef MH_STATUS (WINAPI *BMF_CreateFuncHook_t)
+  typedef MH_STATUS (WINAPI *SK_CreateFuncHook_pfn)
       ( LPCWSTR pwszFuncName, LPVOID  pTarget,
         LPVOID  pDetour,      LPVOID *ppOriginal );
-  static BMF_CreateFuncHook_t BMF_CreateFuncHook =
-    (BMF_CreateFuncHook_t)GetProcAddress (hParent, "BMF_CreateFuncHook");
+  static SK_CreateFuncHook_pfn SK_CreateFuncHook =
+    (SK_CreateFuncHook_pfn)GetProcAddress (hParent, "SK_CreateFuncHook");
 
   return
-    BMF_CreateFuncHook (pwszFuncName, pTarget, pDetour, ppOriginal);
+    SK_CreateFuncHook (pwszFuncName, pTarget, pDetour, ppOriginal);
 }
 
 MH_STATUS
@@ -648,15 +735,15 @@ TZF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
 {
   static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  typedef MH_STATUS (WINAPI *BMF_CreateDLLHook_t)(
+  typedef MH_STATUS (WINAPI *SK_CreateDLLHook_pfn)(
         LPCWSTR pwszModule, LPCSTR  pszProcName,
         LPVOID  pDetour,    LPVOID *ppOriginal, 
         LPVOID *ppFuncAddr );
-  static BMF_CreateDLLHook_t BMF_CreateDLLHook =
-    (BMF_CreateDLLHook_t)GetProcAddress (hParent, "BMF_CreateDLLHook");
+  static SK_CreateDLLHook_pfn SK_CreateDLLHook =
+    (SK_CreateDLLHook_pfn)GetProcAddress (hParent, "SK_CreateDLLHook");
 
   return
-    BMF_CreateDLLHook (pwszModule,pszProcName,pDetour,ppOriginal,ppFuncAddr);
+    SK_CreateDLLHook (pwszModule,pszProcName,pDetour,ppOriginal,ppFuncAddr);
 }
 
 MH_STATUS
@@ -665,11 +752,11 @@ TZF_EnableHook (LPVOID pTarget)
 {
   static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  typedef MH_STATUS (WINAPI *BMF_EnableHook_t)(LPVOID pTarget);
-  static BMF_EnableHook_t BMF_EnableHook =
-    (BMF_EnableHook_t)GetProcAddress (hParent, "BMF_EnableHook");
+  typedef MH_STATUS (WINAPI *SK_EnableHook_pfn)(LPVOID pTarget);
+  static SK_EnableHook_pfn SK_EnableHook =
+    (SK_EnableHook_pfn)GetProcAddress (hParent, "SK_EnableHook");
 
-  return BMF_EnableHook (pTarget);
+  return SK_EnableHook (pTarget);
 }
 
 MH_STATUS
@@ -678,11 +765,11 @@ TZF_DisableHook (LPVOID pTarget)
 {
   static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  typedef MH_STATUS (WINAPI *BMF_DisableHook_t)(LPVOID pTarget);
-  static BMF_DisableHook_t BMF_DisableHook =
-    (BMF_DisableHook_t)GetProcAddress (hParent, "BMF_DisableHook");
+  typedef MH_STATUS (WINAPI *SK_DisableHook_pfn)(LPVOID pTarget);
+  static SK_DisableHook_pfn SK_DisableHook =
+    (SK_DisableHook_pfn)GetProcAddress (hParent, "SK_DisableHook");
 
-  return BMF_DisableHook (pTarget);
+  return SK_DisableHook (pTarget);
 }
 
 MH_STATUS
@@ -691,11 +778,11 @@ TZF_RemoveHook (LPVOID pTarget)
 {
   static HMODULE hParent = GetModuleHandle (L"d3d9.dll");
 
-  typedef MH_STATUS (WINAPI *BMF_RemoveHook_t)(LPVOID pTarget);
-  static BMF_RemoveHook_t BMF_RemoveHook =
-    (BMF_RemoveHook_t)GetProcAddress (hParent, "BMF_RemoveHook");
+  typedef MH_STATUS (WINAPI *SK_RemoveHook_pfn)(LPVOID pTarget);
+  static SK_RemoveHook_pfn SK_RemoveHook =
+    (SK_RemoveHook_pfn)GetProcAddress (hParent, "SK_RemoveHook");
 
-  return BMF_RemoveHook (pTarget);
+  return SK_RemoveHook (pTarget);
 }
 
 MH_STATUS

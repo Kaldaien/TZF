@@ -26,33 +26,13 @@
 #include "log.h"
 #include "scanner.h"
 
+#include "textures.h"
+
 #include <stdint.h>
 
 #include <d3d9.h>
 #include <d3d9types.h>
 
-#include <set>
-
-// Textures that are missing mipmaps
-std::set <IDirect3DBaseTexture9 *> incomplete_textures;
-
-struct frame_texture_t {
-  const uint32_t         crc32_corner = 0x6465f296;
-  const uint32_t         crc32_side   = 0xace25896;
-
-  IDirect3DBaseTexture9* tex_corner   = (IDirect3DBaseTexture9 *)1;
-  IDirect3DBaseTexture9* tex_side     = (IDirect3DBaseTexture9 *)1;
-
-  bool in_use                         = false;
-} cutscene_frame;
-
-struct pad_buttons_t {
-  const uint32_t     crc32_ps3  = 0x8D7A5256;
-  const uint32_t     crc32_xbox = 0x74F5352D;
-
-  IDirect3DTexture9* tex_ps3    = nullptr;
-  IDirect3DTexture9* tex_xbox   = nullptr;
-} pad_buttons;
 
 bool fullscreen_blit  = false;
 bool needs_aspect     = false;
@@ -102,21 +82,6 @@ TZF_ComputeAspectCoeffs (float& x, float& y, float& xoff, float& yoff)
   }
 }
 
-typedef D3DMATRIX* (WINAPI *D3DXMatrixMultiply_t)(_Inout_    D3DMATRIX *pOut,
-                                                  _In_ const D3DMATRIX *pM1,
-                                                  _In_ const D3DMATRIX *pM2);
-
-D3DXMatrixMultiply_t D3DXMatrixMultiply_Original = nullptr;
-
-D3DMATRIX*
-WINAPI
-D3DXMatrixMultiply_Detour (_Inout_       D3DMATRIX *pOut,
-                           _In_          D3DMATRIX *pM1,
-                           _In_          D3DMATRIX *pM2)
-{
-  return D3DXMatrixMultiply_Original (pOut, pM1, pM2);
-}
-
 #include "hook.h"
 
 typedef HRESULT (STDMETHODCALLTYPE *SetSamplerState_t)
@@ -141,7 +106,7 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 
-#if 0
+#if 1
   static int aniso = 1;
 
   //dll_log.Log ( L" [!] IDirect3DDevice9::SetSamplerState (%lu, %lu, %lu)",
@@ -155,26 +120,28 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
     //dll_log.Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
 
     if (Type < 8) {
-      //if (Value != D3DTEXF_ANISOTROPIC)
-        //D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
+      if (Value != D3DTEXF_ANISOTROPIC)
+        D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
 
       //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
-      if (Type == D3DSAMP_MIPFILTER) {
-        if (Value != D3DTEXF_NONE)
-          Value = D3DTEXF_ANISOTROPIC;
+      if (Type == D3DSAMP_MIPFILTER /*&& trilinear*/) {
+        Value = D3DTEXF_LINEAR;
       }
+
       if (Type == D3DSAMP_MAGFILTER ||
                   D3DSAMP_MINFILTER)
         if (Value != D3DTEXF_POINT)
           Value = D3DTEXF_ANISOTROPIC;
     }
   }
+
   if (Type == D3DSAMP_MAXANISOTROPY) {
     aniso = Value;
     //Value = 16;
   }
-  //if (Type == D3DSAMP_MAXMIPLEVEL)
-    //Value = 0;
+
+  if (Type == D3DSAMP_MAXMIPLEVEL)
+    Value = 0;
 #endif
 
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
@@ -349,13 +316,13 @@ const uint32_t PS_CHECKSUM_CHAR_SHADOW = 1180797962UL;
 const uint32_t VS_CHECKSUM_CHAR_SHADOW =  446150694UL;
 
 
-typedef void (STDMETHODCALLTYPE *BMF_BeginBufferSwap_t)(void);
-BMF_BeginBufferSwap_t BMF_BeginBufferSwap = nullptr;
+typedef void (STDMETHODCALLTYPE *SK_BeginBufferSwap_pfn)(void);
+SK_BeginBufferSwap_pfn SK_BeginBufferSwap = nullptr;
 
-typedef HRESULT (STDMETHODCALLTYPE *BMF_EndBufferSwap_t)
+typedef HRESULT (STDMETHODCALLTYPE *SK_EndBufferSwap_pfn)
   (HRESULT   hr,
    IUnknown* device);
-BMF_EndBufferSwap_t BMF_EndBufferSwap = nullptr;
+SK_EndBufferSwap_pfn SK_EndBufferSwap = nullptr;
 
 typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
   IDirect3DDevice9* This,
@@ -475,7 +442,7 @@ D3D9EndFrame_Pre (void)
   if (! config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
-  return BMF_BeginBufferSwap ();
+  return SK_BeginBufferSwap ();
 }
 
 COM_DECLSPEC_NOTHROW
@@ -485,7 +452,7 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 {
   // Ignore anything that's not the primary render device.
   if (device != tzf::RenderFix::pDevice)
-    return BMF_EndBufferSwap (hr, device);
+    return SK_EndBufferSwap (hr, device);
 
   scene_count = 0;
 
@@ -493,86 +460,13 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 
   TZF_DrawCommandConsole ();
 
-  hr = BMF_EndBufferSwap (hr, device);
+  hr = SK_EndBufferSwap (hr, device);
 
   if (config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
-#if 0
-  // Don't do the silly stuff below if this option is not enabled
-  if (! config.framerate.minimize_latency) 
-    return hr;
-
-  if (SUCCEEDED (hr) && device != nullptr) {
-    IDirect3DSurface9* pBackBuffer = nullptr;
-    IDirect3DDevice9*  pDev        = nullptr;
-
-    if (SUCCEEDED (device->QueryInterface ( __uuidof (IDirect3DDevice9),
-                                              (void **)&pDev )))
-    {
-      if (SUCCEEDED ( pDev->GetBackBuffer ( 0,
-                                              0,
-                                                D3DBACKBUFFER_TYPE_MONO,
-                                                  &pBackBuffer ) ))
-      {
-        D3DLOCKED_RECT lock;
-
-        //
-        // This will block and stall the pipeline; effectively enforcing a
-        //   pre-rendered frame limit of 1 without using any vendor-specific
-        //     driver settings. 
-        //
-        //   Huzzah!
-        //
-        //DWORD dwTime = timeGetTime ();
-
-        if (SUCCEEDED ( pBackBuffer->LockRect ( &lock,
-                                                  nullptr,
-                                                    D3DLOCK_NO_DIRTY_UPDATE |
-                                                      D3DLOCK_READONLY      |
-                                                        D3DLOCK_NOSYSLOCK )))
-          pBackBuffer->UnlockRect ();
-
-#if 0
-        DWORD dwWait = timeGetTime () - dwTime;
-        if (dwWait > 0) {
-          dll_log.Log (L"Locked Backbuffer and waited %lu ms", dwWait);
-        }
-#endif
-
-        pBackBuffer->Release ();
-      }
-
-      pDev->Release ();
-    }
-  }
-#endif
-
   return hr;
 }
-
-typedef enum D3DXIMAGE_FILEFORMAT { 
-  D3DXIFF_BMP          = 0,
-  D3DXIFF_JPG          = 1,
-  D3DXIFF_TGA          = 2,
-  D3DXIFF_PNG          = 3,
-  D3DXIFF_DDS          = 4,
-  D3DXIFF_PPM          = 5,
-  D3DXIFF_DIB          = 6,
-  D3DXIFF_HDR          = 7,
-  D3DXIFF_PFM          = 8,
-  D3DXIFF_FORCE_DWORD  = 0x7fffffff
-} D3DXIMAGE_FILEFORMAT, *LPD3DXIMAGE_FILEFORMAT;
-
-typedef HRESULT (STDMETHODCALLTYPE *D3DXSaveTextureToFile_t)(
-  _In_       LPCWSTR                pDestFile,
-  _In_       D3DXIMAGE_FILEFORMAT   DestFormat,
-  _In_       LPDIRECT3DBASETEXTURE9 pSrcTexture,
-  _In_ const PALETTEENTRY           *pSrcPalette
-  );
-
-D3DXSaveTextureToFile_t
-  D3DXSaveTextureToFile = nullptr;
 
 typedef HRESULT (STDMETHODCALLTYPE *SetTexture_t)
   (     IDirect3DDevice9      *This,
@@ -593,11 +487,11 @@ D3D9SetTexture_Detour ( IDirect3DDevice9      *This,
   // Hacky way of detecting the fullscreen frame border
   //
   if (Sampler == 0) {
-    if (pTexture == cutscene_frame.tex_corner ||
-        pTexture == cutscene_frame.tex_side)
-      cutscene_frame.in_use = true;
+    if (pTexture == tzf::RenderFix::cutscene_frame.tex_corner ||
+        pTexture == tzf::RenderFix::cutscene_frame.tex_side)
+      tzf::RenderFix::cutscene_frame.in_use = true;
     else
-      cutscene_frame.in_use = false;
+      tzf::RenderFix::cutscene_frame.in_use = false;
   }
 
   return D3D9SetTexture_Original (This, Sampler, pTexture);
@@ -828,7 +722,7 @@ D3D9CreateDepthStencilSurface_Detour (IDirect3DDevice9     *This,
                                       IDirect3DSurface9   **ppSurface,
                                       HANDLE               *pSharedHandle)
 {
-  dll_log.Log (L" [!] IDirect3DDevice9::CreateDepthStencilSurface (%lu, %lu, "
+  dll_log.Log (L"[   D3D9   ] [!] IDirect3DDevice9::CreateDepthStencilSurface (%lu, %lu, "
                       L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
                  Width, Height, Format, MultiSample, MultisampleQuality,
                  Discard, ppSurface, pSharedHandle);
@@ -864,7 +758,7 @@ D3D9CreateRenderTarget_Detour (IDirect3DDevice9     *This,
                                IDirect3DSurface9   **ppSurface,
                                HANDLE               *pSharedHandle)
 {
-  dll_log.Log (L" [!] IDirect3DDevice9::CreateRenderTarget (%lu, %lu, "
+  dll_log.Log (L"[   D3D9   ] [!] IDirect3DDevice9::CreateRenderTarget (%lu, %lu, "
                       L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
                  Width, Height, Format, MultiSample, MultisampleQuality,
                  Lockable, ppSurface, pSharedHandle);
@@ -1127,7 +1021,7 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
                                                                           (vs_checksum == VS_CHECKSUM_TITLE && *game_state.base_addr) ||
                                                                            vs_checksum == VS_CHECKSUM_SUBS ||
                                                                            vs_checksum == 107874419) || vs_checksum == VS_CHECKSUM_RADIAL) ||
-                                                                           cutscene_frame.in_use) ||
+                                                                           tzf::RenderFix::cutscene_frame.in_use) ||
      (config.render.blackbar_videos && tzf::RenderFix::bink && vs_checksum == VS_CHECKSUM_BINK)) {
 
     D3DVIEWPORT9 vp9_orig;
@@ -1146,7 +1040,7 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
         TZF_AdjustViewport (This, false);
     }
 
-    if (cutscene_frame.in_use)
+    if (tzf::RenderFix::cutscene_frame.in_use)
       TZF_AdjustViewport (This, false);
 
     HRESULT hr = 
@@ -1270,7 +1164,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [2] != 0.0f || 
         pConstantData [3] != 0.0f) {
-      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+      dll_log.Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
     if (dim != 0) {
@@ -1302,7 +1196,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [2] != 0.0f || 
         pConstantData [3] != 0.0f) {
-      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+      dll_log.Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
     return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
@@ -1339,7 +1233,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [2] != 0.0f || 
         pConstantData [3] != 0.0f) {
-      dll_log.Log (L" Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+      dll_log.Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
     if (dim != 0) {
@@ -1436,50 +1330,7 @@ D3D9SetPixelShaderConstantF_Detour (IDirect3DDevice9* This,
 }
 
 
-
-#define D3DX_DEFAULT ((UINT) -1)
-typedef struct D3DXIMAGE_INFO {
-  UINT                 Width;
-  UINT                 Height;
-  UINT                 Depth;
-  UINT                 MipLevels;
-  D3DFORMAT            Format;
-  D3DRESOURCETYPE      ResourceType;
-  D3DXIMAGE_FILEFORMAT ImageFileFormat;
-} D3DXIMAGE_INFO, *LPD3DXIMAGE_INFO;
-
-typedef HRESULT (WINAPI *D3DXCreateTextureFromFile_t)
-(
-  _In_  LPDIRECT3DDEVICE9  pDevice,
-  _In_  LPCWSTR            pSrcFile,
-  _Out_ LPDIRECT3DTEXTURE9 *ppTexture
-);
-
-D3DXCreateTextureFromFile_t
-  D3DXCreateTextureFromFile = nullptr;
-
-typedef HRESULT (STDMETHODCALLTYPE *D3DXCreateTextureFromFileInMemoryEx_t)
-(
-  _In_    LPDIRECT3DDEVICE9  pDevice,
-  _In_    LPCVOID            pSrcData,
-  _In_    UINT               SrcDataSize,
-  _In_    UINT               Width,
-  _In_    UINT               Height,
-  _In_    UINT               MipLevels,
-  _In_    DWORD              Usage,
-  _In_    D3DFORMAT          Format,
-  _In_    D3DPOOL            Pool,
-  _In_    DWORD              Filter,
-  _In_    DWORD              MipFilter,
-  _In_    D3DCOLOR           ColorKey,
-  _Inout_ D3DXIMAGE_INFO     *pSrcInfo,
-  _Out_   PALETTEENTRY       *pPalette,
-  _Out_   LPDIRECT3DTEXTURE9 *ppTexture
-  );
-
-D3DXCreateTextureFromFileInMemoryEx_t
-  D3DXCreateTextureFromFileInMemoryEx_Original = nullptr;
-
+#if 0
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -1581,20 +1432,11 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
 
     if (img_crc32 == pad_buttons.crc32_ps3) {
       pad_buttons.tex_ps3 = *ppTexture;
-
-#ifdef DUMP_BUTTONS
-      if (D3DXSaveTextureToFile != nullptr)
-        D3DXSaveTextureToFile (L"ps3_buttons.dds", D3DXIFF_DDS, *ppTexture, pPalette);
-#endif
     }
 
     if (img_crc32 == pad_buttons.crc32_xbox) {
       pad_buttons.tex_xbox = *ppTexture;
 
-#ifdef DUMP_BUTTONS
-      if (D3DXSaveTextureToFile != nullptr)
-        D3DXSaveTextureToFile (L"xbox_buttons.dds", D3DXIFF_DDS, *ppTexture, pPalette);
-#endif
       if (D3DXCreateTextureFromFile != nullptr) {
         FILE* fCustom = nullptr;
         fCustom = fopen ("custom_buttons.dds", "r+");
@@ -1623,26 +1465,49 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
 
   return hr;
 }
+#endif
+
+typedef HRESULT (__stdcall *Reset_pfn)(
+  IDirect3DDevice9     *This,
+ D3DPRESENT_PARAMETERS *pPresentationParameters
+);
+
+Reset_pfn D3D9Reset_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+__stdcall
+D3D9Reset_Detour ( IDirect3DDevice9      *This,
+                   D3DPRESENT_PARAMETERS *pPresentationParameters )
+{
+  if (This != tzf::RenderFix::pDevice)
+    return D3D9Reset_Original (This, pPresentationParameters);
+
+  tzf::RenderFix::tex_mgr.reset         ();
+
+  tzf::RenderFix::pDevice = This;
+
+  tzf::RenderFix::width  = pPresentationParameters->BackBufferWidth;
+  tzf::RenderFix::height = pPresentationParameters->BackBufferHeight;
+
+  HRESULT hr =
+    D3D9Reset_Original (This, pPresentationParameters);
+
+  return hr;
+}
+
 
 void
 tzf::RenderFix::Init (void)
 {
-#if 0
-  TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXMatrixMultiply", 
-                      D3DXMatrixMultiply_Detour,
-           (LPVOID *)&D3DXMatrixMultiply_Original );
-#endif
+  tex_mgr.Init ();
 
-
-
-#if 1
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetSamplerState_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetSamplerState_Override",
                       D3D9SetSamplerState_Detour,
             (LPVOID*)&D3D9SetSamplerState_Original,
                      &SetSamplerState );
 
   TZF_EnableHook (SetSamplerState);
-#endif
 
 #if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShaderConstantF_Override",
@@ -1655,101 +1520,85 @@ tzf::RenderFix::Init (void)
 
 #if 1
   // Needed for shadow re-scaling
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetViewport_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetViewport_Override",
                       D3D9SetViewport_Detour,
             (LPVOID*)&D3D9SetViewport_Original );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9DrawIndexedPrimitive_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9DrawIndexedPrimitive_Override",
                       D3D9DrawIndexedPrimitive_Detour,
             (LPVOID*)&D3D9DrawIndexedPrimitive_Original );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShaderConstantF_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetVertexShaderConstantF_Override",
                       D3D9SetVertexShaderConstantF_Detour,
             (LPVOID*)&D3D9SetVertexShaderConstantF_Original );
 
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetVertexShader_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetVertexShader_Override",
                       D3D9SetVertexShader_Detour,
             (LPVOID*)&D3D9SetVertexShader_Original );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShader_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetPixelShader_Override",
                       D3D9SetPixelShader_Detour,
             (LPVOID*)&D3D9SetPixelShader_Original );
 
   // Needed for UI re-scaling
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetScissorRect_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetScissorRect_Override",
                       D3D9SetScissorRect_Detour,
             (LPVOID*)&D3D9SetScissorRect_Original );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9EndScene_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9EndScene_Override",
                       D3D9EndScene_Detour,
             (LPVOID*)&D3D9EndScene_Original );
 
   // Needed for shadow re-scaling
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateTexture_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9CreateTexture_Override",
                       D3D9CreateTexture_Detour,
             (LPVOID*)&D3D9CreateTexture_Original );
 #endif
 
 
+/*
+  TZF_CreateDLLHook ( config.system.injector.c_str (),
+                      "D3D9Reset_Override",
+                      D3D9Reset_Detour,
+           (LPVOID *)&D3D9Reset_Original );
+*/
 
 
 #if 1
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateRenderTarget_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9CreateRenderTarget_Override",
                       D3D9CreateRenderTarget_Detour,
             (LPVOID*)&D3D9CreateRenderTarget_Original );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9CreateDepthStencilSurface_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9CreateDepthStencilSurface_Override",
                       D3D9CreateDepthStencilSurface_Detour,
             (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
 
 #if 0
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9UpdateTexture_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9UpdateTexture_Override",
                       D3D9UpdateTexture_Detour,
             (LPVOID*)&D3D9UpdateTexture_Original );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9UpdateSurface_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9UpdateSurface_Override",
                       D3D9UpdateSurface_Detour,
             (LPVOID*)&D3D9UpdateSurface_Original );
 #endif
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetTexture_Override",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetTexture_Override",
                       D3D9SetTexture_Detour,
             (LPVOID*)&D3D9SetTexture_Original );
 #endif
 
-
-  d3dx9_43_dll = LoadLibrary (L"D3DX9_43.DLL");
   user32_dll   = LoadLibrary (L"User32.dll");
 
-  // Needed for mipmap completeness
-  TZF_CreateDLLHook ( L"D3DX9_43.DLL", "D3DXCreateTextureFromFileInMemoryEx",
-                      D3DXCreateTextureFromFileInMemoryEx_Detour,
-           (LPVOID *)&D3DXCreateTextureFromFileInMemoryEx_Original );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_BeginBufferSwap",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "SK_BeginBufferSwap",
                       D3D9EndFrame_Pre,
-            (LPVOID*)&BMF_BeginBufferSwap );
+            (LPVOID*)&SK_BeginBufferSwap );
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_EndBufferSwap",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "SK_EndBufferSwap",
                       D3D9EndFrame_Post,
-            (LPVOID*)&BMF_EndBufferSwap );
-
-
-  if (D3DXSaveTextureToFile == nullptr) {
-    D3DXSaveTextureToFile =
-      (D3DXSaveTextureToFile_t)
-        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-                           "D3DXSaveTextureToFileW" );
-  }
-
-  if (D3DXCreateTextureFromFile == nullptr) {
-    D3DXCreateTextureFromFile =
-      (D3DXCreateTextureFromFile_t)
-        GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-                           "D3DXCreateTextureFromFileW" );
-  }
-
+            (LPVOID*)&SK_EndBufferSwap );
 
 #if 0
   UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
@@ -1803,7 +1652,8 @@ tzf::RenderFix::Init (void)
 void
 tzf::RenderFix::Shutdown (void)
 {
-  FreeLibrary (d3dx9_43_dll);
+  tex_mgr.Shutdown ();
+
   //TZF_RemoveHook (SetSamplerState);
 }
 
@@ -1815,7 +1665,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool>  (&config.render.blackbar_videos);
   eTB_Variable* aspect_correction   = new eTB_VarStub <bool>  (&config.render.aspect_correction);
 
-  eTB_Variable* remaster_textures   = new eTB_VarStub <bool>  (&config.render.remaster_textures);
+  eTB_Variable* remaster_textures   = new eTB_VarStub <bool>  (&config.textures.remaster);
   eTB_Variable* rescale_shadows     = new eTB_VarStub <int>   (&config.render.shadow_rescale);
   eTB_Variable* rescale_env_shadows = new eTB_VarStub <int>   (&config.render.env_shadow_rescale);
   eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
@@ -1840,13 +1690,13 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   if (*(float *)config.render.aspect_addr != 16.0f / 9.0f) {
     void* addr = TZF_Scan (signature, sizeof (float) * 2, nullptr);
     if (addr != nullptr) {
-      dll_log.Log (L"Scanned Aspect Ratio Address: %06Xh", addr);
+      dll_log.Log (L"[Asp. Ratio] Scanned Aspect Ratio Address: %06Xh", addr);
       config.render.aspect_addr = (DWORD)addr;
-      dll_log.Log (L"Scanned FOVY Address: %06Xh", (float *)addr + 1);
+      dll_log.Log (L"[Asp. Ratio] Scanned FOVY Address: %06Xh", (float *)addr + 1);
       config.render.fovy_addr = (DWORD)((float *)addr + 1);
     }
     else {
-      dll_log.Log (L" >> ERROR: Unable to find Aspect Ratio Address!");
+      dll_log.Log (L"[Asp. Ratio]  >> ERROR: Unable to find Aspect Ratio Address!");
     }
   }
 }
@@ -1866,7 +1716,7 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
       config.render.aspect_ratio = *(float *)val;
 
       if (original != config.render.aspect_ratio) {
-        dll_log.Log ( L" * Changing Aspect Ratio from %f to %f",
+        dll_log.Log ( L"[Asp. Ratio]  * Changing Aspect Ratio from %f to %f",
                          original,
                           config.render.aspect_ratio );
        }
@@ -1875,7 +1725,7 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
     }
     else {
       if (val != nullptr)
-        dll_log.Log ( L" * Unable to change Aspect Ratio, invalid memory address... (%f)",
+        dll_log.Log ( L"[Asp. Ratio]  * Unable to change Aspect Ratio, invalid memory address... (%f)",
                         *((float *)config.render.aspect_addr) );
     }
   }
@@ -1888,14 +1738,14 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
          (original == config.render.fovy))
             && val != nullptr) {
       config.render.fovy = *(float *)val;
-      dll_log.Log ( L" * Changing FOVY from %f to %f",
+      dll_log.Log ( L"[Asp. Ratio]  * Changing FOVY from %f to %f",
                        original,
                          config.render.fovy );
       *((float *)config.render.fovy_addr) = config.render.fovy;
     }
     else {
       if (val != nullptr)
-        dll_log.Log ( L" * Unable to change FOVY, invalid memory address... (%f)",
+        dll_log.Log ( L"[Asp. Ratio]  * Unable to change FOVY, invalid memory address... (%f)",
                         *((float *)config.render.fovy_addr) );
     }
   }
@@ -1916,5 +1766,4 @@ uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
 bool               tzf::RenderFix::bink                = false;
 
-HMODULE            tzf::RenderFix::d3dx9_43_dll        = 0;
 HMODULE            tzf::RenderFix::user32_dll          = 0;

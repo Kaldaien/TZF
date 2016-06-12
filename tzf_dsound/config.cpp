@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.3.0";
+std::wstring TZF_VER_STR = L"1.4.0";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -64,12 +64,17 @@ struct {
   tzf::ParameterFloat*   aspect_ratio;
   tzf::ParameterBool*    aspect_correct_vids;
   tzf::ParameterBool*    aspect_correction;
-  tzf::ParameterBool*    remaster_textures;
   tzf::ParameterInt*     rescale_shadows;
   tzf::ParameterInt*     rescale_env_shadows;
   tzf::ParameterFloat*   postproc_ratio;
   tzf::ParameterBool*    clear_blackbars;
 } render;
+
+struct {
+  tzf::ParameterBool*    remaster;
+  tzf::ParameterBool*    cache;
+  tzf::ParameterBool*    dump;
+} textures;
 
 
 struct {
@@ -89,6 +94,7 @@ struct {
 struct {
   tzf::ParameterStringW* intro_video;
   tzf::ParameterStringW* version;
+  tzf::ParameterStringW* injector;
 } sys;
 
 
@@ -336,16 +342,6 @@ TZF_LoadConfig (std::wstring name) {
        L"TZFIX.Render",
          L"AspectCorrection" );
 
-  render.remaster_textures =
-    static_cast <tzf::ParameterBool *>
-      (g_ParameterFactory.create_parameter <bool> (
-        L"Various Fixes to Eliminate Texture Aliasing")
-      );
-  render.remaster_textures->register_to_ini (
-    dll_ini,
-      L"TZFIX.Render",
-        L"RemasterTextures" );
-
   render.rescale_shadows =
     static_cast <tzf::ParameterInt *>
       (g_ParameterFactory.create_parameter <int> (
@@ -385,6 +381,38 @@ TZF_LoadConfig (std::wstring name) {
      dll_ini,
        L"TZFIX.Render",
          L"ClearBlackbars" );
+
+
+  textures.cache =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Cache Textures to Speed Up Menus (and Remaster)")
+      );
+  textures.cache->register_to_ini (
+    dll_ini,
+      L"TZFIX.Textures",
+        L"Cache" );
+
+  textures.dump =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Dump Textures as they are loaded")
+      );
+  textures.dump->register_to_ini (
+    dll_ini,
+      L"TZFIX.Textures",
+        L"Dump" );
+
+  textures.remaster =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Various Fixes to Eliminate Texture Aliasing")
+      );
+  textures.remaster->register_to_ini (
+    dll_ini,
+      L"TZFIX.Textures",
+        L"Remaster" );
+
 
   keyboard.swap_keys =
     static_cast <tzf::ParameterStringW *>
@@ -438,6 +466,16 @@ TZF_LoadConfig (std::wstring name) {
     dll_ini,
       L"TZFIX.System",
         L"IntroVideo" );
+
+  sys.injector =
+    static_cast <tzf::ParameterStringW *>
+      (g_ParameterFactory.create_parameter <std::wstring> (
+        L"DLL That Injected Us")
+      );
+  sys.injector->register_to_ini (
+    dll_ini,
+      L"TZFIX.System",
+        L"Injector" );
 
   //
   // Load Parameters
@@ -519,9 +557,6 @@ TZF_LoadConfig (std::wstring name) {
   if (config.render.clear_blackbars && config.render.aspect_correction)
     config.render.blackbar_videos = true;
 
-  if (render.remaster_textures->load ())
-    config.render.remaster_textures = render.remaster_textures->get_value ();
-
   if (render.postproc_ratio->load ())
      config.render.postproc_ratio = render.postproc_ratio->get_value ();
 
@@ -533,6 +568,16 @@ TZF_LoadConfig (std::wstring name) {
 
   if (render.clear_blackbars->load ())
     config.render.clear_blackbars = render.clear_blackbars->get_value ();
+
+
+  if (textures.remaster->load ())
+    config.textures.remaster = textures.remaster->get_value ();
+
+  if (textures.cache->load ())
+    config.textures.cache = textures.cache->get_value ();
+
+  if (textures.dump->load ())
+    config.textures.dump = textures.dump->get_value ();
 
 
   if (steam.allow_broadcasts->load ())
@@ -551,6 +596,9 @@ TZF_LoadConfig (std::wstring name) {
 
   if (sys.intro_video->load ())
     config.system.intro_video = sys.intro_video->get_value ();
+
+  if (sys.injector->load ())
+    config.system.injector = sys.injector->get_value ();
 
   if (empty)
     return false;
@@ -634,9 +682,6 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   render.aspect_correction->set_value (config.render.aspect_correction);
   render.aspect_correction->store     ();
 
-  render.remaster_textures->set_value (config.render.remaster_textures);
-  render.remaster_textures->store     ();
-
   render.postproc_ratio->set_value (config.render.postproc_ratio);
   render.postproc_ratio->store     ();
 
@@ -648,6 +693,16 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   render.clear_blackbars->set_value (config.render.clear_blackbars);
   render.clear_blackbars->store     ();
+
+
+  textures.remaster->set_value (config.textures.remaster);
+  textures.remaster->store     ();
+
+  textures.cache->set_value (config.textures.cache);
+  textures.cache->store     ();
+
+  textures.dump->set_value (config.textures.dump);
+  textures.dump->store     ();
 
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
@@ -663,6 +718,9 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
 
   sys.intro_video->set_value   (config.system.intro_video);
   sys.intro_video->store       ();
+
+  sys.injector->set_value      (config.system.injector.c_str ());
+  sys.injector->store          ();
 
   dll_ini->write (name + L".ini");
 

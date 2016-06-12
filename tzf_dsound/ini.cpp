@@ -21,7 +21,6 @@
 **/
 
 #define _CRT_SECURE_NO_WARNINGS
-#define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 
 #include <windows.h>
 
@@ -58,7 +57,7 @@ ErrorMessage (errno_t        err,
 }
 
 #define TRY_FILE_IO(x,y,z) { (z) = ##x; if ((z) != 0) \
-dll_log.Log (L"%ws", ErrorMessage ((z), #x, (y), __LINE__, __FUNCTION__, __FILE__)); }
+dll_log.Log (L"[  Config  ] %ws", ErrorMessage ((z), #x, (y), __LINE__, __FUNCTION__, __FILE__)); }
 
 tzf::INI::File::File (wchar_t* filename)
 {
@@ -111,7 +110,7 @@ tzf::INI::File::File (wchar_t* filename)
     fclose (fINI);
   }
   else {
-    //TZF_MessageBox (L"Unable to Locate INI File", filename, MB_OK);
+    //AD_MessageBox (L"Unable to Locate INI File", filename, MB_OK);
     delete [] wszName;
     wszName = nullptr;
     wszData = nullptr;
@@ -320,7 +319,7 @@ tzf::INI::File::import (std::wstring import_data)
     }
 
     int begin = -1;
-    int end = -1;
+    int end   = -1;
 
     for (int i = 0; i < len; i++)
     {
@@ -344,7 +343,7 @@ tzf::INI::File::import (std::wstring import_data)
         for (int j = start; j <= len; j++) {
           if (j == len) {
             finish = j;
-            eof = true;
+            eof    = true;
             break;
           }
 
@@ -375,7 +374,7 @@ tzf::INI::File::import (std::wstring import_data)
 
         i = finish;
 
-        end = -1;
+        end   = -1;
         begin = -1;
       }
     }
@@ -420,13 +419,13 @@ tzf::INI::File::Section::add_key_value (std::wstring key, std::wstring value)
 bool
 tzf::INI::File::contains_section (std::wstring section)
 {
-  return sections.find (section) != sections.end ();
+  return sections.count (section) > 0;
 }
 
 tzf::INI::File::Section&
 tzf::INI::File::get_section (std::wstring section)
 {
-  if (sections.find (section) == sections.end ())
+  if (! sections.count (section))
     ordered_sections.push_back (section);
 
   return sections [section];
@@ -439,12 +438,12 @@ tzf::INI::File::write (std::wstring fname)
   errno_t ret;
 
   // Strip Read-Only
-  /////////TZF_SetNormalFileAttribs (fname);
+  /////////AD_SetNormalFileAttribs (fname);
 
   TRY_FILE_IO (_wfopen_s (&fOut, fname.c_str (), L"w,ccs=UTF-16LE"), fname.c_str (), ret);
 
   if (ret != 0 || fOut == 0) {
-    //TZF_MessageBox (L"ERROR: Cannot open INI file for writing. Is it read-only?", fname.c_str (), MB_OK | MB_ICONSTOP);
+    //AD_MessageBox (L"ERROR: Cannot open INI file for writing. Is it read-only?", fname.c_str (), MB_OK | MB_ICONSTOP);
     return;
   }
 
@@ -453,20 +452,24 @@ tzf::INI::File::write (std::wstring fname)
 
   while (it != end) {
     Section& section = get_section (*it);
-    fwprintf (fOut, L"[%s]\n", section.name.c_str ());
+    if (section.name.length ()) {
+      fwprintf (fOut, L"[%s]\n", section.name.c_str ());
 
-    std::vector <std::wstring>::iterator key_it  = section.ordered_keys.begin ();
-    std::vector <std::wstring>::iterator key_end = section.ordered_keys.end   ();
+      std::vector <std::wstring>::iterator key_it  = section.ordered_keys.begin ();
+      std::vector <std::wstring>::iterator key_end = section.ordered_keys.end   ();
 
-    while (key_it != key_end) {
-      std::wstring val = section.get_value (*key_it);
-      fwprintf (fOut, L"%s=%s\n", key_it->c_str (), val.c_str ());
-      ++key_it;
+      while (key_it != key_end) {
+        std::wstring val = section.get_value (*key_it);
+        fwprintf (fOut, L"%s=%s\n", key_it->c_str (), val.c_str ());
+        ++key_it;
+      }
+
+      // Append a newline for everything except the last line...
+      if ((it + 1) != end)
+        fwprintf (fOut, L"\n");
     }
 
-    // Append a newline for everything except the last line...
-    if (++it != end)
-      fwprintf (fOut, L"\n");
+    ++it;
   }
 
   fflush (fOut);

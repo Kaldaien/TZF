@@ -54,7 +54,7 @@ public:
     return false;
   }
 
-  // Store value in INI and/or XML
+  // Store value in INI
   bool store (void)
   {
     bool ret = false;
@@ -67,13 +67,13 @@ public:
       section.name = ini_section;
 
       if (section.contains_key (ini_key)) {
-        section.get_value (ini_key) = get_value_str ().c_str ();
+        section.get_value (ini_key) = get_value_str ();
         ret = true;
       }
 
       // Add this key/value if it doesn't already exist.
       else {
-        section.add_key_value (ini_key, get_value_str ().c_str ());
+        section.add_key_value (ini_key, get_value_str ());
         ret = true;// +1;
       }
     }

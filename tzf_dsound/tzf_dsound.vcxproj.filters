@@ -60,6 +60,9 @@
     <ClInclude Include="priest.lua.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="textures.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -105,6 +108,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="scanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="textures.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="compatibility.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

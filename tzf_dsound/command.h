@@ -1,6 +1,8 @@
 #ifndef __EPSILON_TESTBED__COMMAND_H__
 #define __EPSILON_TESTBED__COMMAND_H__
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #ifdef _MSC_VER
 # include <unordered_map>
 //# include <hash_map>

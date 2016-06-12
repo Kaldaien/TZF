@@ -20,6 +20,8 @@
  *
 **/
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "framerate.h"
 #include "config.h"
 #include "log.h"
@@ -29,6 +31,7 @@
 #include "priest.lua.h"
 
 #include "render.h"
+#include "textures.h"
 #include <d3d9.h>
 
 uint32_t TICK_ADDR_BASE = 0x217B464;
@@ -140,7 +143,7 @@ public:
 
         if (GetForegroundWindow () != tzf::RenderFix::hWndDevice &&
             tzf::FrameRateFix::fullscreen) {
-          //dll_log.Log (L" # Restarting framerate limiter; fullscreen Alt+Tab...");
+          //dll_log.Log (L"[FrameLimit]  # Restarting framerate limiter; fullscreen Alt+Tab...");
           restart = true;
           break;
         }
@@ -153,7 +156,7 @@ public:
     }
 
     else {
-      dll_log.Log (L"Lost time");
+      dll_log.Log (L"[FrameLimit] Lost time");
       start.QuadPart += -next.QuadPart;
     }
 
@@ -173,15 +176,15 @@ private:
 } *limiter = nullptr;
 
 
-typedef D3DPRESENT_PARAMETERS* (__stdcall *BMF_SetPresentParamsD3D9_t)
+typedef D3DPRESENT_PARAMETERS* (__stdcall *SK_SetPresentParamsD3D9_pfn)
   (IDirect3DDevice9*      device,
    D3DPRESENT_PARAMETERS* pparams);
-BMF_SetPresentParamsD3D9_t BMF_SetPresentParamsD3D9_Original = nullptr;
+SK_SetPresentParamsD3D9_pfn SK_SetPresentParamsD3D9_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 D3DPRESENT_PARAMETERS*
 __stdcall
-BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
+SK_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
                                  D3DPRESENT_PARAMETERS* pparams)
 {
   D3DPRESENT_PARAMETERS present_params;
@@ -193,10 +196,9 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   if ( pparams->BackBufferWidth            == 1 &&
        pparams->BackBufferHeight           == 1 &&
        pparams->FullScreen_RefreshRateInHz == 0 ) {
-    dll_log.Log (L" * Fake D3D9Ex Device Detected... Ignoring!");
-    return BMF_SetPresentParamsD3D9_Original (device, pparams);
+    dll_log.Log (L"[   D3D9   ] * Fake D3D9Ex Device Detected... Ignoring!");
+    return SK_SetPresentParamsD3D9_Original (device, pparams);
   }
-
 
   tzf::RenderFix::pDevice             = device;
   tzf::RenderFix::pPostProcessSurface = nullptr;
@@ -204,7 +206,7 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   if (pparams != nullptr) {
     memcpy (&present_params, pparams, sizeof D3DPRESENT_PARAMETERS);
 
-    dll_log.Log ( L" %% Caught D3D9 Swapchain :: Fullscreen=%s "
+    dll_log.Log ( L"[   D3D9   ] %% Caught D3D9 Swapchain :: Fullscreen=%s "
                   L" (%lux%lu@%lu Hz) "
                   L" [Device Window: 0x%04X]",
                     pparams->Windowed ? L"False" :
@@ -227,7 +229,9 @@ BMF_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
     command.ProcessCommandLine (szAspectCommand);
   }
 
-  return BMF_SetPresentParamsD3D9_Original (device, pparams);
+  tzf::RenderFix::tex_mgr.reset ();
+
+  return SK_SetPresentParamsD3D9_Original (device, pparams);
 }
 
 bool          render_sleep0  = false;
@@ -302,8 +306,8 @@ BinkOpen_Detour ( const char* filename,
   static char szBypassName [MAX_PATH] = { '\0' };
 
   // Optionally play some other video (or no video)...
-  if (! stricmp (filename, "RAW\\MOVIE\\AM_TOZ_OP_001.BK2")) {
-    dll_log.LogEx (true, L" >> Using %ws for Opening Movie ...",
+  if (! _stricmp (filename, "RAW\\MOVIE\\AM_TOZ_OP_001.BK2")) {
+    dll_log.LogEx (true, L"[IntroVideo] >> Using %ws for Opening Movie ...",
                    config.system.intro_video.c_str ());
 
     sprintf (szBypassName, "%ws", config.system.intro_video.c_str ());
@@ -319,7 +323,7 @@ BinkOpen_Detour ( const char* filename,
   }
 
   if (bink_ret != nullptr) {
-    dll_log.Log (L" * Disabling TargetFPS -- Bink Video Opened");
+    dll_log.Log (L"[FrameLimit] * Disabling TargetFPS -- Bink Video Opened");
 
     tzf::RenderFix::bink = true;
     tzf::FrameRateFix::Begin30FPSEvent ();
@@ -337,7 +341,7 @@ BinkClose_Detour (DWORD unknown)
 {
   BinkClose_Original (unknown);
 
-  dll_log.Log (L" * Restoring TargetFPS -- Bink Video Closed");
+  dll_log.Log (L"[FrameLimit] * Restoring TargetFPS -- Bink Video Closed");
 
   tzf::RenderFix::bink = false;
   tzf::FrameRateFix::End30FPSEvent ();
@@ -345,9 +349,9 @@ BinkClose_Detour (DWORD unknown)
 
 
 
-LPVOID pfnQueryPerformanceCounter  = nullptr;
-LPVOID pfnSleep                    = nullptr;
-LPVOID pfnBMF_SetPresentParamsD3D9 = nullptr;
+LPVOID pfnQueryPerformanceCounter = nullptr;
+LPVOID pfnSleep                   = nullptr;
+LPVOID pfnSK_SetPresentParamsD3D9 = nullptr;
 
 // Hook these to properly synch audio subtitles during FMVs
 LPVOID pfnBinkOpen                 = nullptr;
@@ -417,11 +421,11 @@ TZF_LuaHook (void)
   }
 
 #if 0
-  dll_log.Log (L"Lua script loaded: \"%S\"", name);
+  dll_log.Log (L"[  60 FPS  ]Lua script loaded: \"%S\"", name);
 #endif
 
   if (! strcmp (name, "MEP_100_130_010_PF_Script")) {
-    dll_log.Log (L" * Replacing priest script...");
+    dll_log.Log (L"[  60 FPS  ] * Replacing priest script...");
 
     *pSz     = lua_bytecode_priest_size;
     *pBuffer = lua_bytecode_priest;
@@ -452,10 +456,10 @@ tzf::FrameRateFix::Init (void)
 
   target_fps = config.framerate.target;
 
-  TZF_CreateDLLHook ( L"d3d9.dll", "BMF_SetPresentParamsD3D9",
-                      BMF_SetPresentParamsD3D9_Detour, 
-           (LPVOID *)&BMF_SetPresentParamsD3D9_Original,
-                     &pfnBMF_SetPresentParamsD3D9 );
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "SK_SetPresentParamsD3D9",
+                      SK_SetPresentParamsD3D9_Detour, 
+           (LPVOID *)&SK_SetPresentParamsD3D9_Original,
+                     &pfnSK_SetPresentParamsD3D9 );
 
   bink_dll = LoadLibrary (L"bink2w32.dll");
 
@@ -469,13 +473,13 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&BinkClose_Original,
                      &pfnBinkClose );
 
-  TZF_CreateDLLHook ( L"kernel32.dll", "QueryPerformanceCounter",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "QueryPerformanceCounter_Detour",
                       QueryPerformanceCounter_Detour, 
            (LPVOID *)&QueryPerformanceCounter_Original,
            (LPVOID *)&pfnQueryPerformanceCounter );
 
   TZF_EnableHook (pfnQueryPerformanceCounter);
-  TZF_EnableHook (pfnBMF_SetPresentParamsD3D9);
+  TZF_EnableHook (pfnSK_SetPresentParamsD3D9);
 
   TZF_EnableHook (pfnBinkOpen);
   TZF_EnableHook (pfnBinkClose);
@@ -489,11 +493,11 @@ tzf::FrameRateFix::Init (void)
       intptr_t addr = (intptr_t)TZF_Scan (sig, 16);
 
       if (addr != NULL) {
-        dll_log.Log (L"Scanned SpeedResetCode Address: %06Xh", addr);
+        dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode Address: %06Xh", addr);
         config.framerate.speedresetcode_addr = addr;
       }
       else {
-        dll_log.Log (L" >> ERROR: Unable to find SpeedResetCode memory!");
+        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode memory!");
       }
     }
 
@@ -504,15 +508,15 @@ tzf::FrameRateFix::Init (void)
       intptr_t addr = (intptr_t)TZF_Scan (sig, 12);
 
       if (addr != NULL && *((DWORD *)((uint8_t *)addr + 8)) == 0x2) {
-        dll_log.Log (L"Scanned SpeedResetCode3 Address: %06Xh", addr + 8);
+        dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode3 Address: %06Xh", addr + 8);
         config.framerate.speedresetcode3_addr = addr + 8;
       }
       else {
-        dll_log.Log (L" >> ERROR: Unable to find SpeedResetCode3 memory!");
+        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode3 memory!");
       }
     }
 
-    dll_log.LogEx (true, L" * Installing variable rate simulation... ");
+    dll_log.LogEx (true, L"[FrameLimit]  * Installing variable rate simulation... ");
 
     DWORD dwOld;
 
@@ -558,14 +562,14 @@ tzf::FrameRateFix::Init (void)
       if (addr != NULL) {
         config.framerate.speedresetcode2_addr = addr + 3;
 
-        dll_log.Log (L"Scanned SpeedResetCode2 Address: %06Xh", addr + 3);
+        dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode2 Address: %06Xh", addr + 3);
 
         TICK_ADDR_BASE = *(DWORD *)((uint8_t *)(addr + 11));
 
-        dll_log.Log (L" >> TICK_ADDR_BASE: %06Xh", TICK_ADDR_BASE);
+        dll_log.Log (L"[FrameLimit]  >> TICK_ADDR_BASE: %06Xh", TICK_ADDR_BASE);
       }
       else {
-        dll_log.Log (L" >> ERROR: Unable to find SpeedResetCode2 memory!");
+        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode2 memory!");
       }
     }
 
@@ -633,10 +637,10 @@ tzf::FrameRateFix::Init (void)
       if (addr != NULL) {
         config.framerate.limiter_branch_addr = addr + 3;
 
-        dll_log.Log (L"Scanned Limiter Branch Address: %06Xh", addr + 3);
+        dll_log.Log (L"[FrameLimit] Scanned Limiter Branch Address: %06Xh", addr + 3);
       }
       else {
-        dll_log.Log (L" >> ERROR: Unable to find LimiterBranchAddr memory!");
+        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find LimiterBranchAddr memory!");
       }
     }
 
@@ -657,7 +661,7 @@ tzf::FrameRateFix::Init (void)
     void *addr = TZF_Scan (sig, 14);
 
     if (addr != NULL) {
-      dll_log.Log (L"Scanned Lua Loader Address: %06Xh", addr);
+      dll_log.Log (L"[  60 FPS  ] Scanned Lua Loader Address: %06Xh", addr);
 
       DWORD hookOffset = (PtrToUlong (&TZF_LuaHook) - (intptr_t)addr - 5);
       memcpy (new_code + 1, &hookOffset, 4);
@@ -665,7 +669,7 @@ tzf::FrameRateFix::Init (void)
       pLuaReturn = (LPVOID)((intptr_t)addr + 7);
     }
     else {
-      dll_log.Log (L" >> ERROR: Unable to find Lua loader address! Priest bug will occur.");
+      dll_log.Log (L"[  60 FPS  ]  >> ERROR: Unable to find Lua loader address! Priest bug will occur.");
     }
   }
 
@@ -679,7 +683,7 @@ tzf::FrameRateFix::Init (void)
 
   // Hook this no matter what, because it lowers the _REPORTED_ CPU usage,
   //   and some people would object if we suddenly changed this behavior :P
-  TZF_CreateDLLHook ( L"kernel32.dll", "Sleep",
+  TZF_CreateDLLHook ( config.system.injector.c_str (), "Sleep_Detour",
                       Sleep_Detour, 
            (LPVOID *)&Sleep_Original,
            (LPVOID *)&pfnSleep );
@@ -697,7 +701,7 @@ tzf::FrameRateFix::Shutdown (void)
   FreeLibrary (kernel32_dll);
   FreeLibrary (bink_dll);
 
-  ////TZF_DisableHook (pfnBMF_SetPresentParamsD3D9);
+  ////TZF_DisableHook (pfnSK_SetPresentParamsD3D9);
 
   if (variable_speed_installed) {
     DWORD dwOld;
@@ -937,7 +941,7 @@ tzf::FrameRateFix::RenderTick (void)
         last_frame_battle = true;
 
 #if 0
-        dll_log.Log ( L" ** Adjusting TickScale because of battle framerate change "
+        dll_log.Log ( L"[FrameLimit] ** Adjusting TickScale because of battle framerate change "
                       L"(Expected: ~%4.2f ms, Got: %4.2f ms)",
                         last_scale * 16.666667f, dt * (1.0 / 60.0) * 1000.0 );
 #endif

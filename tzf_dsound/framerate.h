@@ -84,7 +84,7 @@ namespace tzf
     // True if the executable has been modified (at run-time) to allow 60 FPS
     extern bool             variable_speed_installed;
 
-    // This is actually setup in the BMF DLL that loads this one
+    // This is actually setup in the SK DLL that loads this one
     extern uint32_t         target_fps;
 
     // Store the original unmodifed game instructions

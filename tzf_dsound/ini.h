@@ -28,7 +28,6 @@
 
 namespace tzf {
 namespace INI {
-
   class File
   {
   public:
@@ -81,8 +80,6 @@ namespace INI {
     std::vector <std::wstring>
               ordered_sections;
   };
-
-}
-}
+}}
 
 #endif
