@@ -863,6 +863,30 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
     }
   }
 
+  if (checksum == tzf::RenderFix::cutscene_frame.crc32_side)
+    tzf::RenderFix::cutscene_frame.tex_side = *ppTexture;
+
+  if (checksum == tzf::RenderFix::cutscene_frame.crc32_corner)
+    tzf::RenderFix::cutscene_frame.tex_corner = *ppTexture;
+
+  if (checksum == tzf::RenderFix::pad_buttons.crc32_ps3) {
+    tzf::RenderFix::pad_buttons.tex_ps3 = *ppTexture;
+  }
+
+  if (checksum == tzf::RenderFix::pad_buttons.crc32_xbox) {
+    tzf::RenderFix::pad_buttons.tex_xbox = *ppTexture;
+
+    if (D3DXCreateTextureFromFile != nullptr) {
+      if (GetFileAttributesW (L"custom_buttons.dds") != INVALID_FILE_ATTRIBUTES) {
+        // We do not need the old texture anymore
+        //(*ppTexture)->Release ();
+
+        hr =
+          D3DXCreateTextureFromFile (pDevice, L"custom_buttons.dds", ppTexture);
+      }
+    }
+  }
+
   // Any previous attempts to load a custom texture failed, so load it the normal way
   if (hr == E_FAIL) {
     //tex_log.Log (L"D3DXCreateTextureFromFileInMemoryEx (... MipLevels=%lu ...)", MipLevels);
@@ -923,35 +947,6 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
       // Do not dump a texture that was already dumped
       if (GetFileAttributes (wszFileName) == INVALID_FILE_ATTRIBUTES)
         D3DXSaveTextureToFile (wszFileName, D3DXIFF_DDS, (*ppTexture), NULL);
-    }
-
-    if (checksum == tzf::RenderFix::cutscene_frame.crc32_side)
-      tzf::RenderFix::cutscene_frame.tex_side = *ppTexture;
-
-    if (checksum == tzf::RenderFix::cutscene_frame.crc32_corner)
-      tzf::RenderFix::cutscene_frame.tex_corner = *ppTexture;
-
-    if (checksum == tzf::RenderFix::pad_buttons.crc32_ps3) {
-      tzf::RenderFix::pad_buttons.tex_ps3 = *ppTexture;
-    }
-
-    if (checksum == tzf::RenderFix::pad_buttons.crc32_xbox) {
-      tzf::RenderFix::pad_buttons.tex_xbox = *ppTexture;
-
-      if (D3DXCreateTextureFromFile != nullptr) {
-        FILE* fCustom = nullptr;
-        fCustom = fopen ("custom_buttons.dds", "r+");
-
-        if (fCustom != nullptr) {
-          fclose (fCustom);
-
-          // We do not need the old texture anymore
-          (*ppTexture)->Release ();
-
-          hr =
-            D3DXCreateTextureFromFile (pDevice, L"custom_buttons.dds", ppTexture);
-        }
-      }
     }
   }
 
