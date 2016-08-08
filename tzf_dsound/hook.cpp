@@ -40,7 +40,11 @@
 #include <mmsystem.h>
 #pragma comment (lib, "winmm.lib")
 
+#include <process.h>
 #include <comdef.h>
+#include "textures.h"
+
+std::string mod_text;
 
 typedef SHORT (WINAPI *GetAsyncKeyState_pfn)(
   _In_ int vKey
@@ -168,12 +172,13 @@ public:
   void Start (void)
   {
     hMsgPump =
-      CreateThread ( NULL,
-                       NULL,
-                         TZF_InputHooker::MessagePump,
-                           &hooks,
-                             NULL,
-                               NULL );
+      (HANDLE)
+      _beginthreadex ( nullptr,
+                         0,
+                           TZF_InputHooker::MessagePump,
+                             &hooks,
+                               0x00,
+                                 nullptr );
 
     TZF_CreateDLLHook ( L"user32.dll", "GetCursorInfo",
                         GetCursorInfo_Detour,
@@ -226,6 +231,11 @@ public:
       }
     }
 
+    if (output.length ())
+      output += "\n\n";
+
+    output += mod_text;
+
     SK_DrawExternalOSD ("ToZ Fix", output.c_str ());
   }
 
@@ -236,8 +246,8 @@ public:
 
   bool isVisible (void) { return visible; }
 
-  static DWORD
-  WINAPI
+  static unsigned int
+  __stdcall
   MessagePump (LPVOID hook_ptr)
   {
     hooks_t* pHooks = (hooks_t *)hook_ptr;
@@ -332,10 +342,9 @@ public:
                     hits > 1 ? L"tries" : L"try",
                       timeGetTime () - dwTime );
 
-    while (true) {
-      Sleep (10);
-    }
-    //193 - 199
+    Sleep (INFINITE);
+
+    _endthreadex (0);
 
     return 0;
   }
@@ -539,6 +548,59 @@ public:
           else if (keys_ [VK_OEM_PERIOD]) {
             command.ProcessCommandLine ("AutoAdjust true");
             command.ProcessCommandLine ("TickScale 30");
+          }
+          else if (vkCode == 'U' && new_press) {
+            command.ProcessCommandLine ("Textures.Remap toggle");
+
+            tzf::RenderFix::tex_mgr.updateOSD ();
+          }
+          else if (vkCode == 'Z' && new_press) {
+            command.ProcessCommandLine  ("Textures.Purge true");
+            tzf::RenderFix::tex_mgr.updateOSD ();
+          }
+
+          else if (vkCode == 'X' && new_press) {
+            command.ProcessCommandLine  ("Textures.Trace true");
+            tzf::RenderFix::tex_mgr.updateOSD ();
+          }
+
+          else if (vkCode == 'V' && new_press) {
+            command.ProcessCommandLine  ("Textures.ShowCache toggle");
+            tzf::RenderFix::tex_mgr.updateOSD ();
+          }
+
+          else if (vkCode == VK_OEM_6 && new_press) {
+            extern std::vector <uint32_t> textures_used_last_dump;
+            extern int                    tex_dbg_idx;
+            ++tex_dbg_idx;
+
+            if (tex_dbg_idx > textures_used_last_dump.size ())
+              tex_dbg_idx = textures_used_last_dump.size ();
+
+            extern int debug_tex_id;
+            debug_tex_id = (int)textures_used_last_dump [tex_dbg_idx];
+
+            tzf::RenderFix::tex_mgr.updateOSD ();
+          }
+
+          else if (vkCode == VK_OEM_4 && new_press) {
+            extern std::vector <uint32_t> textures_used_last_dump;
+            extern int                    tex_dbg_idx;
+            extern int                    debug_tex_id;
+
+            --tex_dbg_idx;
+
+            if (tex_dbg_idx < 0) {
+              tex_dbg_idx = -1;
+              debug_tex_id = 0;
+            } else {
+              if (tex_dbg_idx > textures_used_last_dump.size ())
+                tex_dbg_idx = textures_used_last_dump.size ();
+
+              debug_tex_id = (int)textures_used_last_dump [tex_dbg_idx];
+            }
+
+            tzf::RenderFix::tex_mgr.updateOSD ();
           }
         }
 

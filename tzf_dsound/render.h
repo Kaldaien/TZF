@@ -165,4 +165,57 @@ struct game_state_t {
   }
 } static game_state;
 
+typedef HRESULT (STDMETHODCALLTYPE *BeginScene_pfn)(
+  IDirect3DDevice9 *This
+);
+
+typedef HRESULT (STDMETHODCALLTYPE *EndScene_pfn)(
+  IDirect3DDevice9 *This
+);
+
+#include <d3d9.h>
+
+typedef HRESULT (STDMETHODCALLTYPE *DrawPrimitive_pfn)
+(
+  IDirect3DDevice9 *This,
+  D3DPRIMITIVETYPE  PrimitiveType,
+  UINT              StartVertex,
+  UINT              PrimitiveCount
+);
+
+typedef HRESULT (STDMETHODCALLTYPE *DrawIndexedPrimitive_pfn)
+(
+  IDirect3DDevice9 *This,
+  D3DPRIMITIVETYPE  Type,
+  INT               BaseVertexIndex,
+  UINT              MinVertexIndex,
+  UINT              NumVertices,
+  UINT              startIndex,
+  UINT              primCount
+);
+
+typedef HRESULT (STDMETHODCALLTYPE *DrawPrimitiveUP_pfn)
+(
+  IDirect3DDevice9 *This,
+  D3DPRIMITIVETYPE  PrimitiveType,
+  UINT              PrimitiveCount,
+  const void       *pVertexStreamZeroData,
+  UINT              VertexStreamZeroStride
+);
+
+typedef HRESULT (STDMETHODCALLTYPE *DrawIndexedPrimitiveUP_pfn)
+(
+  IDirect3DDevice9 *This,
+  D3DPRIMITIVETYPE  PrimitiveType,
+  UINT              MinVertexIndex,
+  UINT              NumVertices,
+  UINT              PrimitiveCount,
+  const void       *pIndexData,
+  D3DFORMAT         IndexDataFormat,
+  const void       *pVertexStreamZeroData,
+  UINT              VertexStreamZeroStride
+);
+
+
+
 #endif /* __TZF__RENDER_H__ */

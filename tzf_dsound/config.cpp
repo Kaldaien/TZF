@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.4.0";
+std::wstring TZF_VER_STR = L"1.4.1";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -74,6 +74,8 @@ struct {
   tzf::ParameterBool*    remaster;
   tzf::ParameterBool*    cache;
   tzf::ParameterBool*    dump;
+  tzf::ParameterInt*     cache_size;
+  tzf::ParameterInt*     worker_threads;
 } textures;
 
 
@@ -413,6 +415,26 @@ TZF_LoadConfig (std::wstring name) {
       L"TZFIX.Textures",
         L"Remaster" );
 
+  textures.cache_size = 
+    static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Size of Texture Cache")
+      );
+  textures.cache_size->register_to_ini (
+    dll_ini,
+      L"TZFIX.Textures",
+        L"MaxCacheInMiB" );
+
+  textures.worker_threads = 
+    static_cast <tzf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Number of Worker Threads")
+      );
+  textures.worker_threads->register_to_ini (
+    dll_ini,
+      L"TZFIX.Textures",
+        L"WorkerThreads" );
+
 
   keyboard.swap_keys =
     static_cast <tzf::ParameterStringW *>
@@ -579,6 +601,12 @@ TZF_LoadConfig (std::wstring name) {
   if (textures.dump->load ())
     config.textures.dump = textures.dump->get_value ();
 
+  if (textures.cache_size->load ())
+    config.textures.max_cache_in_mib = textures.cache_size->get_value ();
+
+  if (textures.worker_threads->load ())
+    config.textures.worker_threads = textures.worker_threads->get_value ();
+
 
   if (steam.allow_broadcasts->load ())
     config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
@@ -704,6 +732,11 @@ TZF_SaveConfig (std::wstring name, bool close_config) {
   textures.dump->set_value (config.textures.dump);
   textures.dump->store     ();
 
+  textures.cache_size->set_value (config.textures.max_cache_in_mib);
+  textures.cache_size->store     ();
+
+  textures.worker_threads->set_value (config.textures.worker_threads);
+  textures.worker_threads->store     ();
 
   steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
   steam.allow_broadcasts->store     ();

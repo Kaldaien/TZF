@@ -37,6 +37,8 @@
 
 #include "hook.h"
 
+#include <process.h>
+
 #pragma comment (lib, "kernel32.lib")
 
 HMODULE hDLLMod      = { 0 }; // Handle to SELF
@@ -47,8 +49,8 @@ SK_SetPluginName_pfn SK_SetPluginName = nullptr;
 
 extern void TZF_InitCompatBlacklist (void);
 
-DWORD
-WINAPI
+unsigned int
+__stdcall
 DllThread (LPVOID user)
 {
   std::wstring plugin_name = L"Tales of Zestiria \"Fix\" v " + TZF_VER_STR;
@@ -136,7 +138,7 @@ DllThread (LPVOID user)
   //     is running.
   {
     uint8_t  sig [] = { 0x74, 0x42, 0xB1, 0x01, 0x38, 0x1D };
-    intptr_t addr   = (intptr_t)TZF_Scan (sig, 6);
+    uintptr_t addr  = (uintptr_t)TZF_Scan (sig, 6);
 
     if (addr != NULL) {
       game_state.base_addr = (BYTE *)(*(DWORD *)(addr + 6) - 0x13);
@@ -145,6 +147,8 @@ DllThread (LPVOID user)
   }
 
   if (TZF_Init_MinHook () == MH_OK) {
+    CoInitialize (nullptr);
+
     TZF_InitCompatBlacklist ();
 
     tzf::SoundFix::Init     ();
@@ -168,13 +172,11 @@ DllMain (HMODULE hModule,
   {
   case DLL_PROCESS_ATTACH:
   {
-    DisableThreadLibraryCalls ((hDLLMod = hModule));
-
-    HANDLE hThread = CreateThread (NULL, NULL, DllThread, 0, 0, NULL);
-
-    // Initialization delay
-    if (hThread != 0)
-      WaitForSingleObject (hThread, 125UL);
+#if 1
+    HANDLE hThread = (HANDLE)_beginthreadex (NULL, NULL, DllThread, 0, 0, NULL);
+#else
+    DllThread (nullptr);
+#endif
   } break;
 
   case DLL_THREAD_ATTACH:

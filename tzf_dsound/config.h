@@ -51,6 +51,7 @@ struct tzf_config_t
     int   battle_target        = 60;
     bool  battle_adaptive      = false;
     int   cutscene_target      = 30;
+    bool  reshade_fix          = false;
   } framerate;
 
   struct {
@@ -82,6 +83,8 @@ struct tzf_config_t
     bool     dump               = false;
     bool     remaster           = false;
     bool     cache              = true;
+    int32_t  max_cache_in_mib   = 2048L;
+    int32_t  worker_threads     = 6;
   } textures;
 
   struct {

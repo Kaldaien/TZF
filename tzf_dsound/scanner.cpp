@@ -35,7 +35,7 @@ TZF_Scan (uint8_t* pattern, size_t len, uint8_t* mask)
   IMAGE_DOS_HEADER* pDOS =
     (IMAGE_DOS_HEADER *)mem_info.AllocationBase;
   IMAGE_NT_HEADERS* pNT  =
-    (IMAGE_NT_HEADERS *)((intptr_t)(pDOS + pDOS->e_lfanew));
+    (IMAGE_NT_HEADERS *)((uintptr_t)(pDOS + pDOS->e_lfanew));
 
   uint8_t* end_addr = base_addr + pNT->OptionalHeader.SizeOfImage;
 

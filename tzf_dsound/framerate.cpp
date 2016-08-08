@@ -229,7 +229,7 @@ SK_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
     command.ProcessCommandLine (szAspectCommand);
   }
 
-  tzf::RenderFix::tex_mgr.reset ();
+  //tzf::RenderFix::tex_mgr.reset ();
 
   return SK_SetPresentParamsD3D9_Original (device, pparams);
 }
@@ -490,7 +490,7 @@ tzf::FrameRateFix::Init (void)
                          0x00, 0x00, 0x8D, 0xBB,
                          0x8C, 0x42, 0x00, 0x00,
                          0xB9, 0x0B, 0x00, 0x00 };
-      intptr_t addr = (intptr_t)TZF_Scan (sig, 16);
+      uintptr_t addr = (uintptr_t)TZF_Scan (sig, 16);
 
       if (addr != NULL) {
         dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode Address: %06Xh", addr);
@@ -505,7 +505,7 @@ tzf::FrameRateFix::Init (void)
       uint8_t sig [] = { 0x0F, 0x95, 0xC0, 0x3A,
                          0xC3, 0x74, 0x17, 0xB8,
                          0x02, 0x00, 0x00, 0x00 };
-      intptr_t addr = (intptr_t)TZF_Scan (sig, 12);
+      uintptr_t addr = (uintptr_t)TZF_Scan (sig, 12);
 
       if (addr != NULL && *((DWORD *)((uint8_t *)addr + 8)) == 0x2) {
         dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode3 Address: %06Xh", addr + 8);
@@ -557,7 +557,7 @@ tzf::FrameRateFix::Init (void)
                       };
 
     if (*((DWORD *)config.framerate.speedresetcode2_addr) != 0x0F8831274) {
-      intptr_t addr = (intptr_t)TZF_Scan (sig, 23, mask);
+      uintptr_t addr = (uintptr_t)TZF_Scan (sig, 23, mask);
 
       if (addr != NULL) {
         config.framerate.speedresetcode2_addr = addr + 3;
@@ -621,8 +621,6 @@ tzf::FrameRateFix::Init (void)
   variable_speed_installed = true;
 
   if (config.framerate.disable_limiter) {
-    DWORD dwOld;
-
     // Replace the original jump (jb) with an unconditional jump (jmp)
     uint8_t new_code [6] = { 0xE9, 0x8B, 0x00, 0x00, 0x00, 0x90 };
 
@@ -632,7 +630,7 @@ tzf::FrameRateFix::Init (void)
                          0x57,                           // push    edi
                          0x0F, 0x82, 0x8A, 0x0, 0x0, 0x0 // jb      <dontcare>
                        };
-      intptr_t addr = (intptr_t)TZF_Scan (sig, 9);
+      uintptr_t addr = (uintptr_t)TZF_Scan (sig, 9);
 
       if (addr != NULL) {
         config.framerate.limiter_branch_addr = addr + 3;
@@ -663,10 +661,10 @@ tzf::FrameRateFix::Init (void)
     if (addr != NULL) {
       dll_log.Log (L"[  60 FPS  ] Scanned Lua Loader Address: %06Xh", addr);
 
-      DWORD hookOffset = (PtrToUlong (&TZF_LuaHook) - (intptr_t)addr - 5);
+      DWORD hookOffset = (PtrToUlong (&TZF_LuaHook) - (uintptr_t)addr - 5);
       memcpy (new_code + 1, &hookOffset, 4);
       TZF_InjectByteCode (addr, new_code, 7, PAGE_EXECUTE_READWRITE);
-      pLuaReturn = (LPVOID)((intptr_t)addr + 7);
+      pLuaReturn = (LPVOID)((uintptr_t)addr + 7);
     }
     else {
       dll_log.Log (L"[  60 FPS  ]  >> ERROR: Unable to find Lua loader address! Priest bug will occur.");

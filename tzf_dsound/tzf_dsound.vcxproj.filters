@@ -16,6 +16,9 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
+    <Text Include="keyboard.h">
+      <Filter>Header Files</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="log.h">
@@ -100,9 +103,6 @@
     </ClCompile>
     <ClCompile Include="render.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="keyboard.h">
-      <Filter>Header Files</Filter>
     </ClCompile>
     <ClCompile Include="keyboard.cpp">
       <Filter>Source Files</Filter>

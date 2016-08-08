@@ -33,6 +33,23 @@
 #include <d3d9.h>
 #include <d3d9types.h>
 
+tzf::RenderFix::tzf_draw_states_s
+  tzf::RenderFix::draw_state;
+
+typedef HRESULT (STDMETHODCALLTYPE *SetRenderState_pfn)
+(
+  IDirect3DDevice9*  This,
+  D3DRENDERSTATETYPE State,
+  DWORD              Value
+);
+
+extern SetRenderState_pfn D3D9SetRenderState_Original;
+
+DrawPrimitive_pfn                       D3D9DrawPrimitive_Original                   = nullptr;
+DrawIndexedPrimitive_pfn                D3D9DrawIndexedPrimitive_Original            = nullptr;
+DrawPrimitiveUP_pfn                     D3D9DrawPrimitiveUP_Original                 = nullptr;
+DrawIndexedPrimitiveUP_pfn              D3D9DrawIndexedPrimitiveUP_Original          = nullptr;
+
 
 bool fullscreen_blit  = false;
 bool needs_aspect     = false;
@@ -124,12 +141,12 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
         D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
 
       //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
-      if (Type == D3DSAMP_MIPFILTER /*&& trilinear*/) {
+      if (Type == D3DSAMP_MIPFILTER) {// && Value != D3DTEXF_NONE /* && trilinear*/*/) {
         Value = D3DTEXF_LINEAR;
       }
 
       if (Type == D3DSAMP_MAGFILTER ||
-                  D3DSAMP_MINFILTER)
+          Type == D3DSAMP_MINFILTER)
         if (Value != D3DTEXF_POINT)
           Value = D3DTEXF_ANISOTROPIC;
     }
@@ -140,8 +157,8 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
     //Value = 16;
   }
 
-  if (Type == D3DSAMP_MAXMIPLEVEL)
-    Value = 0;
+//  if (Type == D3DSAMP_MAXMIPLEVEL)
+//    Value = 0;
 #endif
 
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
@@ -419,6 +436,9 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
 
   HRESULT hr = D3D9EndScene_Original (This);
 
+  extern void TZFix_LoadQueuedTextures (void);
+  TZFix_LoadQueuedTextures ();
+
   game_state.in_skit = false;
 
   needs_aspect       = false;
@@ -439,6 +459,9 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
+  void TZFix_LogUsedTextures (void);
+  TZFix_LogUsedTextures ();
+
   if (! config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
@@ -462,39 +485,16 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 
   hr = SK_EndBufferSwap (hr, device);
 
+  extern bool pending_loads (void);
+  if (pending_loads ()) {
+    extern void TZFix_LoadQueuedTextures (void);
+    TZFix_LoadQueuedTextures ();
+  }
+
   if (config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
   return hr;
-}
-
-typedef HRESULT (STDMETHODCALLTYPE *SetTexture_t)
-  (     IDirect3DDevice9      *This,
-   _In_ DWORD                  Sampler,
-   _In_ IDirect3DBaseTexture9 *pTexture);
-
-SetTexture_t D3D9SetTexture_Original = nullptr;
-
-COM_DECLSPEC_NOTHROW
-__declspec (noinline)
-HRESULT
-STDMETHODCALLTYPE
-D3D9SetTexture_Detour ( IDirect3DDevice9      *This,
-                  _In_  DWORD                  Sampler,
-                  _In_  IDirect3DBaseTexture9 *pTexture )
-{
-  //
-  // Hacky way of detecting the fullscreen frame border
-  //
-  if (Sampler == 0) {
-    if (pTexture == tzf::RenderFix::cutscene_frame.tex_corner ||
-        pTexture == tzf::RenderFix::cutscene_frame.tex_side)
-      tzf::RenderFix::cutscene_frame.in_use = true;
-    else
-      tzf::RenderFix::cutscene_frame.in_use = false;
-  }
-
-  return D3D9SetTexture_Original (This, Sampler, pTexture);
 }
 
 typedef HRESULT (STDMETHODCALLTYPE *UpdateSurface_t)
@@ -595,177 +595,6 @@ D3D9UpdateTexture_Detour (IDirect3DDevice9      *This,
   }
 
   return hr;
-}
-
-typedef HRESULT (STDMETHODCALLTYPE *CreateTexture_t)
-  (IDirect3DDevice9   *This,
-   UINT                Width,
-   UINT                Height,
-   UINT                Levels,
-   DWORD               Usage,
-   D3DFORMAT           Format,
-   D3DPOOL             Pool,
-   IDirect3DTexture9 **ppTexture,
-   HANDLE             *pSharedHandle);
-
-CreateTexture_t D3D9CreateTexture_Original = nullptr;
-
-COM_DECLSPEC_NOTHROW
-HRESULT
-STDMETHODCALLTYPE
-D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
-                          UINT                Width,
-                          UINT                Height,
-                          UINT                Levels,
-                          DWORD               Usage,
-                          D3DFORMAT           Format,
-                          D3DPOOL             Pool,
-                          IDirect3DTexture9 **ppTexture,
-                          HANDLE             *pSharedHandle)
-{
-  // Ignore anything that's not the primary render device.
-  if (This != tzf::RenderFix::pDevice)
-    return D3D9CreateTexture_Original ( This, Width, Height, Levels, Usage,
-                                          Format, Pool, ppTexture, pSharedHandle );
-
-
-#if 0
-  if (Usage == D3DUSAGE_RENDERTARGET)
-  dll_log.Log (L" [!] IDirect3DDevice9::CreateTexture (%lu, %lu, %lu, %lu, "
-                                                  L"%lu, %lu, %08Xh, %08Xh)",
-                 Width, Height, Levels, Usage, Format, Pool, ppTexture,
-                 pSharedHandle);
-#endif
-
-#if 0
-  bool full_mipmaps = true;
-  if (Levels != 1) {
-    if (Levels < (log2 (max (Width, Height))) + 1) {
-
-      // Restrict to DXT1 or DXT5
-      if (Format == 827611204UL ||
-          Format == 894720068UL) {
-        full_mipmaps = false;
-      }
-    }
-  }
-#endif
-
-  //
-  // Model Shadows
-  //
-  if (Width == Height && (Width == 64 || Width == 128) &&
-                          Usage == D3DUSAGE_RENDERTARGET) {
-    // Assert (Levels == 1)
-    //
-    //   If Levels is not 1, then we've kind of screwed up because now we don't
-    //     have a complete mipchain anymore.
-
-    uint32_t shift = TZF_MakeShadowBitShift (Width);
-
-    Width  <<= shift;
-    Height <<= shift;
-  }
-
-  //
-  // Post-Processing (512x256) - FIXME damnit!
-  //
-  if (Width  == 512 &&
-      Height == 256 && Usage == D3DUSAGE_RENDERTARGET) {
-    if (config.render.postproc_ratio > 0.0f) {
-      Width  = tzf::RenderFix::width  * config.render.postproc_ratio;
-      Height = tzf::RenderFix::height * config.render.postproc_ratio;
-    }
-  }
-
- if (Usage == D3DUSAGE_DEPTHSTENCIL) {
-    if (Width == Height && (Height == 512 || Height == 1024 || Height == 2048)) {
-      uint32_t shift = config.render.env_shadow_rescale;
-
-      Width  <<= shift;
-      Height <<= shift;
-    }
-  }
-
-  int levels = Levels;
-
-  HRESULT hr = 
-    D3D9CreateTexture_Original (This, Width, Height, levels, Usage,
-                                Format, Pool, ppTexture, pSharedHandle);
-
-  return hr;
-}
-
-typedef HRESULT (STDMETHODCALLTYPE *CreateDepthStencilSurface_t)
-  (IDirect3DDevice9     *This,
-   UINT                  Width,
-   UINT                  Height,
-   D3DFORMAT             Format,
-   D3DMULTISAMPLE_TYPE   MultiSample,
-   DWORD                 MultisampleQuality,
-   BOOL                  Discard,
-   IDirect3DSurface9   **ppSurface,
-   HANDLE               *pSharedHandle);
-
-CreateDepthStencilSurface_t D3D9CreateDepthStencilSurface_Original = nullptr;
-
-COM_DECLSPEC_NOTHROW
-HRESULT
-STDMETHODCALLTYPE
-D3D9CreateDepthStencilSurface_Detour (IDirect3DDevice9     *This,
-                                      UINT                  Width,
-                                      UINT                  Height,
-                                      D3DFORMAT             Format,
-                                      D3DMULTISAMPLE_TYPE   MultiSample,
-                                      DWORD                 MultisampleQuality,
-                                      BOOL                  Discard,
-                                      IDirect3DSurface9   **ppSurface,
-                                      HANDLE               *pSharedHandle)
-{
-  dll_log.Log (L"[   D3D9   ] [!] IDirect3DDevice9::CreateDepthStencilSurface (%lu, %lu, "
-                      L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
-                 Width, Height, Format, MultiSample, MultisampleQuality,
-                 Discard, ppSurface, pSharedHandle);
-
-  return D3D9CreateDepthStencilSurface_Original (This, Width, Height, Format,
-                                                 MultiSample, MultisampleQuality,
-                                                 Discard, ppSurface, pSharedHandle);
-}
-
-typedef HRESULT (STDMETHODCALLTYPE *CreateRenderTarget_t)
-  (IDirect3DDevice9     *This,
-   UINT                  Width,
-   UINT                  Height,
-   D3DFORMAT             Format,
-   D3DMULTISAMPLE_TYPE   MultiSample,
-   DWORD                 MultisampleQuality,
-   BOOL                  Lockable,
-   IDirect3DSurface9   **ppSurface,
-   HANDLE               *pSharedHandle);
-
-CreateRenderTarget_t D3D9CreateRenderTarget_Original = nullptr;
-
-COM_DECLSPEC_NOTHROW
-HRESULT
-STDMETHODCALLTYPE
-D3D9CreateRenderTarget_Detour (IDirect3DDevice9     *This,
-                               UINT                  Width,
-                               UINT                  Height,
-                               D3DFORMAT             Format,
-                               D3DMULTISAMPLE_TYPE   MultiSample,
-                               DWORD                 MultisampleQuality,
-                               BOOL                  Lockable,
-                               IDirect3DSurface9   **ppSurface,
-                               HANDLE               *pSharedHandle)
-{
-  dll_log.Log (L"[   D3D9   ] [!] IDirect3DDevice9::CreateRenderTarget (%lu, %lu, "
-                      L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
-                 Width, Height, Format, MultiSample, MultisampleQuality,
-                 Lockable, ppSurface, pSharedHandle);
-
-  return D3D9CreateRenderTarget_Original (This, Width, Height, Format,
-                                          MultiSample, MultisampleQuality,
-                                          Lockable, ppSurface, pSharedHandle);
 }
 
 COM_DECLSPEC_NOTHROW
@@ -970,17 +799,6 @@ TZF_AdjustViewport (IDirect3DDevice9* This, bool UI)
   }
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *DrawIndexedPrimitive_t)(
-  IDirect3DDevice9* This,
-  D3DPRIMITIVETYPE  Type,
-  INT               BaseVertexIndex,
-  UINT              MinVertexIndex,
-  UINT              NumVertices,
-  UINT              startIndex,
-  UINT              primCount);
-
-DrawIndexedPrimitive_t D3D9DrawIndexedPrimitive_Original = nullptr;
-
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -1000,6 +818,7 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
                                                      primCount );
   }
 
+  ++tzf::RenderFix::draw_state.draws;
   ++draw_count;
 
 // Battle Works Well
@@ -1467,6 +1286,135 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
 }
 #endif
 
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9DrawPrimitive_Detour (IDirect3DDevice9* This,
+                          D3DPRIMITIVETYPE  PrimitiveType,
+                          UINT              StartVertex,
+                          UINT              PrimitiveCount)
+{
+  // Ignore anything that's not the primary render device.
+  if (This != tzf::RenderFix::pDevice) {
+    dll_log.Log (L"[Render Fix] >> WARNING: DrawPrimitive came from unknown IDirect3DDevice9! << ");
+
+    return D3D9DrawPrimitive_Original ( This, PrimitiveType,
+                                                 StartVertex, PrimitiveCount );
+  }
+
+  tzf::RenderFix::draw_state.draws++;
+
+#if 0
+  if (tsf::RenderFix::tracer.log) {
+    dll_log.Log ( L"[FrameTrace] DrawPrimitive - %X, StartVertex: %lu, PrimitiveCount: %lu",
+                      PrimitiveType, StartVertex, PrimitiveCount );
+  }
+#endif
+
+  return D3D9DrawPrimitive_Original ( This, PrimitiveType,
+                                        StartVertex, PrimitiveCount );
+}
+
+const wchar_t*
+SK_D3D9_PrimitiveTypeToStr (D3DPRIMITIVETYPE pt)
+{
+  switch (pt)
+  {
+    case D3DPT_POINTLIST             : return L"D3DPT_POINTLIST";
+    case D3DPT_LINELIST              : return L"D3DPT_LINELIST";
+    case D3DPT_LINESTRIP             : return L"D3DPT_LINESTRIP";
+    case D3DPT_TRIANGLELIST          : return L"D3DPT_TRIANGLELIST";
+    case D3DPT_TRIANGLESTRIP         : return L"D3DPT_TRIANGLESTRIP";
+    case D3DPT_TRIANGLEFAN           : return L"D3DPT_TRIANGLEFAN";
+  }
+
+  return L"Invalid Primitive";
+}
+
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9DrawPrimitiveUP_Detour ( IDirect3DDevice9* This,
+                             D3DPRIMITIVETYPE  PrimitiveType,
+                             UINT              PrimitiveCount,
+                             const void       *pVertexStreamZeroData,
+                             UINT              VertexStreamZeroStride )
+{
+#if 0
+  if (tsf::RenderFix::tracer.log && This == tsf::RenderFix::pDevice) {
+    dll_log.Log ( L"[FrameTrace] DrawPrimitiveUP   (Type: %s) - PrimitiveCount: %lu"/*
+                  L"                         [FrameTrace]                 -"
+                  L"    BaseIdx:     %5li, MinVtxIdx:  %5lu,\n"
+                  L"                         [FrameTrace]                 -"
+                  L"    NumVertices: %5lu, startIndex: %5lu,\n"
+                  L"                         [FrameTrace]                 -"
+                  L"    primCount:   %5lu"*/,
+                    SK_D3D9_PrimitiveTypeToStr (PrimitiveType),
+                      PrimitiveCount/*,
+                      BaseVertexIndex, MinVertexIndex,
+                        NumVertices, startIndex, primCount*/ );
+  }
+#endif
+
+  tzf::RenderFix::draw_state.draws++;
+
+  return
+    D3D9DrawPrimitiveUP_Original ( This,
+                                     PrimitiveType,
+                                       PrimitiveCount,
+                                         pVertexStreamZeroData,
+                                           VertexStreamZeroStride );
+}
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9DrawIndexedPrimitiveUP_Detour ( IDirect3DDevice9* This,
+                                    D3DPRIMITIVETYPE  PrimitiveType,
+                                    UINT              MinVertexIndex,
+                                    UINT              NumVertices,
+                                    UINT              PrimitiveCount,
+                                    const void       *pIndexData,
+                                    D3DFORMAT         IndexDataFormat,
+                                    const void       *pVertexStreamZeroData,
+                                    UINT              VertexStreamZeroStride )
+{
+#if 0
+  if (tsf::RenderFix::tracer.log && This == tsf::RenderFix::pDevice) {
+    dll_log.Log ( L"[FrameTrace] DrawIndexedPrimitiveUP   (Type: %s) - NumVertices: %lu, PrimitiveCount: %lu"/*
+                  L"                         [FrameTrace]                 -"
+                  L"    BaseIdx:     %5li, MinVtxIdx:  %5lu,\n"
+                  L"                         [FrameTrace]                 -"
+                  L"    NumVertices: %5lu, startIndex: %5lu,\n"
+                  L"                         [FrameTrace]                 -"
+                  L"    primCount:   %5lu"*/,
+                    SK_D3D9_PrimitiveTypeToStr (PrimitiveType),
+                      NumVertices, PrimitiveCount/*,
+                      BaseVertexIndex, MinVertexIndex,
+                        NumVertices, startIndex, primCount*/ );
+  }
+#endif
+
+  tzf::RenderFix::draw_state.draws++;
+
+  return
+    D3D9DrawIndexedPrimitiveUP_Original (
+      This,
+        PrimitiveType,
+          MinVertexIndex,
+            NumVertices,
+              PrimitiveCount,
+                pIndexData,
+                  IndexDataFormat,
+                    pVertexStreamZeroData,
+                      VertexStreamZeroStride );
+}
+
+
+
+
 typedef HRESULT (__stdcall *Reset_pfn)(
   IDirect3DDevice9     *This,
  D3DPRESENT_PARAMETERS *pPresentationParameters
@@ -1524,10 +1472,6 @@ tzf::RenderFix::Init (void)
                       D3D9SetViewport_Detour,
             (LPVOID*)&D3D9SetViewport_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9DrawIndexedPrimitive_Override",
-                      D3D9DrawIndexedPrimitive_Detour,
-            (LPVOID*)&D3D9DrawIndexedPrimitive_Original );
-
   TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetVertexShaderConstantF_Override",
                       D3D9SetVertexShaderConstantF_Detour,
             (LPVOID*)&D3D9SetVertexShaderConstantF_Original );
@@ -1549,30 +1493,13 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9EndScene_Override",
                       D3D9EndScene_Detour,
             (LPVOID*)&D3D9EndScene_Original );
-
-  // Needed for shadow re-scaling
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9CreateTexture_Override",
-                      D3D9CreateTexture_Detour,
-            (LPVOID*)&D3D9CreateTexture_Original );
 #endif
 
 
-/*
   TZF_CreateDLLHook ( config.system.injector.c_str (),
                       "D3D9Reset_Override",
                       D3D9Reset_Detour,
            (LPVOID *)&D3D9Reset_Original );
-*/
-
-
-#if 1
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9CreateRenderTarget_Override",
-                      D3D9CreateRenderTarget_Detour,
-            (LPVOID*)&D3D9CreateRenderTarget_Original );
-
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9CreateDepthStencilSurface_Override",
-                      D3D9CreateDepthStencilSurface_Detour,
-            (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
 
 #if 0
   TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9UpdateTexture_Override",
@@ -1582,11 +1509,6 @@ tzf::RenderFix::Init (void)
   TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9UpdateSurface_Override",
                       D3D9UpdateSurface_Detour,
             (LPVOID*)&D3D9UpdateSurface_Original );
-#endif
-
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetTexture_Override",
-                      D3D9SetTexture_Detour,
-            (LPVOID*)&D3D9SetTexture_Original );
 #endif
 
   user32_dll   = LoadLibrary (L"User32.dll");
@@ -1600,61 +1522,33 @@ tzf::RenderFix::Init (void)
                       D3D9EndFrame_Post,
             (LPVOID*)&SK_EndBufferSwap );
 
-#if 0
-  UINT_PTR addr = (UINT_PTR)GetModuleHandle(L"Tales of Zestiria.exe");
-  HANDLE hProc = GetCurrentProcess ();
+  TZF_CreateDLLHook ( config.system.injector.c_str (),
+                      "D3D9DrawPrimitive_Override",
+                       D3D9DrawPrimitive_Detour,
+             (LPVOID*)&D3D9DrawPrimitive_Original );
 
-  float* fTest = (float *)addr;
-  while (true) {
-    if (*fTest < (1.0 / 60.0) + 0.0001 && *fTest > (1.0 / 60.0) - 0.0001)
-      dll_log.Log (L"Frame Delta: Address=%08Xh",
-                     //fTest);
-#if 0
-    if (*fTest < 1.777778f + 0.001f && *fTest > 1.777778f - 0.001f) {
-      dll_log.Log (L"Aspect Ratio: Address=%08Xh",
-                   fTest);
-    }
+  TZF_CreateDLLHook ( config.system.injector.c_str (),
+                      "D3D9DrawIndexedPrimitive_Override",
+                       D3D9DrawIndexedPrimitive_Detour,
+             (LPVOID*)&D3D9DrawIndexedPrimitive_Original );
 
-    if (*fTest < 0.785398f + 0.001f && *fTest > 0.785398f - 0.001f) {
-      dll_log.Log (L"FOVY: Address=%08Xh",
-                   fTest);
-    }
-#endif
-    ++fTest;
-  }
-#endif
+  TZF_CreateDLLHook ( config.system.injector.c_str (),
+                      "D3D9DrawPrimitiveUP_Override",
+                       D3D9DrawPrimitiveUP_Detour,
+             (LPVOID*)&D3D9DrawPrimitiveUP_Original );
 
-#if 0
-    float* fTest = (float *)0x00D93690;
-
-    for (int i = 0; i < 1000; fTest++) {
-      dll_log.Log (L"%p, %f", fTest, *fTest);
-    }
-#endif
+  TZF_CreateDLLHook ( config.system.injector.c_str (),
+                      "D3D9DrawIndexedPrimitiveUP_Override",
+                       D3D9DrawIndexedPrimitiveUP_Detour,
+             (LPVOID*)&D3D9DrawIndexedPrimitiveUP_Original );
 
   CommandProcessor* comm_proc = CommandProcessor::getInstance ();
-
-#if 0
-  if (config.render.aspect_ratio != 1.777778f) {
-    eTB_VarStub <float>* aspect =
-   (eTB_VarStub <float>*)command.FindVariable ("AspectRatio");
-    aspect->setValue (config.render.aspect_ratio);
-  }
-
-  if (config.render.fovy != 0.785398f) {
-    eTB_VarStub <float>* fovy =
-   (eTB_VarStub <float>*)command.FindVariable ("FOVY");
-    fovy->setValue (config.render.fovy);
-  }
-#endif
 }
 
 void
 tzf::RenderFix::Shutdown (void)
 {
   tex_mgr.Shutdown ();
-
-  //TZF_RemoveHook (SetSamplerState);
 }
 
 tzf::RenderFix::CommandProcessor::CommandProcessor (void)

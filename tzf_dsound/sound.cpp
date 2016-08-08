@@ -382,7 +382,7 @@ IAudioClient_GetMixFormat_Detour (IAudioClient       *This,
       {
         pMixFormat = (PWAVEFORMATEX)property.blob.pBlobData;
         if (pMixFormat->cbSize > sizeof (WAVEFORMATEX)) {
-          if (pMixFormat->cbSize = 22) {
+          if (pMixFormat->cbSize == 22) {
             memcpy (&tzf::SoundFix::snd_device_fmt, pMixFormat, sizeof (WAVEFORMATEX));
 
             std::wstring format_name;
@@ -513,7 +513,7 @@ IAudioClient_Initialize_Detour (IAudioClient       *This,
   audio_log.Log (L" [!] IAudioClient::Initialize (...)");
 
   audio_log.Log (
-    L"  {Share Mode: %lu - Stream Flags: 0x%04X}", ShareMode, StreamFlags );
+    L"  {Share Mode: %li - Stream Flags: 0x%04X}", ShareMode, StreamFlags );
   audio_log.Log (
     L"  >> Channels: %lu, Samples Per Sec: %lu, Bits Per Sample: %hu\n",
     pFormat->nChannels, pFormat->nSamplesPerSec, pFormat->wBitsPerSample );
