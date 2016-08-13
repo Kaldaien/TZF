@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.4.1";
+std::wstring TZF_VER_STR = L"1.4.3";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;
@@ -101,7 +101,8 @@ struct {
 
 
 bool
-TZF_LoadConfig (std::wstring name) {
+TZF_LoadConfig (std::wstring name)
+{
   // Load INI File
   std::wstring full_name = name + L".ini";
   dll_ini = new tzf::INI::File ((wchar_t *)full_name.c_str ());
@@ -502,131 +503,66 @@ TZF_LoadConfig (std::wstring name) {
   //
   // Load Parameters
   //
-  if (audio.channels->load ())
-    config.audio.channels = audio.channels->get_value ();
+  audio.channels->load      ( (int &)config.audio.channels      );
+  audio.sample_rate->load   ( (int &)config.audio.sample_hz     );
+  audio.compatibility->load (        config.audio.compatibility );
+  audio.enable_fix->load    (        config.audio.enable_fix    );
 
-  if (audio.sample_rate->load ())
-    config.audio.sample_hz = audio.sample_rate->get_value ();
+  framerate.allow_fake_sleep->load    (config.framerate.allow_fake_sleep);
+  framerate.yield_processor->load     (config.framerate.yield_processor);
+  framerate.minimize_latency->load    (config.framerate.minimize_latency);
 
-  if (audio.compatibility->load ())
-    config.audio.compatibility = audio.compatibility->get_value ();
+  framerate.speedresetcode_addr->load  (
+             (int &)config.framerate.speedresetcode_addr   );
+  framerate.speedresetcode2_addr->load (
+             (int &)config.framerate.speedresetcode2_addr  );
+  framerate.speedresetcode3_addr->load (
+              (int &)config.framerate.speedresetcode3_addr );
+  framerate.limiter_branch_addr->load  (
+              (int &)config.framerate.limiter_branch_addr  );
 
-  if (audio.enable_fix->load ())
-    config.audio.enable_fix = audio.enable_fix->get_value ();
-
-
-  if (framerate.allow_fake_sleep->load ())
-    config.framerate.allow_fake_sleep = framerate.allow_fake_sleep->get_value ();
-
-  if (framerate.yield_processor->load ())
-    config.framerate.yield_processor = framerate.yield_processor->get_value ();
-
-  if (framerate.minimize_latency->load ())
-    config.framerate.minimize_latency = framerate.minimize_latency->get_value ();
-
-  if (framerate.speedresetcode_addr->load ())
-    config.framerate.speedresetcode_addr = framerate.speedresetcode_addr->get_value ();
-
-  if (framerate.speedresetcode2_addr->load ())
-    config.framerate.speedresetcode2_addr = framerate.speedresetcode2_addr->get_value ();
-
-  if (framerate.speedresetcode3_addr->load ())
-    config.framerate.speedresetcode3_addr = framerate.speedresetcode3_addr->get_value ();
-
-  if (framerate.limiter_branch_addr->load ())
-    config.framerate.limiter_branch_addr = framerate.limiter_branch_addr->get_value ();
-
-  if (framerate.disable_limiter->load ())
-    config.framerate.disable_limiter = framerate.disable_limiter->get_value ();
-
-  if (framerate.auto_adjust->load ())
-    config.framerate.auto_adjust = framerate.auto_adjust->get_value ();
-
-  if (framerate.target->load ())
-    config.framerate.target = framerate.target->get_value ();
-
-  if (framerate.battle_target->load ())
-    config.framerate.battle_target = framerate.battle_target->get_value ();
-
-  if (framerate.battle_adaptive->load ())
-    config.framerate.battle_adaptive = framerate.battle_adaptive->get_value ();
-
-  if (framerate.cutscene_target->load ())
-    config.framerate.cutscene_target = framerate.cutscene_target->get_value ();
+  framerate.disable_limiter->load (config.framerate.disable_limiter);
+  framerate.auto_adjust->load     (config.framerate.auto_adjust);
+  framerate.target->load          (config.framerate.target);
+  framerate.battle_target->load   (config.framerate.battle_target);
+  framerate.battle_adaptive->load (config.framerate.battle_adaptive);
+  framerate.cutscene_target->load (config.framerate.cutscene_target);
 
 
+  render.aspect_addr->load  ((int &)config.render.aspect_addr);
+  render.fovy_addr->load    ((int &)config.render.fovy_addr);
 
-  if (render.aspect_addr->load ())
-    config.render.aspect_addr = render.aspect_addr->get_value ();
+  render.aspect_ratio->load (config.render.aspect_ratio);
+  render.fovy->load         (config.render.fovy);
 
-  if (render.fovy_addr->load ())
-    config.render.fovy_addr = render.fovy_addr->get_value ();
-
-  if (render.aspect_ratio->load ())
-    config.render.aspect_ratio = render.aspect_ratio->get_value ();
-
-  if (render.fovy->load ())
-    config.render.fovy = render.fovy->get_value ();
-
-  if (render.aspect_correct_vids->load ())
-    config.render.blackbar_videos = render.aspect_correct_vids->get_value ();
-
-  if (render.aspect_correction->load ())
-    config.render.aspect_correction = render.aspect_correction->get_value ();
+  render.aspect_correct_vids->load (config.render.blackbar_videos);
+  render.aspect_correction->load   (config.render.aspect_correction);
+  render.clear_blackbars->load     (config.render.clear_blackbars);
 
   // The video aspect ratio correction option is scheduled for removal anyway, so
   //   this hack is okay...
   if (config.render.clear_blackbars && config.render.aspect_correction)
     config.render.blackbar_videos = true;
 
-  if (render.postproc_ratio->load ())
-     config.render.postproc_ratio = render.postproc_ratio->get_value ();
+  render.postproc_ratio->load      (config.render.postproc_ratio);
+  render.rescale_shadows->load     (config.render.shadow_rescale);
+  render.rescale_env_shadows->load (config.render.env_shadow_rescale);
 
-  if (render.rescale_shadows->load ())
-    config.render.shadow_rescale = render.rescale_shadows->get_value ();
+  textures.remaster->load       (config.textures.remaster);
+  textures.cache->load          (config.textures.cache);
+  textures.dump->load           (config.textures.dump);
+  textures.cache_size->load     (config.textures.max_cache_in_mib);
+  textures.worker_threads->load (config.textures.worker_threads);
 
-  if (render.rescale_env_shadows->load ())
-    config.render.env_shadow_rescale = render.rescale_env_shadows->get_value ();
+  steam.allow_broadcasts->load  (config.steam.allow_broadcasts);
 
-  if (render.clear_blackbars->load ())
-    config.render.clear_blackbars = render.clear_blackbars->get_value ();
+  keyboard.swap_keys->load (config.keyboard.swap_keys);
 
+  lua.fix_priest->load (config.lua.fix_priest);
 
-  if (textures.remaster->load ())
-    config.textures.remaster = textures.remaster->get_value ();
-
-  if (textures.cache->load ())
-    config.textures.cache = textures.cache->get_value ();
-
-  if (textures.dump->load ())
-    config.textures.dump = textures.dump->get_value ();
-
-  if (textures.cache_size->load ())
-    config.textures.max_cache_in_mib = textures.cache_size->get_value ();
-
-  if (textures.worker_threads->load ())
-    config.textures.worker_threads = textures.worker_threads->get_value ();
-
-
-  if (steam.allow_broadcasts->load ())
-    config.steam.allow_broadcasts = steam.allow_broadcasts->get_value ();
-
-  if (keyboard.swap_keys->load ())
-    config.keyboard.swap_keys = keyboard.swap_keys->get_value ();
-
-
-  if (lua.fix_priest->load ())
-    config.lua.fix_priest = lua.fix_priest->get_value ();
-
-
-  if (sys.version->load ())
-    config.system.version = sys.version->get_value ();
-
-  if (sys.intro_video->load ())
-    config.system.intro_video = sys.intro_video->get_value ();
-
-  if (sys.injector->load ())
-    config.system.injector = sys.injector->get_value ();
+  sys.version->load     (config.system.version);
+  sys.intro_video->load (config.system.intro_video);
+  sys.injector->load    (config.system.injector);
 
   if (empty)
     return false;
@@ -635,125 +571,58 @@ TZF_LoadConfig (std::wstring name) {
 }
 
 void
-TZF_SaveConfig (std::wstring name, bool close_config) {
-  //audio.channels->set_value    (config.audio.channels);  // OBSOLETE 
-  //audio.channels->store        ();                       // OBSOLETE
+TZF_SaveConfig (std::wstring name, bool close_config)
+{
+//audio.channels->store      (config.audio.channels);  // OBSOLETE
 
-  audio.sample_rate->set_value (config.audio.sample_hz);
-  audio.sample_rate->store     ();
+  audio.sample_rate->store   (config.audio.sample_hz);
+  audio.compatibility->store (config.audio.compatibility);
+  audio.enable_fix->store    (config.audio.enable_fix);
 
-  audio.compatibility->set_value (config.audio.compatibility);
-  audio.compatibility->store     ();
-
-  audio.enable_fix->set_value (config.audio.enable_fix);
-  audio.enable_fix->store     ();
-
-
-  framerate.allow_fake_sleep->set_value (config.framerate.allow_fake_sleep);
-  framerate.allow_fake_sleep->store     ();
-
-  framerate.yield_processor->set_value (config.framerate.yield_processor);
-  framerate.yield_processor->store     ();
-
-  framerate.minimize_latency->set_value (config.framerate.minimize_latency);
-  framerate.minimize_latency->store     ();
-
-  framerate.speedresetcode_addr->set_value (config.framerate.speedresetcode_addr);
-  framerate.speedresetcode_addr->store     ();
-
-  framerate.speedresetcode2_addr->set_value (config.framerate.speedresetcode2_addr);
-  framerate.speedresetcode2_addr->store     ();
-
-  framerate.speedresetcode3_addr->set_value (config.framerate.speedresetcode3_addr);
-  framerate.speedresetcode3_addr->store     ();
-
-  framerate.limiter_branch_addr->set_value (config.framerate.limiter_branch_addr);
-  framerate.limiter_branch_addr->store     ();
-
-  framerate.disable_limiter->set_value (config.framerate.disable_limiter);
-  framerate.disable_limiter->store     ();
-
-  framerate.auto_adjust->set_value (config.framerate.auto_adjust);
-  framerate.auto_adjust->store     ();
+  framerate.allow_fake_sleep->store     (config.framerate.allow_fake_sleep);
+  framerate.yield_processor->store      (config.framerate.yield_processor);
+  framerate.minimize_latency->store     (config.framerate.minimize_latency);
+  framerate.speedresetcode_addr->store  (config.framerate.speedresetcode_addr);
+  framerate.speedresetcode2_addr->store (config.framerate.speedresetcode2_addr);
+  framerate.speedresetcode3_addr->store (config.framerate.speedresetcode3_addr);
+  framerate.limiter_branch_addr->store  (config.framerate.limiter_branch_addr);
+  framerate.disable_limiter->store      (config.framerate.disable_limiter);
+  framerate.auto_adjust->store          (config.framerate.auto_adjust);
 
   //
   // Don't store changes to this preference made while the game is running
   //
-  //framerate.target->set_value (config.framerate.target);
-  //framerate.target->store     ();
+  //framerate.target->store          (config.framerate.target);
+  //framerate.battle_target->store   (config.framerate.battle_target);
+  //framerate.battle_adaptive->store (config.framerate.battle_adaptive);
+  //framerate.cutscene_target->store (config.framerate.cutscene_target);
 
-  //framerate.battle_target->set_value (config.framerate.battle_target);
-  //framerate.battle_target->store     ();
+  render.aspect_addr->store   (config.render.aspect_addr);
+  render.fovy_addr->store     (config.render.fovy_addr);
+  render.aspect_ratio->store  (config.render.aspect_ratio);
+  render.fovy->store          (config.render.fovy);
 
-  //framerate.battle_adaptive->set_value (config.framerate.battle_adaptive);
-  //framerate.battle_adaptive->store     ();
+//render.aspect_correct_vids->store (config.render.blackbar_videos);
+  render.aspect_correction->store   (config.render.aspect_correction);
+  render.clear_blackbars->store     (config.render.clear_blackbars);
 
-  //framerate.cutscene_target->set_value (config.framerate.cutscene_target);
-  //framerate.cutscene_target->store     ();
+  render.postproc_ratio->store      (config.render.postproc_ratio);
+  render.rescale_shadows->store     (config.render.shadow_rescale);
+  render.rescale_env_shadows->store (config.render.env_shadow_rescale);
 
+  textures.remaster->store       (config.textures.remaster);
+  textures.cache->store          (config.textures.cache);
+  textures.dump->store           (config.textures.dump);
+  textures.cache_size->store     (config.textures.max_cache_in_mib);
+  textures.worker_threads->store (config.textures.worker_threads);
 
-  render.aspect_addr->set_value (config.render.aspect_addr);
-  render.aspect_addr->store     ();
+  steam.allow_broadcasts->store  (config.steam.allow_broadcasts);
 
-  render.fovy_addr->set_value (config.render.fovy_addr);
-  render.fovy_addr->store     ();
+  lua.fix_priest->store          (config.lua.fix_priest);
 
-  render.aspect_ratio->set_value (config.render.aspect_ratio);
-  render.aspect_ratio->store     ();
-
-  render.fovy->set_value (config.render.fovy);
-  render.fovy->store     ();
-
-//  render.aspect_correct_vids->set_value (config.render.blackbar_videos);
-//  render.aspect_correct_vids->store     ();
-
-  render.aspect_correction->set_value (config.render.aspect_correction);
-  render.aspect_correction->store     ();
-
-  render.postproc_ratio->set_value (config.render.postproc_ratio);
-  render.postproc_ratio->store     ();
-
-  render.rescale_shadows->set_value (config.render.shadow_rescale);
-  render.rescale_shadows->store     ();
-
-  render.rescale_env_shadows->set_value (config.render.env_shadow_rescale);
-  render.rescale_env_shadows->store     ();
-
-  render.clear_blackbars->set_value (config.render.clear_blackbars);
-  render.clear_blackbars->store     ();
-
-
-  textures.remaster->set_value (config.textures.remaster);
-  textures.remaster->store     ();
-
-  textures.cache->set_value (config.textures.cache);
-  textures.cache->store     ();
-
-  textures.dump->set_value (config.textures.dump);
-  textures.dump->store     ();
-
-  textures.cache_size->set_value (config.textures.max_cache_in_mib);
-  textures.cache_size->store     ();
-
-  textures.worker_threads->set_value (config.textures.worker_threads);
-  textures.worker_threads->store     ();
-
-  steam.allow_broadcasts->set_value (config.steam.allow_broadcasts);
-  steam.allow_broadcasts->store     ();
-
-
-  lua.fix_priest->set_value (config.lua.fix_priest);
-  lua.fix_priest->store     ();
-
-
-  sys.version->set_value       (TZF_VER_STR);
-  sys.version->store           ();
-
-  sys.intro_video->set_value   (config.system.intro_video);
-  sys.intro_video->store       ();
-
-  sys.injector->set_value      (config.system.injector.c_str ());
-  sys.injector->store          ();
+  sys.version->store             (TZF_VER_STR);
+  sys.intro_video->store         (config.system.intro_video);
+  sys.injector->store            (config.system.injector);
 
   dll_ini->write (name + L".ini");
 

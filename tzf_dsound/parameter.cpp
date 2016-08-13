@@ -54,6 +54,34 @@ tzf::ParameterInt::set_value_str (std::wstring str)
 }
 
 
+void
+tzf::ParameterInt::store_str (std::wstring str)
+{
+  set_value_str  (str);
+  iParameter::store ();
+}
+
+void
+tzf::ParameterInt::store (int val)
+{
+  set_value      (val);
+  iParameter::store ();
+}
+
+bool
+tzf::ParameterInt::load (int& ref)
+{
+  bool bRet = 
+    iParameter::load ();
+
+  if (bRet)
+    ref = get_value ();
+
+  return bRet;
+}
+
+
+
 std::wstring
 tzf::ParameterInt64::get_value_str (void)
 {
@@ -81,6 +109,34 @@ tzf::ParameterInt64::set_value_str (std::wstring str)
 {
   value = _wtoll (str.c_str ());
 }
+
+
+void
+tzf::ParameterInt64::store_str (std::wstring str)
+{
+  set_value_str  (str);
+  iParameter::store ();
+}
+
+void
+tzf::ParameterInt64::store (int64_t val)
+{
+  set_value      (val);
+  iParameter::store ();
+}
+
+bool
+tzf::ParameterInt64::load (int64_t& ref)
+{
+  bool bRet = 
+    iParameter::load ();
+
+  if (bRet)
+    ref = get_value ();
+
+  return bRet;
+}
+
 
 
 std::wstring
@@ -124,6 +180,34 @@ tzf::ParameterBool::set_value_str (std::wstring str)
 }
 
 
+void
+tzf::ParameterBool::store_str (std::wstring str)
+{
+  set_value_str  (str);
+  iParameter::store ();
+}
+
+void
+tzf::ParameterBool::store (bool val)
+{
+  set_value      (val);
+  iParameter::store ();
+}
+
+bool
+tzf::ParameterBool::load (bool& ref)
+{
+  bool bRet = 
+    iParameter::load ();
+
+  if (bRet)
+    ref = get_value ();
+
+  return bRet;
+}
+
+
+
 std::wstring
 tzf::ParameterFloat::get_value_str (void)
 {
@@ -131,8 +215,8 @@ tzf::ParameterFloat::get_value_str (void)
   swprintf (val_str, L"%f", value);
 
   // Remove trailing 0's after the .
-  int len = wcslen (val_str);
-  for (int i = (len - 1); i > 1; i--) {
+  size_t len = wcslen (val_str);
+  for (size_t i = (len - 1); i > 1; i--) {
     if (val_str [i] == L'0' && val_str [i - 1] != L'.')
       len--;
     if (val_str [i] != L'0' && val_str [i] != L'\0')
@@ -164,6 +248,34 @@ tzf::ParameterFloat::set_value_str (std::wstring str)
 }
 
 
+void
+tzf::ParameterFloat::store_str (std::wstring str)
+{
+  set_value_str  (str);
+  iParameter::store ();
+}
+
+void
+tzf::ParameterFloat::store (float val)
+{
+  set_value      (val);
+  iParameter::store ();
+}
+
+bool
+tzf::ParameterFloat::load (float& ref)
+{
+  bool bRet = 
+    iParameter::load ();
+
+  if (bRet)
+    ref = get_value ();
+
+  return bRet;
+}
+
+
+
 std::wstring
 tzf::ParameterStringW::get_value_str (void)
 {
@@ -187,6 +299,33 @@ void
 tzf::ParameterStringW::set_value_str (std::wstring str)
 {
   value = str;
+}
+
+
+void
+tzf::ParameterStringW::store_str (std::wstring str)
+{
+  set_value_str  (str);
+  iParameter::store ();
+}
+
+void
+tzf::ParameterStringW::store (std::wstring val)
+{
+  set_value      (val);
+  iParameter::store ();
+}
+
+bool
+tzf::ParameterStringW::load (std::wstring& ref)
+{
+  bool bRet = 
+    iParameter::load ();
+
+  if (bRet)
+    ref = get_value ();
+
+  return bRet;
 }
 
 

@@ -1,17 +1,29 @@
+/**
+ * This file is part of Tales of Zestiria "Fix".
+ *
+ * Tales of Zestiria "Fix" is free software : you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by The Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * Tales of Zestiria "Fix" is distributed in the hope that it will be
+ * useful,
+ *
+ * But WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tales of Zestiria "Fix".
+ *
+ *   If not, see <http://www.gnu.org/licenses/>.
+ *
+**/
+
 #ifndef __EPSILON_TESTBED__COMMAND_H__
 #define __EPSILON_TESTBED__COMMAND_H__
 
-#define _CRT_SECURE_NO_WARNINGS
-
-#ifdef _MSC_VER
 # include <unordered_map>
-//# include <hash_map>
-//# define hash_map stdext::hash_map
-#else
-# include <hash_map.h>
-#endif
-
-//#include "../Epsilon/string.h"
 
 #include <locale> // tolower (...)
 
@@ -200,7 +212,8 @@ public:
   bool                RemoveVariable ( const char*   szVariable );
 
 
-  eTB_CommandResult ProcessCommandLine (const char* szCommandLine);
+  eTB_CommandResult ProcessCommandLine      (const char* szCommandLine);
+  eTB_CommandResult ProcessCommandFormatted (const char* szCommandFormat, ...);
 
 
 protected:
@@ -212,6 +225,7 @@ private:
 };
 
 
-extern eTB_CommandProcessor command;
+typedef eTB_CommandProcessor* (__stdcall *SK_GetCommandProcessor_pfn)(void);
+extern SK_GetCommandProcessor_pfn SK_GetCommandProcessor;
 
 #endif /* __EPSILON_TESTBED__COMMAND_H */

@@ -1,3 +1,27 @@
+/**
+ * This file is part of Tales of Zestiria "Fix".
+ *
+ * Tales of Zestiria "Fix" is free software : you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by The Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * Tales of Zestiria "Fix" is distributed in the hope that it will be
+ * useful,
+ *
+ * But WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Tales of Zestiria "Fix".
+ *
+ *   If not, see <http://www.gnu.org/licenses/>.
+ *
+**/
+
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "command.h"
 
 template <>
@@ -205,7 +229,7 @@ eTB_CommandProcessor::ProcessCommandLine (const char* szCommandLine)
   if (szCommandLine != NULL && strlen (szCommandLine))
   {
     char*  command_word     = _strdup (szCommandLine);
-    size_t command_word_len =  strlen (command_word);
+    size_t command_word_len = strlen  (command_word);
 
     char*  command_args     = command_word;
     size_t command_args_len = 0;
@@ -248,7 +272,7 @@ eTB_CommandProcessor::ProcessCommandLine (const char* szCommandLine)
     //free (lowercase_cmd_word);
     free (command_word);
 
-    eTB_Command* cmd = command.FindCommand (cmd_word.c_str ());
+    eTB_Command* cmd = SK_GetCommandProcessor ()->FindCommand (cmd_word.c_str ());
 
     if (cmd != NULL) {
       return cmd->execute (cmd_args.c_str ());
@@ -256,7 +280,7 @@ eTB_CommandProcessor::ProcessCommandLine (const char* szCommandLine)
 
     /* No command found, perhaps the word was a variable? */
 
-    const eTB_Variable* var = command.FindVariable (cmd_word.c_str ());
+    const eTB_Variable* var = SK_GetCommandProcessor ()->FindVariable (cmd_word.c_str ());
 
     if (var != NULL) {
       if (var->getType () == eTB_Variable::Boolean)
@@ -280,7 +304,7 @@ eTB_CommandProcessor::ProcessCommandLine (const char* szCommandLine)
           }
 
           /* Toggle */
-          else if ( !(_stricmp (cmd_args.c_str (), "toggle") && _stricmp (cmd_args.c_str (), "~") &&
+          else if (! (_stricmp (cmd_args.c_str (), "toggle") && _stricmp (cmd_args.c_str (), "~") &&
                       _stricmp (cmd_args.c_str (), "!"))) {
             bool_val = ! bool_var->getValue ();
             bool_var->setValue (bool_val);
@@ -352,6 +376,35 @@ eTB_CommandProcessor::ProcessCommandLine (const char* szCommandLine)
     /* Invalid Command Line (not long enough). */
     return eTB_CommandResult (szCommandLine); /* Default args --> failure... */
   }
+}
+
+#include <cstdarg>
+
+eTB_CommandResult
+eTB_CommandProcessor::ProcessCommandFormatted (const char* szCommandFormat, ...)
+{
+  va_list ap;
+  int     len;
+
+  va_start         (ap, szCommandFormat);
+  len = _vscprintf (szCommandFormat, ap);
+  va_end           (ap);
+
+  char* szFormattedCommandLine =
+    (char *)malloc (sizeof (char) * (len + 1));
+
+  *(szFormattedCommandLine + len) = '\0';
+
+  va_start (ap, szCommandFormat);
+  vsprintf (szFormattedCommandLine, szCommandFormat, ap);
+  va_end   (ap);
+
+  eTB_CommandResult result =
+    ProcessCommandLine (szFormattedCommandLine);
+
+  free (szFormattedCommandLine);
+
+  return result;
 }
 
 /** Variable Type Support **/
@@ -441,7 +494,59 @@ eTB_VarStub <float>::getValueString (void) const
   char szFloatString [32];
   snprintf (szFloatString, 32, "%f", getValue ());
 
+  // Remove trailing 0's after the .
+  size_t len = strlen (szFloatString);
+  for (size_t i = (len - 1); i > 1; i--) {
+    if (szFloatString [i] == '0' && szFloatString [i - 1] != '.')
+      len--;
+    if (szFloatString [i] != '0' && szFloatString [i] != '\0')
+      break;
+  }
+
+  szFloatString [len] = '\0';
+
   return std::string (szFloatString);
 }
 
-eTB_CommandProcessor command;
+
+#include <Windows.h>
+#include "config.h"
+
+//
+// In case the injector's command processor is not workable
+// t
+eTB_CommandProcessor*
+__stdcall
+FALLBACK_GetCommandProcessor (void)
+{
+  static eTB_CommandProcessor* command = nullptr;
+
+  if (command == nullptr) {
+    //
+    // The ABI is stable, so we don't need this hack
+    //
+    //command = new eTB_CommandProcessor ();
+
+    SK_GetCommandProcessor_pfn SK_GetCommandProcessorFromDLL =
+      (SK_GetCommandProcessor_pfn)
+        GetProcAddress (
+          LoadLibrary (
+            config.system.injector.c_str ()
+          ),
+            "SK_GetCommandProcessor"
+        );
+
+    command = SK_GetCommandProcessorFromDLL ();
+  }
+
+  return command;
+}
+
+// This _should_ be overwritten with Special K's DLL import
+SK_GetCommandProcessor_pfn SK_GetCommandProcessor = &FALLBACK_GetCommandProcessor;
+
+////
+//// TODO: Eliminate the dual-definition of this class, and add SpecialK as a compile-time
+////         dependency. That project will need some additional re-design for this
+////          to happen, but it is an important step for modularity.
+////

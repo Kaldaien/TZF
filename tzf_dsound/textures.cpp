@@ -36,7 +36,6 @@
 #include <algorithm>
 
 #include "command.h"
-extern eTB_CommandProcessor command;
 
 #define TZFIX_TEXTURE_DIR L"TZFix_Res"
 #define TZFIX_TEXTURE_EXT L".dds"
@@ -666,23 +665,6 @@ D3D9SetTexture_Detour (
   }
 
 #if 0
-  DWORD address_mode = D3DTADDRESS_WRAP;
-
-  if (pTexture != nullptr) {
-    D3DSURFACE_DESC desc;
-    ((IDirect3DTexture9 *)pTexture)->GetLevelDesc (0, &desc);
-
-//    // Fix issues with some UI textures
-//    if (desc.Width < 64 || desc.Height < 64)
-//      address_mode = D3DTADDRESS_CLAMP;
-
-    This->SetSamplerState (Sampler, D3DSAMP_ADDRESSU, address_mode);
-    This->SetSamplerState (Sampler, D3DSAMP_ADDRESSV, address_mode);
-    This->SetSamplerState (Sampler, D3DSAMP_ADDRESSW, address_mode);
-  }
-#endif
-
-#if 0
   if (pTexture != nullptr) tsf::RenderFix::active_samplers.insert (Sampler);
   else                     tsf::RenderFix::active_samplers.erase  (Sampler);
 #endif
@@ -721,13 +703,6 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
                  Width, Height, Levels, Usage, Format, Pool, ppTexture,
                  pSharedHandle);
 #endif
-
-
-  //
-  // Game is seriously screwed up: PLEASE stop creating this target every frame!
-  //
-  if (Width == 16 && Height == 1 && (Usage & D3DUSAGE_RENDERTARGET))
-    return E_FAIL;
 
 #if 0
   //if (config.textures.log) {
@@ -889,19 +864,6 @@ static uint32_t crc32_tab[] = {
 extern 
 uint32_t
 crc32 (uint32_t crc, const void *buf, size_t size);
-#if 0
-{
-  const uint8_t *p;
-
-  p = (uint8_t *)buf;
-  crc = crc ^ ~0U;
-
-  while (size--)
-    crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
-
-  return crc ^ ~0U;
-}
-#endif
 
 typedef HRESULT (WINAPI *D3DXGetImageInfoFromFileInMemory_pfn)
 (
@@ -1552,95 +1514,6 @@ InjectTexture (tzf_tex_load_s* load)
   // Load:  From (Compressed) Archive (.7z or .zip)
   //
   else {
-#if 0
-    size_t       read = 0UL;
-                 size = injectable_textures [load->checksum].size;
-
-    struct archive       *a;
-    struct archive_entry *entry;
-    int                   r, tex_count = 0;
-
-    if (streamed && size > (16 * 1024)) {
-      SetThreadPriority ( GetCurrentThread (),
-                            THREAD_PRIORITY_LOWEST |
-                            THREAD_MODE_BACKGROUND_BEGIN );
-    }
-
-    a = archive_read_new ();
-
-    archive_read_support_filter_all (a);
-    archive_read_support_format_all (a);
-
-    r =
-      archive_read_open_filename_w (
-        a,
-          archives [injectable_textures [load->checksum].archive].c_str (),
-            10240 );
-
-    if (r == ARCHIVE_OK) {
-      int fileno = 0;
-
-      while (archive_read_next_header (a, &entry) == ARCHIVE_OK) {
-        if (fileno == injectable_textures [load->checksum].fileno) {
-          if ((load->pSrcData = new uint8_t [size])) {
-            bool wait = true;
-
-            while (wait) {
-              DWORD dwResult = WAIT_OBJECT_0;
-
-              if (streamed && size > (16 * 1024)) {
-                dwResult =
-                  WaitForSingleObject ( decomp_semaphore, INFINITE );
-              }
-
-              switch (dwResult) 
-              {
-              case WAIT_OBJECT_0:
-                read = archive_read_data (a, load->pSrcData, size);
-
-                if (streamed && size > (16 * 1024))
-                  ReleaseSemaphore (decomp_semaphore, 1, nullptr);
-
-                wait = false;
-
-                load->SrcDataSize = read;
-
-                D3DXGetImageInfoFromFileInMemory (
-                  load->pSrcData,
-                    load->SrcDataSize,
-                      &img_info );
-
-                hr = D3DXCreateTextureFromFileInMemoryEx_Original (
-                  load->pDevice,
-                    load->pSrcData, load->SrcDataSize,
-                      D3DX_DEFAULT, D3DX_DEFAULT, img_info.MipLevels,
-                        0, D3DFMT_FROM_FILE,
-                          D3DPOOL_DEFAULT,
-                            D3DX_DEFAULT, D3DX_DEFAULT,
-                              0,
-                                &img_info, nullptr,
-                                  &load->pSrc );
-
-                delete [] load->pSrcData;
-                load->pSrcData = nullptr;
-                break; 
-
-              default://case WAIT_TIMEOUT:
-                Sleep (4UL);
-                break; 
-              }
-            }
-          }
-          break;
-        }
-
-        archive_read_data_skip (a);
-        ++fileno;
-      }
-
-      archive_read_finish (a);
-    }
-#endif
   }
 
   if (streamed && size > (16 * 1024)) {
@@ -2049,7 +1922,8 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
     if ( load_op != nullptr && ( load_op->type == tzf_tex_load_s::Stream ||
                                  load_op->type == tzf_tex_load_s::Immediate ) ) {
       load_op->SrcDataSize =
-        injectable_textures [checksum].size;
+        injectable_textures.count (checksum) == 0 ?
+          0 : injectable_textures [checksum].size;
 
       load_op->pDest = *ppTexture;
       EnterCriticalSection        (&cs_tex_stream);
@@ -2760,6 +2634,9 @@ tzf::RenderFix::TextureManager::Init (void)
                             nullptr );
 
   resample_pool = new SK_TextureThreadPool ();
+
+  eTB_CommandProcessor& command =
+    *SK_GetCommandProcessor ();
 
   command.AddVariable (
     "Textures.Remap",

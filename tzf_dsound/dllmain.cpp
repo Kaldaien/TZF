@@ -109,7 +109,7 @@ DllThread (LPVOID user)
     config.render.env_shadow_rescale      =  0;
     config.render.clear_blackbars         = true;
 
-    config.textures.remaster              = false;
+    config.textures.remaster              = true;
     config.textures.dump                  = false;
     config.textures.cache                 = true;
 
@@ -158,6 +158,8 @@ DllThread (LPVOID user)
     tzf::FrameRateFix::Init ();
     tzf::KeyboardFix::Init  ();
   }
+
+  _endthreadex (0);
 
   return 0;
 }

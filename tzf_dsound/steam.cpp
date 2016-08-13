@@ -146,6 +146,9 @@ tzf::SteamFix::SetOverlayState (bool active)
 
 tzf::SteamFix::CommandProcessor::CommandProcessor (void)
 {
+  eTB_CommandProcessor& command =
+    *SK_GetCommandProcessor ();
+
   allow_broadcasts_ = new eTB_VarStub <bool> (&config.steam.allow_broadcasts, this);
 
   command.AddVariable ("AllowBroadcasts", allow_broadcasts_);

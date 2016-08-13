@@ -123,7 +123,6 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 
-#if 1
   static int aniso = 1;
 
   //dll_log.Log ( L" [!] IDirect3DDevice9::SetSamplerState (%lu, %lu, %lu)",
@@ -137,11 +136,11 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
     //dll_log.Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
 
     if (Type < 8) {
-      if (Value != D3DTEXF_ANISOTROPIC)
-        D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
+      //if (Value != D3DTEXF_ANISOTROPIC)
+        //D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
 
       //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
-      if (Type == D3DSAMP_MIPFILTER) {// && Value != D3DTEXF_NONE /* && trilinear*/*/) {
+      if (Type == D3DSAMP_MIPFILTER && Value != D3DTEXF_NONE) {
         Value = D3DTEXF_LINEAR;
       }
 
@@ -149,17 +148,18 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
           Type == D3DSAMP_MINFILTER)
         if (Value != D3DTEXF_POINT)
           Value = D3DTEXF_ANISOTROPIC;
+
+      // Clamp [0, oo)
+      if (Type == D3DSAMP_MIPMAPLODBIAS)
+        *(float *)Value = max (0.0f, *(float *)Value);
     }
   }
 
-  if (Type == D3DSAMP_MAXANISOTROPY) {
+  if (Type == D3DSAMP_MAXANISOTROPY) 
     aniso = Value;
-    //Value = 16;
-  }
 
-//  if (Type == D3DSAMP_MAXMIPLEVEL)
-//    Value = 0;
-#endif
+  if (Type == D3DSAMP_MAXMIPLEVEL)
+    Value = 0;
 
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 }
@@ -468,6 +468,8 @@ D3D9EndFrame_Pre (void)
   return SK_BeginBufferSwap ();
 }
 
+std::string mod_text;
+
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -481,8 +483,6 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 
   tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
 
-  TZF_DrawCommandConsole ();
-
   hr = SK_EndBufferSwap (hr, device);
 
   extern bool pending_loads (void);
@@ -493,6 +493,16 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 
   if (config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
+
+  typedef BOOL (__stdcall *SK_DrawExternalOSD_pfn)(std::string app_name, std::string text);
+
+  static HMODULE               hMod =
+    GetModuleHandle (config.system.injector.c_str ());
+  static SK_DrawExternalOSD_pfn SK_DrawExternalOSD
+    =
+    (SK_DrawExternalOSD_pfn)GetProcAddress (hMod, "SK_DrawExternalOSD");
+
+  SK_DrawExternalOSD ("ToZFix", mod_text);
 
   return hr;
 }
@@ -1149,142 +1159,6 @@ D3D9SetPixelShaderConstantF_Detour (IDirect3DDevice9* This,
 }
 
 
-#if 0
-COM_DECLSPEC_NOTHROW
-HRESULT
-STDMETHODCALLTYPE
-D3DXCreateTextureFromFileInMemoryEx_Detour (
-  _In_    LPDIRECT3DDEVICE9  pDevice,
-  _In_    LPCVOID            pSrcData,
-  _In_    UINT               SrcDataSize,
-  _In_    UINT               Width,
-  _In_    UINT               Height,
-  _In_    UINT               MipLevels,
-  _In_    DWORD              Usage,
-  _In_    D3DFORMAT          Format,
-  _In_    D3DPOOL            Pool,
-  _In_    DWORD              Filter,
-  _In_    DWORD              MipFilter,
-  _In_    D3DCOLOR           ColorKey,
-  _Inout_ D3DXIMAGE_INFO     *pSrcInfo,
-  _Out_   PALETTEENTRY       *pPalette,
-  _Out_   LPDIRECT3DTEXTURE9 *ppTexture
-)
-{
-  UINT Levels = MipLevels;
-
-  // NOTE: DXT2 and DXT4 have pre-multiplied alpha, and any attempt
-  //         to automagically generate mipmaps for them tends to fail
-  //           spectacularly!
-
-  // Forcefully complete mipmap chains?
-  if ((Format == D3DFMT_DXT1 ||
-       Format == D3DFMT_DXT3 ||
-       Format == D3DFMT_DXT5) && config.render.remaster_textures) {
-    // The game streams some textures in during normal rendering,
-    //   we cannot afford to complete mipmaps then, so skip it...
-    if (game_state.isLoading ()) {
-      Levels    = D3DX_DEFAULT;
-      MipFilter = D3DX_DEFAULT;
-    }
-  }
-
-  Pool = D3DPOOL_DEFAULT;
-
-//#define DUMP_TEXTURES
-#ifdef DUMP_TEXTURES
-  if (Usage == 0)
-    Usage = D3DUSAGE_DYNAMIC; // So the dump succeeds
-#endif
-
-  uint32_t img_crc32 = crc32 (0, pSrcData, SrcDataSize);
-
-// Dump button textures
-//#define DUMP_BUTTONS
-#ifdef DUMP_BUTTONS
-  if (img_crc32 == pad_buttons.crc32_ps3 ||
-      img_crc32 == pad_buttons.crc32_xbox) {
-    Usage = D3DUSAGE_DYNAMIC;
-  }
-#endif
-
-#if 0
-  bool dump_cache = false;
-
-  wchar_t wszCache [MAX_PATH];
-  wsprintf (wszCache, L"cache\\%X.dds", img_crc32);
-
-  FILE* fTest = _wfopen (wszCache, L"r+");
-
-  if (fTest == nullptr)
-    dump_cache = true;
-
-  if (dump_cache) {
-    if (Usage == 0)
-      Usage = D3DUSAGE_DYNAMIC; // So the dump succeeds
-  } else {
-    fclose (fTest);
-  }
-#endif
-
-  HRESULT hr = D3DXCreateTextureFromFileInMemoryEx_Original (
-      pDevice, pSrcData, SrcDataSize, Width, Height,
-        Levels, Usage/*D3DUSAGE_DYNAMIC*/, Format, Pool,
-          Filter, MipFilter, ColorKey, pSrcInfo, pPalette, ppTexture);
-
-#if 0
-  if (dump_cache) {
-    if (SUCCEEDED (hr)) {
-      if (D3DXSaveTextureToFile != nullptr) {
-        D3DXSaveTextureToFile (wszCache, D3DXIFF_DDS, *ppTexture, pPalette);
-      }
-    }
-  }
-#endif
-
-  if (SUCCEEDED (hr)) {
-    if (img_crc32 == cutscene_frame.crc32_side)
-      cutscene_frame.tex_side = *ppTexture;
-
-    if (img_crc32 == cutscene_frame.crc32_corner)
-      cutscene_frame.tex_corner = *ppTexture;
-
-    if (img_crc32 == pad_buttons.crc32_ps3) {
-      pad_buttons.tex_ps3 = *ppTexture;
-    }
-
-    if (img_crc32 == pad_buttons.crc32_xbox) {
-      pad_buttons.tex_xbox = *ppTexture;
-
-      if (D3DXCreateTextureFromFile != nullptr) {
-        FILE* fCustom = nullptr;
-        fCustom = fopen ("custom_buttons.dds", "r+");
-
-        if (fCustom != nullptr) {
-          fclose (fCustom);
-
-          // We do not need the old texture anymore
-          (*ppTexture)->Release ();
-
-          hr =
-            D3DXCreateTextureFromFile (pDevice, L"custom_buttons.dds", ppTexture);
-        }
-      }
-    }
-
-#ifdef DUMP_TEXTURES
-    if (D3DXSaveTextureToFile != nullptr) {
-      wchar_t wszFileName [MAX_PATH] = { L'\0' };
-      _swprintf ( wszFileName, L"textures\\D3DX_TexFromFileInMemoryEx_%x.png",
-                    pSrcData );
-      D3DXSaveTextureToFile (wszFileName, D3DXIFF_PNG, *ppTexture, pPalette);
-    }
-#endif
-  }
-
-  return hr;
-}
-#endif
 
 
 COM_DECLSPEC_NOTHROW
@@ -1331,7 +1205,6 @@ SK_D3D9_PrimitiveTypeToStr (D3DPRIMITIVETYPE pt)
 
   return L"Invalid Primitive";
 }
-
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -1553,6 +1426,9 @@ tzf::RenderFix::Shutdown (void)
 
 tzf::RenderFix::CommandProcessor::CommandProcessor (void)
 {
+  eTB_CommandProcessor& command =
+    *SK_GetCommandProcessor ();
+
   fovy_         = new eTB_VarStub <float> (&config.render.fovy,         this);
   aspect_ratio_ = new eTB_VarStub <float> (&config.render.aspect_ratio, this);
 
@@ -1609,13 +1485,12 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
             && val != nullptr) {
       config.render.aspect_ratio = *(float *)val;
 
-      if (original != config.render.aspect_ratio) {
+      if (fabs (original - config.render.aspect_ratio) > 0.01f) {
         dll_log.Log ( L"[Asp. Ratio]  * Changing Aspect Ratio from %f to %f",
                          original,
                           config.render.aspect_ratio );
+        *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
        }
-
-       *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
     }
     else {
       if (val != nullptr)

@@ -22,11 +22,7 @@
 #ifndef __TZF__HOOK_H__
 #define __TZF__HOOK_H__
 
-#pragma comment (lib, "MinHook/lib/libMinHook.x86.lib")
 #include "MinHook/include/MinHook.h"
-
-void
-TZF_DrawCommandConsole (void);
 
 MH_STATUS
 WINAPI

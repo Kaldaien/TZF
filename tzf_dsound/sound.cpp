@@ -835,6 +835,9 @@ public:
 
 tzf::SoundFix::CommandProcessor::CommandProcessor (void)
 {
+  eTB_CommandProcessor& command =
+    *SK_GetCommandProcessor ();
+
   sample_rate_   = new eTB_VarStub <int>  ((int *)&config.audio.sample_hz);
   channels_      = new eTB_VarStub <int>  ((int *)&config.audio.channels);
   enable_        = new eTB_VarStub <bool> (&config.audio.enable_fix);

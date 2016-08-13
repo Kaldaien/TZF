@@ -65,11 +65,6 @@ BlacklistLibraryW (LPCWSTR lpFileName)
     return TRUE;
   }
 
-  if (StrStrIW (lpFileName, L"fraps")) {
-    dll_log.Log (L"[Black List] FRAPS is not compatible with this software");
-    return TRUE;
-  }
-
   return FALSE;
 }
 
@@ -189,9 +184,4 @@ TZF_InitCompatBlacklist (void)
   TZF_CreateDLLHook ( L"kernel32.dll", "LoadLibraryExW",
                       LoadLibraryExW_Detour,
             (LPVOID*)&LoadLibraryExW_Original );
-
-  if (GetModuleHandleW (L"fraps.dll") != NULL) {
-    dll_log.Log (L"[Black List] FRAPS detected; expect the game to crash.");
-    FreeLibrary (GetModuleHandleW (L"fraps.dll"));
-  }
 }

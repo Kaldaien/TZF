@@ -33,12 +33,12 @@ class iParameter
 {
 public:
   iParameter (void) {
-    ini        = nullptr;
+    ini = nullptr;
   }
 
-  virtual std::wstring get_value_str (void) = 0;
+  virtual std::wstring get_value_str (void)             = 0;
   virtual void         set_value_str (std::wstring str) = 0;
-
+  
   // Read value from INI
   bool load (void)
   {
@@ -54,7 +54,7 @@ public:
     return false;
   }
 
-  // Store value in INI
+  // Store value in INI and/or XML
   bool store (void)
   {
     bool ret = false;
@@ -67,13 +67,13 @@ public:
       section.name = ini_section;
 
       if (section.contains_key (ini_key)) {
-        section.get_value (ini_key) = get_value_str ();
+        section.get_value (ini_key) = get_value_str ().c_str ();
         ret = true;
       }
 
       // Add this key/value if it doesn't already exist.
       else {
-        section.add_key_value (ini_key, get_value_str ());
+        section.add_key_value (ini_key, get_value_str ().c_str ());
         ret = true;// +1;
       }
     }
@@ -90,9 +90,9 @@ public:
 
 protected:
 private:
-  INI::File*               ini;
-  std::wstring             ini_section;
-  std::wstring             ini_key;
+  INI::File*           ini;
+  std::wstring         ini_section;
+  std::wstring         ini_key;
 };
 
 template <typename _T>
@@ -104,8 +104,13 @@ public:
   virtual void         set_value     (_T val)           = 0;
   virtual void         set_value_str (std::wstring str) = 0;
 
+  virtual void         store         (_T val)           = 0;
+  virtual void         store_str     (std::wstring str) = 0;
+
+  virtual bool         load          (_T& ref)          = 0;
+
 protected:
-  _T                       value;
+  _T                   value;
 };
 
 class ParameterInt : public Parameter <int>
@@ -114,8 +119,13 @@ public:
   std::wstring get_value_str (void);
   int          get_value     (void);
 
-  void         set_value     (int val);
+  void         set_value     (int          val);
   void         set_value_str (std::wstring str);
+
+  void         store         (int          val);
+  void         store_str     (std::wstring str);
+
+  bool         load          (int& ref);
 
 protected:
   int value;
@@ -125,10 +135,15 @@ class ParameterInt64 : public Parameter <int64_t>
 {
 public:
   std::wstring get_value_str (void);
-  int64_t      get_value (void);
+  int64_t      get_value     (void);
 
-  void         set_value (int64_t val);
+  void         set_value     (int64_t      val);
   void         set_value_str (std::wstring str);
+
+  void         store         (int64_t      val);
+  void         store_str     (std::wstring str);
+
+  bool         load          (int64_t&     ref);
 
 protected:
   int64_t value;
@@ -140,8 +155,13 @@ public:
   std::wstring get_value_str (void);
   bool         get_value     (void);
 
-  void         set_value     (bool val);
+  void         set_value     (bool         val);
   void         set_value_str (std::wstring str);
+
+  void         store         (bool         val);
+  void         store_str     (std::wstring str);
+
+  bool         load          (bool&        ref);
 
 protected:
   bool value;
@@ -151,10 +171,15 @@ class ParameterFloat : public Parameter <float>
 {
 public:
   std::wstring get_value_str (void);
-  float        get_value (void);
+  float        get_value     (void);
 
-  void         set_value (float val);
+  void         set_value     (float        val);
   void         set_value_str (std::wstring str);
+
+  void         store         (float        val);
+  void         store_str     (std::wstring str);
+
+  bool         load          (float&       ref);
 
 protected:
   float value;
@@ -168,6 +193,12 @@ public:
 
   void         set_value     (std::wstring str);
   void         set_value_str (std::wstring str);
+
+  void         store         (std::wstring val);
+  void         store_str     (std::wstring str);
+
+  bool         load          (std::wstring& ref);
+
 
 protected:
   std::wstring value;

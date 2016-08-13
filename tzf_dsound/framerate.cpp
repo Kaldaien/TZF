@@ -226,7 +226,7 @@ SK_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
     char szAspectCommand [64];
     sprintf (szAspectCommand, "AspectRatio %f", (float)tzf::RenderFix::width / (float)tzf::RenderFix::height);
 
-    command.ProcessCommandLine (szAspectCommand);
+    SK_GetCommandProcessor ()->ProcessCommandLine (szAspectCommand);
   }
 
   //tzf::RenderFix::tex_mgr.reset ();
@@ -609,7 +609,7 @@ tzf::FrameRateFix::Init (void)
     sprintf ( scale,
                 "TickScale %li",
                   CalcTickScale (1000.0f * (1.0f / target_fps)) );
-    command.ProcessCommandLine (scale);
+    SK_GetCommandProcessor ()->ProcessCommandLine (scale);
 
     dll_log.LogEx ( false, L"Field=%lu FPS, Battle=%lu FPS (%s), Cutscene=%lu FPS\n",
                       target_fps,
@@ -671,13 +671,19 @@ tzf::FrameRateFix::Init (void)
     }
   }
 
-  command.AddVariable ("TargetFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.target));
-  command.AddVariable ("BattleFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.battle_target));
-  command.AddVariable ("BattleAdaptive", new eTB_VarStub <bool> ((bool *)&config.framerate.battle_adaptive));
-  command.AddVariable ("CutsceneFPS",    new eTB_VarStub <int>  ( (int *)&config.framerate.cutscene_target));
+  eTB_CommandProcessor* pCmdProc =
+    SK_GetCommandProcessor ();
+
+  // Special K already has something named this ... get it out of there!
+  pCmdProc->RemoveVariable ("TargetFPS");
+
+  pCmdProc->AddVariable ("TargetFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.target));
+  pCmdProc->AddVariable ("BattleFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.battle_target));
+  pCmdProc->AddVariable ("BattleAdaptive", new eTB_VarStub <bool> ((bool *)&config.framerate.battle_adaptive));
+  pCmdProc->AddVariable ("CutsceneFPS",    new eTB_VarStub <int>  ( (int *)&config.framerate.cutscene_target));
 
   // No matter which technique we use, these things need to be options
-  command.AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
+  pCmdProc->AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
 
   // Hook this no matter what, because it lowers the _REPORTED_ CPU usage,
   //   and some people would object if we suddenly changed this behavior :P
@@ -687,10 +693,10 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&pfnSleep );
   TZF_EnableHook (pfnSleep);
 
-  command.AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
-  command.AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
+  pCmdProc->AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
+  pCmdProc->AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
 
-  command.AddVariable ("AutoAdjust", new eTB_VarStub <bool> (&config.framerate.auto_adjust));
+  pCmdProc->AddVariable ("AutoAdjust", new eTB_VarStub <bool> (&config.framerate.auto_adjust));
 }
 
 void
@@ -717,7 +723,7 @@ tzf::FrameRateFix::Shutdown (void)
                              7,
                                PAGE_EXECUTE_READWRITE );
 
-    command.ProcessCommandLine ("TickScale 2");
+    SK_GetCommandProcessor ()->ProcessCommandLine ("TickScale 2");
 
     variable_speed_installed = false;
   }
@@ -764,7 +770,7 @@ tzf::FrameRateFix::SetFPS (int fps)
     target_fps = fps;
     char szRescale [32];
     sprintf (szRescale, "TickScale %li", CalcTickScale (1000.0f * (1.0f / fps)));
-    command.ProcessCommandLine (szRescale);
+    SK_GetCommandProcessor ()->ProcessCommandLine (szRescale);
   }
 
   //LeaveCriticalSection (&alter_speed_cs);
@@ -781,12 +787,15 @@ tzf::FrameRateFix::CommandProcessor::CommandProcessor (void)
 {
   tick_scale_ = new eTB_VarStub <int> (&tick_scale, this);
 
-  command.AddVariable ("TickScale", tick_scale_);
+  eTB_CommandProcessor* pCmdProc =
+    SK_GetCommandProcessor ();
 
-  command.AddVariable ("UseAccumulator",   new eTB_VarStub <bool>  (&use_accumulator));
-  command.AddVariable ("MaxFrameLatency",  new eTB_VarStub <int>   (&max_latency));
-  command.AddVariable ("WaitForVBLANK",    new eTB_VarStub <bool>  (&wait_for_vblank));
-  command.AddVariable ("LimiterTolerance", new eTB_VarStub <float> (&limiter_tolerance));
+  pCmdProc->AddVariable ("TickScale", tick_scale_);
+
+  pCmdProc->AddVariable ("UseAccumulator",   new eTB_VarStub <bool>  (&use_accumulator));
+  pCmdProc->AddVariable ("MaxFrameLatency",  new eTB_VarStub <int>   (&max_latency));
+  pCmdProc->AddVariable ("WaitForVBLANK",    new eTB_VarStub <bool>  (&wait_for_vblank));
+  pCmdProc->AddVariable ("LimiterTolerance", new eTB_VarStub <float> (&limiter_tolerance));
 }
 
 bool
@@ -945,9 +954,7 @@ tzf::FrameRateFix::RenderTick (void)
 #endif
       }
 
-      char rescale [32];
-      sprintf (rescale, "TickScale %li", scale);
-      command.ProcessCommandLine (rescale);
+      SK_GetCommandProcessor ()->ProcessCommandFormatted ("TickScale %li", scale);
     }
   }
 
