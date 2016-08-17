@@ -228,9 +228,14 @@ CreateFileA_Detour ( _In_     LPCSTR                lpFileName,
                      _In_     DWORD                 dwFlagsAndAttributes,
                      _In_opt_ HANDLE                hTemplateFile )
 {
-  dll_log.Log ( L"[  FileIO  ] [!] CreateFileA (%hs, 0x%X, 0x%X, ..., 0x%X, 0x%X)",
-                lpFileName, dwDesiredAccess, dwShareMode,
-                dwCreationDisposition, dwFlagsAndAttributes );
+  if (config.file_io.capture) {
+    dll_log.Log ( L"[  FileIO  ] [!] CreateFileA (%hs, 0x%X, 0x%X, ..., 0x%X, 0x%X)",
+                  lpFileName, dwDesiredAccess, dwShareMode,
+                  dwCreationDisposition, dwFlagsAndAttributes );
+  } else {
+    // Cache optimization to speed up ridiculously long menu loads
+    dwFlagsAndAttributes |= FILE_FLAG_SEQUENTIAL_SCAN;
+  }
 
   HANDLE hFile =
     CreateFileA_Original ( lpFileName,           dwDesiredAccess,
@@ -238,7 +243,7 @@ CreateFileA_Detour ( _In_     LPCSTR                lpFileName,
                            lpSecurityAttributes, dwCreationDisposition,
                            dwFlagsAndAttributes, hTemplateFile );
 
-  if (hFile != 0) {
+  if (config.file_io.capture && hFile != 0) {
     wchar_t wszFileName [MAX_PATH] = { L'\0' };
 
     GetFileNameFromHandle (hFile, wszFileName, MAX_PATH);
@@ -283,9 +288,12 @@ OpenFile_Detour ( _In_    LPCSTR     lpFileName,
 void
 tzf::FileIO::Init (void)
 {
+  TZF_CreateDLLHook ( L"kernel32.dll", "CreateFileA",
+                      CreateFileA_Detour,
+           (LPVOID *)&CreateFileA_Original );
+
   //config.file_io.capture = true;
   if (config.file_io.capture) {
-
     if (tracer == nullptr)
       tracer = new FileTracer ();
 
@@ -296,10 +304,6 @@ tzf::FileIO::Init (void)
     TZF_CreateDLLHook ( L"kernel32.dll", "CreateFileW",
                         CreateFileW_Detour,
              (LPVOID *)&CreateFileW_Original );
-
-    TZF_CreateDLLHook ( L"kernel32.dll", "CreateFileA",
-                        CreateFileA_Detour,
-             (LPVOID *)&CreateFileA_Original );
 
     TZF_CreateDLLHook ( L"kernel32.dll", "ReadFile",
                         ReadFile_Detour,

@@ -25,7 +25,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.4.3";
+std::wstring TZF_VER_STR = L"1.4.4";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static tzf::INI::File*  dll_ini = nullptr;

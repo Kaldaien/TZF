@@ -159,6 +159,7 @@ DllThread (LPVOID user)
     tzf::KeyboardFix::Init  ();
   }
 
+  CloseHandle  (GetCurrentThread ());
   _endthreadex (0);
 
   return 0;
