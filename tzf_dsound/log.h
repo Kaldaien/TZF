@@ -22,29 +22,17 @@
 #ifndef __TZF__LOG_H__
 #define __TZF__LOG_H__
 
-#include <cstdio>
+#include <Unknwnbase.h>
 
-#include <minwindef.h>
-#include <minwinbase.h>
+// {A4BF1773-CAAB-48F3-AD88-C2AB5C23BD6F}
+static const GUID IID_SK_Logger = 
+{ 0xa4bf1773, 0xcaab, 0x48f3, { 0xad, 0x88, 0xc2, 0xab, 0x5c, 0x23, 0xbd, 0x6f } };
 
-#define TZF_AutoClose_Log(log) tzf_logger_t::AutoClose closeme_##log = (log).auto_close ();
-
-//
-// NOTE: This is a barbaric approach to the problem... we clearly have a
-//         multi-threaded execution model but the logging assumes otherwise.
-//
-//       The log system _is_ thread-safe, but the output can be non-sensical
-//         when multiple threads are logging calls or even when a recursive
-//           call is logged in a single thread.
-//
-//        * Consdier using a stack-based approach if these logs become
-//            indecipherable in the future.
-//            
-struct tzf_logger_t
+interface iSK_Logger : public IUnknown
 {
   class AutoClose
   {
-  friend struct tzf_logger_t;
+  friend interface iSK_Logger;
   public:
     ~AutoClose (void)
     {
@@ -55,40 +43,48 @@ struct tzf_logger_t
     }
 
   protected:
-    AutoClose (tzf_logger_t* log) : log_ (log) { }
+    AutoClose (iSK_Logger* log) : log_ (log) { }
 
   private:
-    tzf_logger_t* log_;
+    iSK_Logger* log_;
   };
 
   AutoClose auto_close (void) {
     return AutoClose (this);
   }
 
-  bool init (const char* const szFilename,
-             const char* const szMode);
+  iSK_Logger (void) {
+    AddRef ();
+  }
 
-  void close (void);
+  virtual ~iSK_Logger (void) {
+    Release ();
+  }
 
-  void LogEx (bool                 _Timestamp,
-    _In_z_ _Printf_format_string_
-    wchar_t const* const _Format, ...);
+  /*** IUnknown methods ***/
+  STDMETHOD  (       QueryInterface)(THIS_ REFIID riid, void** ppvObj) = 0;
+  STDMETHOD_ (ULONG, AddRef)        (THIS)                             = 0;
+  STDMETHOD_ (ULONG, Release)       (THIS)                             = 0;
 
-  void Log   (_In_z_ _Printf_format_string_
-    wchar_t const* const _Format, ...);
+  STDMETHOD_ (bool, init)(THIS_ const wchar_t* const wszFilename,
+                                const wchar_t* const wszMode ) = 0;
+  STDMETHOD_ (void, close)(THIS)                               = 0;
 
-  void Log   (_In_z_ _Printf_format_string_
-    char const* const _Format, ...);
-
-  FILE*            fLog        = NULL;
-  bool             silent      = false;
-  bool             initialized = false;
-  CRITICAL_SECTION log_mutex =   { 0 };
+  STDMETHOD_ (void, LogEx)(THIS_ bool                 _Timestamp,
+                              _In_z_ _Printf_format_string_
+                                 wchar_t const* const _Format,
+                                                      ... ) = 0;
+  STDMETHOD_ (void, Log)  (THIS_ _In_z_ _Printf_format_string_
+                                 wchar_t const* const _Format,
+                                                      ... ) = 0;
+  STDMETHOD_ (void, Log)  (THIS_ _In_z_ _Printf_format_string_
+                                 char const* const    _Format,
+                                                      ... ) = 0;
 };
 
-//
-// TODO, we may want to wrap some synchronization construct around these
-//
-extern tzf_logger_t dll_log;
+extern iSK_Logger* dll_log;
+
+iSK_Logger*
+TZF_CreateLog (const wchar_t* const wszName);
 
 #endif /* __TZF__LOG_H__ */

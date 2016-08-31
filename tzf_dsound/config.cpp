@@ -25,11 +25,11 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.4.4";
+std::wstring TZF_VER_STR = L"1.4.6";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
-static tzf::INI::File*  dll_ini = nullptr;
-
+static
+  iSK_INI*   dll_ini       = nullptr;
 tzf_config_t config;
 
 tzf::ParameterFactory g_ParameterFactory;
@@ -99,13 +99,23 @@ struct {
   tzf::ParameterStringW* injector;
 } sys;
 
+typedef std::wstring (__stdcall *SK_GetConfigPath_pfn)(void);
+static SK_GetConfigPath_pfn SK_GetConfigPath = nullptr;
 
 bool
 TZF_LoadConfig (std::wstring name)
 {
+  SK_GetConfigPath =
+    (SK_GetConfigPath_pfn)
+      GetProcAddress (
+        GetModuleHandle ( L"d3d9.dll" ),
+          "SK_GetConfigPath"
+      );
+
   // Load INI File
-  std::wstring full_name = name + L".ini";
-  dll_ini = new tzf::INI::File ((wchar_t *)full_name.c_str ());
+  std::wstring full_name = SK_GetConfigPath () + name + L".ini";
+  dll_ini = TZF_CreateINI ((wchar_t *)full_name.c_str ());
+
 
   bool empty = dll_ini->get_sections ().empty ();
 
@@ -624,7 +634,11 @@ TZF_SaveConfig (std::wstring name, bool close_config)
   sys.intro_video->store         (config.system.intro_video);
   sys.injector->store            (config.system.injector);
 
-  dll_ini->write (name + L".ini");
+  std::wstring full_name = SK_GetConfigPath () +
+                             name              +
+                               L".ini";
+
+  dll_ini->write (full_name);
 
   if (close_config) {
     if (dll_ini != nullptr) {

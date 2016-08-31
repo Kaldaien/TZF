@@ -91,7 +91,7 @@ SK_TZF_PluginKeyPress ( BOOL Control,
                         BOOL Alt,
                         BYTE vkCode )
 {
-  eTB_CommandProcessor& command =
+  SK_ICommandProcessor& command =
     *SK_GetCommandProcessor ();
 
   if (Control && Shift) {

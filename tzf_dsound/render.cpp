@@ -101,13 +101,13 @@ TZF_ComputeAspectCoeffs (float& x, float& y, float& xoff, float& yoff)
 
 #include "hook.h"
 
-typedef HRESULT (STDMETHODCALLTYPE *SetSamplerState_t)
+typedef HRESULT (STDMETHODCALLTYPE *SetSamplerState_pfn)
 (IDirect3DDevice9*   This,
   DWORD               Sampler,
   D3DSAMPLERSTATETYPE Type,
   DWORD               Value);
 
-SetSamplerState_t D3D9SetSamplerState_Original = nullptr;
+SetSamplerState_pfn D3D9SetSamplerState_Original = nullptr;
 
 LPVOID SetSamplerState = nullptr;
 
@@ -125,21 +125,21 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
 
   static int aniso = 1;
 
-  //dll_log.Log ( L" [!] IDirect3DDevice9::SetSamplerState (%lu, %lu, %lu)",
-                  //Sampler, Type, Value );
+  //dll_log->Log ( L" [!] IDirect3DDevice9::SetSamplerState (%lu, %lu, %lu)",
+                   //Sampler, Type, Value );
 
   // Pending removal - these are not configurable tweaks and not particularly useful
   if (Type == D3DSAMP_MIPFILTER ||
       Type == D3DSAMP_MINFILTER ||
       Type == D3DSAMP_MAGFILTER ||
       Type == D3DSAMP_MIPMAPLODBIAS) {
-    //dll_log.Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
+    //dll_log->Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
 
     if (Type < 8) {
       //if (Value != D3DTEXF_ANISOTROPIC)
         //D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
 
-      //dll_log.Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
+      //dll_log->Log (L" %s Filter: %x", Type == D3DSAMP_MIPFILTER ? L"Mip" : Type == D3DSAMP_MINFILTER ? L"Min" : L"Mag", Value);
       if (Type == D3DSAMP_MIPFILTER && Value != D3DTEXF_NONE) {
         Value = D3DTEXF_LINEAR;
       }
@@ -236,11 +236,11 @@ std::unordered_map <LPVOID, uint32_t> ps_checksums;
 uint32_t vs_checksum = 0;
 uint32_t ps_checksum = 0;
 
-typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
+typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_pfn)
   (IDirect3DDevice9*       This,
    IDirect3DVertexShader9* pShader);
 
-SetVertexShader_t D3D9SetVertexShader_Original = nullptr;
+SetVertexShader_pfn D3D9SetVertexShader_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -275,11 +275,11 @@ D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
 }
 
 
-typedef HRESULT (STDMETHODCALLTYPE *SetPixelShader_t)
+typedef HRESULT (STDMETHODCALLTYPE *SetPixelShader_pfn)
   (IDirect3DDevice9*      This,
    IDirect3DPixelShader9* pShader);
 
-SetPixelShader_t D3D9SetPixelShader_Original = nullptr;
+SetPixelShader_pfn D3D9SetPixelShader_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -341,16 +341,16 @@ typedef HRESULT (STDMETHODCALLTYPE *SK_EndBufferSwap_pfn)
    IUnknown* device);
 SK_EndBufferSwap_pfn SK_EndBufferSwap = nullptr;
 
-typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)(
+typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_pfn)(
   IDirect3DDevice9* This,
   const RECT*       pRect);
 
-SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
+SetScissorRect_pfn D3D9SetScissorRect_Original = nullptr;
 
-typedef HRESULT (STDMETHODCALLTYPE *EndScene_t)
+typedef HRESULT (STDMETHODCALLTYPE *EndScene_pfn)
 (IDirect3DDevice9* This);
 
-EndScene_t D3D9EndScene_Original = nullptr;
+EndScene_pfn D3D9EndScene_Original = nullptr;
 
 int draw_count  = 0;
 int next_draw   = 0;
@@ -436,8 +436,11 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
 
   HRESULT hr = D3D9EndScene_Original (This);
 
-  extern void TZFix_LoadQueuedTextures (void);
-  TZFix_LoadQueuedTextures ();
+  extern bool pending_loads (void);
+  if (pending_loads ()) {
+    extern void TZFix_LoadQueuedTextures (void);
+    TZFix_LoadQueuedTextures ();
+  }
 
   game_state.in_skit = false;
 
@@ -502,19 +505,36 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
     =
     (SK_DrawExternalOSD_pfn)GetProcAddress (hMod, "SK_DrawExternalOSD");
 
-  SK_DrawExternalOSD ("ToZFix", mod_text);
+  extern bool __show_cache;
+
+  if (__show_cache) {
+    static std::string output;
+
+    output  = "Texture Cache\n";
+    output += "-------------\n";
+    output += tzf::RenderFix::tex_mgr.osdStats ();
+
+    output += mod_text;
+
+    SK_DrawExternalOSD ("ToZFix", output);
+
+    output   = "";
+  } else
+    SK_DrawExternalOSD ("ToZFix", "");
+
+  mod_text = "";
 
   return hr;
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *UpdateSurface_t)
+typedef HRESULT (STDMETHODCALLTYPE *UpdateSurface_pfn)
   ( _In_       IDirect3DDevice9  *This,
     _In_       IDirect3DSurface9 *pSourceSurface,
     _In_ const RECT              *pSourceRect,
     _In_       IDirect3DSurface9 *pDestinationSurface,
     _In_ const POINT             *pDestinationPoint );
 
-UpdateSurface_t D3D9UpdateSurface_Original = nullptr;
+UpdateSurface_pfn D3D9UpdateSurface_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -566,12 +586,12 @@ D3D9UpdateSurface_Detour ( IDirect3DDevice9  *This,
   return hr;
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *UpdateTexture_t)
+typedef HRESULT (STDMETHODCALLTYPE *UpdateTexture_pfn)
   (IDirect3DDevice9      *This,
    IDirect3DBaseTexture9 *pSourceTexture,
    IDirect3DBaseTexture9 *pDestinationTexture);
 
-UpdateTexture_t D3D9UpdateTexture_Original = nullptr;
+UpdateTexture_pfn D3D9UpdateTexture_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -588,7 +608,7 @@ D3D9UpdateTexture_Detour (IDirect3DDevice9      *This,
 #if 0
     if ( incomplete_textures.find (pDestinationTexture) != 
          incomplete_textures.end () ) {
-      dll_log.Log (L" Generating Mipmap LODs for incomplete texture!");
+      dll_log->Log (L" Generating Mipmap LODs for incomplete texture!");
       (pDestinationTexture->GenerateMipSubLevels ());
     }
 #endif
@@ -656,11 +676,11 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
   return D3D9SetScissorRect_Original (This, &fixed_scissor);
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *SetViewport_t)(
+typedef HRESULT (STDMETHODCALLTYPE *SetViewport_pfn)(
         IDirect3DDevice9* This,
   CONST D3DVIEWPORT9*     pViewport);
 
-SetViewport_t D3D9SetViewport_Original = nullptr;
+SetViewport_pfn D3D9SetViewport_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -885,7 +905,7 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
     return hr;
   }
   else if (Type == D3DPT_TRIANGLESTRIP) {
-    //dll_log.Log (L" Consider Vertex Shader %4i...", vs_checksum);
+    //dll_log->Log (L" Consider Vertex Shader %4i...", vs_checksum);
   }
 
   return D3D9DrawIndexedPrimitive_Original ( This, Type,
@@ -895,13 +915,13 @@ D3D9DrawIndexedPrimitive_Detour (IDirect3DDevice9* This,
 }
 
 
-typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_t)(
+typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_pfn)(
   IDirect3DDevice9* This,
   UINT              StartRegister,
   CONST float*      pConstantData,
   UINT              Vector4fCount);
 
-SetVertexShaderConstantF_t D3D9SetVertexShaderConstantF_Original = nullptr;
+SetVertexShaderConstantF_pfn D3D9SetVertexShaderConstantF_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -922,9 +942,9 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
   if (vs_checksum == VS_CHECKSUM_RADIAL) 
   {
 #if 0
-    dll_log.LogEx (false, L" Draw Call %u: Radial\n", draw_count);
+    dll_log->LogEx (false, L" Draw Call %u: Radial\n", draw_count);
     for (int i = 0; i < Vector4fCount; i++) {
-      dll_log.LogEx ( false, L" %f %f %f %f\n",
+      dll_log->LogEx ( false, L" %f %f %f %f\n",
                        pConstantData [0+i*4], pConstantData [1+i*4],
                        pConstantData [2+i*4], pConstantData [3+i*4] );
     }
@@ -976,12 +996,12 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [0] == -1.0f / 64.0f) {
       dim = 64UL;
-      //dll_log.Log (L" 64x64 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
+      //dll_log->Log (L" 64x64 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     if (pConstantData [0] == -1.0f / 128.0f) {
       dim = 128UL;
-      //dll_log.Log (L" 128x128 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
+      //dll_log->Log (L" 128x128 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     shift = TZF_MakeShadowBitShift (dim);
@@ -993,7 +1013,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [2] != 0.0f || 
         pConstantData [3] != 0.0f) {
-      dll_log.Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+      dll_log->Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
     if (dim != 0) {
@@ -1025,7 +1045,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [2] != 0.0f || 
         pConstantData [3] != 0.0f) {
-      dll_log.Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+      dll_log->Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
     return D3D9SetVertexShaderConstantF_Original (This, 240, newData, 1);
@@ -1040,17 +1060,17 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [0] == -1.0f / 512.0f) {
       dim = 512UL;
-      //dll_log.Log (L" 512x512 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
+      //dll_log->Log (L" 512x512 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     if (pConstantData [0] == -1.0f / 1024.0f) {
       dim = 1024UL;
-      //dll_log.Log (L" 1024x1024 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
+      //dll_log->Log (L" 1024x1024 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     if (pConstantData [0] == -1.0f / 2048.0f) {
       dim = 2048UL;
-      //dll_log.Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
+      //dll_log->Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
     shift = config.render.env_shadow_rescale;
@@ -1062,7 +1082,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
     if (pConstantData [2] != 0.0f || 
         pConstantData [3] != 0.0f) {
-      dll_log.Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
+      dll_log->Log (L"[   D3D9   ] Assertion failed: non-zero 2 or 3 (line %lu)", __LINE__);
     }
 
     if (dim != 0) {
@@ -1139,13 +1159,13 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
 
 
 
-typedef HRESULT (STDMETHODCALLTYPE *SetPixelShaderConstantF_t)(
+typedef HRESULT (STDMETHODCALLTYPE *SetPixelShaderConstantF_pfn)(
   IDirect3DDevice9* This,
   UINT              StartRegister,
   CONST float*      pConstantData,
   UINT              Vector4fCount);
 
-SetVertexShaderConstantF_t D3D9SetPixelShaderConstantF_Original = nullptr;
+SetVertexShaderConstantF_pfn  D3D9SetPixelShaderConstantF_Original = nullptr;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -1171,7 +1191,7 @@ D3D9DrawPrimitive_Detour (IDirect3DDevice9* This,
 {
   // Ignore anything that's not the primary render device.
   if (This != tzf::RenderFix::pDevice) {
-    dll_log.Log (L"[Render Fix] >> WARNING: DrawPrimitive came from unknown IDirect3DDevice9! << ");
+    dll_log->Log (L"[Render Fix] >> WARNING: DrawPrimitive came from unknown IDirect3DDevice9! << ");
 
     return D3D9DrawPrimitive_Original ( This, PrimitiveType,
                                                  StartVertex, PrimitiveCount );
@@ -1181,7 +1201,7 @@ D3D9DrawPrimitive_Detour (IDirect3DDevice9* This,
 
 #if 0
   if (tsf::RenderFix::tracer.log) {
-    dll_log.Log ( L"[FrameTrace] DrawPrimitive - %X, StartVertex: %lu, PrimitiveCount: %lu",
+    dll_log->Log ( L"[FrameTrace] DrawPrimitive - %X, StartVertex: %lu, PrimitiveCount: %lu",
                       PrimitiveType, StartVertex, PrimitiveCount );
   }
 #endif
@@ -1217,17 +1237,17 @@ D3D9DrawPrimitiveUP_Detour ( IDirect3DDevice9* This,
 {
 #if 0
   if (tsf::RenderFix::tracer.log && This == tsf::RenderFix::pDevice) {
-    dll_log.Log ( L"[FrameTrace] DrawPrimitiveUP   (Type: %s) - PrimitiveCount: %lu"/*
-                  L"                         [FrameTrace]                 -"
-                  L"    BaseIdx:     %5li, MinVtxIdx:  %5lu,\n"
-                  L"                         [FrameTrace]                 -"
-                  L"    NumVertices: %5lu, startIndex: %5lu,\n"
-                  L"                         [FrameTrace]                 -"
-                  L"    primCount:   %5lu"*/,
-                    SK_D3D9_PrimitiveTypeToStr (PrimitiveType),
-                      PrimitiveCount/*,
-                      BaseVertexIndex, MinVertexIndex,
-                        NumVertices, startIndex, primCount*/ );
+    dll_log->Log ( L"[FrameTrace] DrawPrimitiveUP   (Type: %s) - PrimitiveCount: %lu"/*
+                   L"                         [FrameTrace]                 -"
+                   L"    BaseIdx:     %5li, MinVtxIdx:  %5lu,\n"
+                   L"                         [FrameTrace]                 -"
+                   L"    NumVertices: %5lu, startIndex: %5lu,\n"
+                   L"                         [FrameTrace]                 -"
+                   L"    primCount:   %5lu"*/,
+                     SK_D3D9_PrimitiveTypeToStr (PrimitiveType),
+                       PrimitiveCount/*,
+                       BaseVertexIndex, MinVertexIndex,
+                         NumVertices, startIndex, primCount*/ );
   }
 #endif
 
@@ -1256,17 +1276,17 @@ D3D9DrawIndexedPrimitiveUP_Detour ( IDirect3DDevice9* This,
 {
 #if 0
   if (tsf::RenderFix::tracer.log && This == tsf::RenderFix::pDevice) {
-    dll_log.Log ( L"[FrameTrace] DrawIndexedPrimitiveUP   (Type: %s) - NumVertices: %lu, PrimitiveCount: %lu"/*
-                  L"                         [FrameTrace]                 -"
-                  L"    BaseIdx:     %5li, MinVtxIdx:  %5lu,\n"
-                  L"                         [FrameTrace]                 -"
-                  L"    NumVertices: %5lu, startIndex: %5lu,\n"
-                  L"                         [FrameTrace]                 -"
-                  L"    primCount:   %5lu"*/,
-                    SK_D3D9_PrimitiveTypeToStr (PrimitiveType),
-                      NumVertices, PrimitiveCount/*,
-                      BaseVertexIndex, MinVertexIndex,
-                        NumVertices, startIndex, primCount*/ );
+    dll_log->Log ( L"[FrameTrace] DrawIndexedPrimitiveUP   (Type: %s) - NumVertices: %lu, PrimitiveCount: %lu"/*
+                   L"                         [FrameTrace]                 -"
+                   L"    BaseIdx:     %5li, MinVtxIdx:  %5lu,\n"
+                   L"                         [FrameTrace]                 -"
+                   L"    NumVertices: %5lu, startIndex: %5lu,\n"
+                   L"                         [FrameTrace]                 -"
+                   L"    primCount:   %5lu"*/,
+                     SK_D3D9_PrimitiveTypeToStr (PrimitiveType),
+                       NumVertices, PrimitiveCount/*,
+                       BaseVertexIndex, MinVertexIndex,
+                         NumVertices, startIndex, primCount*/ );
   }
 #endif
 
@@ -1426,20 +1446,20 @@ tzf::RenderFix::Shutdown (void)
 
 tzf::RenderFix::CommandProcessor::CommandProcessor (void)
 {
-  eTB_CommandProcessor& command =
+  SK_ICommandProcessor& command =
     *SK_GetCommandProcessor ();
 
-  fovy_         = new eTB_VarStub <float> (&config.render.fovy,         this);
-  aspect_ratio_ = new eTB_VarStub <float> (&config.render.aspect_ratio, this);
+  fovy_         = TZF_CreateVar (SK_IVariable::Float, &config.render.fovy,         this);
+  aspect_ratio_ = TZF_CreateVar (SK_IVariable::Float, &config.render.aspect_ratio, this);
 
-  eTB_Variable* aspect_correct_vids = new eTB_VarStub <bool>  (&config.render.blackbar_videos);
-  eTB_Variable* aspect_correction   = new eTB_VarStub <bool>  (&config.render.aspect_correction);
+  SK_IVariable* aspect_correct_vids = TZF_CreateVar (SK_IVariable::Boolean, &config.render.blackbar_videos);
+  SK_IVariable* aspect_correction   = TZF_CreateVar (SK_IVariable::Boolean, &config.render.aspect_correction);
 
-  eTB_Variable* remaster_textures   = new eTB_VarStub <bool>  (&config.textures.remaster);
-  eTB_Variable* rescale_shadows     = new eTB_VarStub <int>   (&config.render.shadow_rescale);
-  eTB_Variable* rescale_env_shadows = new eTB_VarStub <int>   (&config.render.env_shadow_rescale);
-  eTB_Variable* postproc_ratio      = new eTB_VarStub <float> (&config.render.postproc_ratio);
-  eTB_Variable* clear_blackbars     = new eTB_VarStub <bool>  (&config.render.clear_blackbars);
+  SK_IVariable* remaster_textures   = TZF_CreateVar (SK_IVariable::Boolean, &config.textures.remaster);
+  SK_IVariable* rescale_shadows     = TZF_CreateVar (SK_IVariable::Int,     &config.render.shadow_rescale);
+  SK_IVariable* rescale_env_shadows = TZF_CreateVar (SK_IVariable::Int,     &config.render.env_shadow_rescale);
+  SK_IVariable* postproc_ratio      = TZF_CreateVar (SK_IVariable::Float,   &config.render.postproc_ratio);
+  SK_IVariable* clear_blackbars     = TZF_CreateVar (SK_IVariable::Boolean, &config.render.clear_blackbars);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
   command.AddVariable ("FOVY",                fovy_);
@@ -1452,7 +1472,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
   command.AddVariable ("ClearBlackbars",      clear_blackbars);
 
-  command.AddVariable ("TestVS", new eTB_VarStub <int> (&TEST_VS));
+  command.AddVariable ("TestVS", TZF_CreateVar (SK_IVariable::Int, &TEST_VS));
 
    uint8_t signature [] = { 0x39, 0x8E, 0xE3, 0x3F,
                             0xDB, 0x0F, 0x49, 0x3F };
@@ -1460,19 +1480,19 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   if (*(float *)config.render.aspect_addr != 16.0f / 9.0f) {
     void* addr = TZF_Scan (signature, sizeof (float) * 2, nullptr);
     if (addr != nullptr) {
-      dll_log.Log (L"[Asp. Ratio] Scanned Aspect Ratio Address: %06Xh", addr);
+      dll_log->Log (L"[Asp. Ratio] Scanned Aspect Ratio Address: %06Xh", addr);
       config.render.aspect_addr = (DWORD)addr;
-      dll_log.Log (L"[Asp. Ratio] Scanned FOVY Address: %06Xh", (float *)addr + 1);
+      dll_log->Log (L"[Asp. Ratio] Scanned FOVY Address: %06Xh", (float *)addr + 1);
       config.render.fovy_addr = (DWORD)((float *)addr + 1);
     }
     else {
-      dll_log.Log (L"[Asp. Ratio]  >> ERROR: Unable to find Aspect Ratio Address!");
+      dll_log->Log (L"[Asp. Ratio]  >> ERROR: Unable to find Aspect Ratio Address!");
     }
   }
 }
 
 bool
-tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
+tzf::RenderFix::CommandProcessor::OnVarChange (SK_IVariable* var, void* val)
 {
   DWORD dwOld;
 
@@ -1486,16 +1506,16 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
       config.render.aspect_ratio = *(float *)val;
 
       if (fabs (original - config.render.aspect_ratio) > 0.01f) {
-        dll_log.Log ( L"[Asp. Ratio]  * Changing Aspect Ratio from %f to %f",
-                         original,
-                          config.render.aspect_ratio );
+        dll_log->Log ( L"[Asp. Ratio]  * Changing Aspect Ratio from %f to %f",
+                          original,
+                           config.render.aspect_ratio );
         *((float *)config.render.aspect_addr) = config.render.aspect_ratio;
        }
     }
     else {
       if (val != nullptr)
-        dll_log.Log ( L"[Asp. Ratio]  * Unable to change Aspect Ratio, invalid memory address... (%f)",
-                        *((float *)config.render.aspect_addr) );
+        dll_log->Log ( L"[Asp. Ratio]  * Unable to change Aspect Ratio, invalid memory address... (%f)",
+                         *((float *)config.render.aspect_addr) );
     }
   }
 
@@ -1507,15 +1527,15 @@ tzf::RenderFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
          (original == config.render.fovy))
             && val != nullptr) {
       config.render.fovy = *(float *)val;
-      dll_log.Log ( L"[Asp. Ratio]  * Changing FOVY from %f to %f",
-                       original,
-                         config.render.fovy );
+      dll_log->Log ( L"[Asp. Ratio]  * Changing FOVY from %f to %f",
+                        original,
+                          config.render.fovy );
       *((float *)config.render.fovy_addr) = config.render.fovy;
     }
     else {
       if (val != nullptr)
-        dll_log.Log ( L"[Asp. Ratio]  * Unable to change FOVY, invalid memory address... (%f)",
-                        *((float *)config.render.fovy_addr) );
+        dll_log->Log ( L"[Asp. Ratio]  * Unable to change FOVY, invalid memory address... (%f)",
+                         *((float *)config.render.fovy_addr) );
     }
   }
 

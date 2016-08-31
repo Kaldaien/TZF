@@ -55,14 +55,14 @@ DllThread (LPVOID user)
 {
   std::wstring plugin_name = L"Tales of Zestiria \"Fix\" v " + TZF_VER_STR;
 
-  dll_log.init  ( "logs/tzfix.log",
-                    "w" );
-  dll_log.LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
-                         L"-------\n" ); // <--- I was bored ;)
-  dll_log.Log   (        L"tzfix.dll Plug-In\n"
-                         L"=========== (Version: v %s) "
-                         L"===========",
-                           TZF_VER_STR.c_str () );
+  dll_log = TZF_CreateLog (L"logs/tzfix.log");
+
+  dll_log->LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
+                          L"-------\n" ); // <--- I was bored ;)
+  dll_log->Log   (        L"tzfix.dll Plug-In\n"
+                          L"=========== (Version: v %s) "
+                          L"===========",
+                            TZF_VER_STR.c_str () );
 
   DWORD speedresetcode_addr  = 0x0046C0F9; //0x0046C529;
   DWORD speedresetcode2_addr = 0x0056EB41; //0x0056E441;  0x217B464
@@ -123,9 +123,9 @@ DllThread (LPVOID user)
   SK_SetPluginName = 
     (SK_SetPluginName_pfn)
       GetProcAddress (hInjectorDLL, "SK_SetPluginName");
-  //SK_GetCommandProcessor =
-    //(SK_GetCommandProcessor_pfn)
-      //GetProcAddress (hInjectorDLL, "SK_GetCommandProcessor");
+  SK_GetCommandProcessor =
+    (SK_GetCommandProcessor_pfn)
+      GetProcAddress (hInjectorDLL, "SK_GetCommandProcessor");
 
   //
   // If this is NULL, the injector system isn't working right!!!
@@ -142,14 +142,12 @@ DllThread (LPVOID user)
 
     if (addr != NULL) {
       game_state.base_addr = (BYTE *)(*(DWORD *)(addr + 6) - 0x13);
-      dll_log.Log (L"[ Sig Scan ] Scanned Gamestate Address: %06Xh", game_state.base_addr);
+      dll_log->Log (L"[ Sig Scan ] Scanned Gamestate Address: %06Xh", game_state.base_addr);
     }
   }
 
   if (TZF_Init_MinHook () == MH_OK) {
     CoInitialize (nullptr);
-
-    TZF_InitCompatBlacklist ();
 
     tzf::SoundFix::Init     ();
     tzf::FileIO::Init       ();
@@ -198,14 +196,14 @@ DllMain (HMODULE hModule,
     TZF_SaveConfig     ();
 
 
-    dll_log.LogEx ( false, L"=========== (Version: v %s) "
-                           L"===========\n",
-                             TZF_VER_STR.c_str () );
-    dll_log.LogEx ( true,  L"End TZFix Plug-In\n" );
-    dll_log.LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
-                           L"-------\n" );
+    dll_log->LogEx ( false, L"=========== (Version: v %s) "
+                            L"===========\n",
+                              TZF_VER_STR.c_str () );
+    dll_log->LogEx ( true,  L"End TZFix Plug-In\n" );
+    dll_log->LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
+                            L"-------\n" );
 
-    dll_log.close ();
+    dll_log->close ();
     break;
   }
 

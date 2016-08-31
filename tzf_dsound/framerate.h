@@ -53,11 +53,11 @@ namespace tzf
 
     void SetFPS          (int fps);
 
-    class CommandProcessor : public eTB_iVariableListener {
+    class CommandProcessor : public SK_IVariableListener {
     public:
       CommandProcessor (void);
 
-      virtual bool OnVarChange (eTB_Variable* var, void* val = NULL);
+      virtual bool OnVarChange (SK_IVariable* var, void* val = NULL);
 
       static CommandProcessor* getInstance (void)
       {
@@ -68,7 +68,7 @@ namespace tzf
       }
 
     protected:
-      eTB_Variable* tick_scale_;
+      SK_IVariable* tick_scale_;
 
     private:
       static CommandProcessor* pCommProc;

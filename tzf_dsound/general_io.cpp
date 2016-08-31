@@ -152,10 +152,10 @@ ReadFile_Detour ( _In_      HANDLE       hFile,
     DWORD dwPos =
       SetFilePointer (hFile, 0L, nullptr, FILE_CURRENT);
 
-    dll_log.Log ( L"[  FileIO  ] Reading: %-90s (%10lu bytes at 0x%06X)",
-                    wszFileName,
-                      nNumberOfBytesToRead,
-                        dwPos );
+    dll_log->Log ( L"[  FileIO  ] Reading: %-90s (%10lu bytes at 0x%06X)",
+                     wszFileName,
+                       nNumberOfBytesToRead,
+                         dwPos );
   }
 
   return
@@ -188,7 +188,7 @@ CreateFileW_Detour ( _In_     LPCWSTR               lpFileName,
                      _In_     DWORD                 dwFlagsAndAttributes,
                      _In_opt_ HANDLE                hTemplateFile )
 {
-  dll_log.Log (L"[  FileIO  ] [!] CreateFileW (%s, ...)", lpFileName);
+  dll_log->Log (L"[  FileIO  ] [!] CreateFileW (%s, ...)", lpFileName);
 
   HANDLE hFile =
     CreateFileW_Original ( lpFileName, dwDesiredAccess, dwShareMode,
@@ -229,9 +229,9 @@ CreateFileA_Detour ( _In_     LPCSTR                lpFileName,
                      _In_opt_ HANDLE                hTemplateFile )
 {
   if (config.file_io.capture) {
-    dll_log.Log ( L"[  FileIO  ] [!] CreateFileA (%hs, 0x%X, 0x%X, ..., 0x%X, 0x%X)",
-                  lpFileName, dwDesiredAccess, dwShareMode,
-                  dwCreationDisposition, dwFlagsAndAttributes );
+    dll_log->Log ( L"[  FileIO  ] [!] CreateFileA (%hs, 0x%X, 0x%X, ..., 0x%X, 0x%X)",
+                   lpFileName, dwDesiredAccess, dwShareMode,
+                   dwCreationDisposition, dwFlagsAndAttributes );
   } else {
     // Cache optimization to speed up ridiculously long menu loads
     dwFlagsAndAttributes |= FILE_FLAG_SEQUENTIAL_SCAN;
@@ -268,7 +268,7 @@ OpenFile_Detour ( _In_    LPCSTR     lpFileName,
                   _Inout_ LPOFSTRUCT lpReOpenBuff,
                   _In_    UINT       uStyle )
 {
-  dll_log.Log (L"[  FileIO  ] [!] OpenFile (%hs, ...)", lpFileName);
+  dll_log->Log (L"[  FileIO  ] [!] OpenFile (%hs, ...)", lpFileName);
 
   HFILE hFile =
     OpenFile_Original (lpFileName, lpReOpenBuff, uStyle);

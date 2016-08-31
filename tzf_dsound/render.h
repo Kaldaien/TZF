@@ -37,11 +37,11 @@ namespace tzf
     void Init     ();
     void Shutdown ();
 
-    class CommandProcessor : public eTB_iVariableListener {
+    class CommandProcessor : public SK_IVariableListener {
     public:
       CommandProcessor (void);
 
-      virtual bool OnVarChange (eTB_Variable* var, void* val = NULL);
+      virtual bool OnVarChange (SK_IVariable* var, void* val = NULL);
 
       static CommandProcessor* getInstance (void)
       {
@@ -52,8 +52,8 @@ namespace tzf
       }
 
     protected:
-      eTB_Variable* fovy_;
-      eTB_Variable* aspect_ratio_;
+      SK_IVariable* fovy_;
+      SK_IVariable* aspect_ratio_;
 
     private:
       static CommandProcessor* pCommProc;

@@ -198,7 +198,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="command.cpp" />
-    <ClCompile Include="compatibility.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="dllmain.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</CompileAsManaged>

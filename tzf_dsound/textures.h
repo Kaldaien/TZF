@@ -23,7 +23,7 @@
 #define __TZFIX__TEXTURES_H__
 
 #include "log.h"
-extern tzf_logger_t tex_log;
+extern iSK_Logger* tex_log;
 
 #include "render.h"
 #include <d3d9.h>
@@ -223,113 +223,113 @@ public:
 
     /*** IDirect3DBaseTexture9 methods ***/
     STDMETHOD(GetDevice)(THIS_ IDirect3DDevice9** ppDevice) {
-      tex_log.Log (L"[ Tex. Mgr ] ISKTextureD3D9::GetDevice (%ph)", ppDevice);
+      tex_log->Log (L"[ Tex. Mgr ] ISKTextureD3D9::GetDevice (%ph)", ppDevice);
       return pTex->GetDevice (ppDevice);
     }
     STDMETHOD(SetPrivateData)(THIS_ REFGUID refguid,CONST void* pData,DWORD SizeOfData,DWORD Flags) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetPrivateData (%x, %ph, %lu, %x)",
-                      refguid,
-                        pData,
-                          SizeOfData,
-                            Flags );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetPrivateData (%x, %ph, %lu, %x)",
+                       refguid,
+                         pData,
+                           SizeOfData,
+                             Flags );
       return pTex->SetPrivateData (refguid, pData, SizeOfData, Flags);
     }
     STDMETHOD(GetPrivateData)(THIS_ REFGUID refguid,void* pData,DWORD* pSizeOfData) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetPrivateData (%x, %ph, %lu)",
-                      refguid,
-                        pData,
-                          *pSizeOfData );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetPrivateData (%x, %ph, %lu)",
+                       refguid,
+                         pData,
+                           *pSizeOfData );
 
       return pTex->GetPrivateData (refguid, pData, pSizeOfData);
     }
     STDMETHOD(FreePrivateData)(THIS_ REFGUID refguid) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::FreePrivateData (%x)",
-                      refguid );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::FreePrivateData (%x)",
+                       refguid );
 
       return pTex->FreePrivateData (refguid);
     }
     STDMETHOD_(DWORD, SetPriority)(THIS_ DWORD PriorityNew) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetPriority (%lu)",
-                      PriorityNew );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetPriority (%lu)",
+                       PriorityNew );
 
       return pTex->SetPriority (PriorityNew);
     }
     STDMETHOD_(DWORD, GetPriority)(THIS) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetPriority ()" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetPriority ()" );
 
       return pTex->GetPriority ();
     }
     STDMETHOD_(void, PreLoad)(THIS) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::PreLoad ()" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::PreLoad ()" );
 
       pTex->PreLoad ();
     }
     STDMETHOD_(D3DRESOURCETYPE, GetType)(THIS) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetType ()" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetType ()" );
 
       return pTex->GetType ();
     }
     STDMETHOD_(DWORD, SetLOD)(THIS_ DWORD LODNew) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetLOD (%lu)",
-                      LODNew );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetLOD (%lu)",
+                       LODNew );
 
       return pTex->SetLOD (LODNew);
     }
     STDMETHOD_(DWORD, GetLOD)(THIS) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetLOD ()" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetLOD ()" );
 
       return pTex->GetLOD ();
     }
     STDMETHOD_(DWORD, GetLevelCount)(THIS) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetLevelCount ()" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetLevelCount ()" );
 
       return pTex->GetLevelCount ();
     }
     STDMETHOD(SetAutoGenFilterType)(THIS_ D3DTEXTUREFILTERTYPE FilterType) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetAutoGenFilterType (%x)",
-                      FilterType );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetAutoGenFilterType (%x)",
+                       FilterType );
 
       return pTex->SetAutoGenFilterType (FilterType);
     }
     STDMETHOD_(D3DTEXTUREFILTERTYPE, GetAutoGenFilterType)(THIS) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetAutoGenFilterType ()" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetAutoGenFilterType ()" );
 
       return pTex->GetAutoGenFilterType ();
     }
     STDMETHOD_(void, GenerateMipSubLevels)(THIS) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GenerateMipSubLevels ()" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GenerateMipSubLevels ()" );
 
       pTex->GenerateMipSubLevels ();
     }
     STDMETHOD(GetLevelDesc)(THIS_ UINT Level,D3DSURFACE_DESC *pDesc) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetLevelDesc (%lu, %ph)",
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetLevelDesc (%lu, %ph)",
                       Level,
                         pDesc );
       return pTex->GetLevelDesc (Level, pDesc);
     }
     STDMETHOD(GetSurfaceLevel)(THIS_ UINT Level,IDirect3DSurface9** ppSurfaceLevel) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetSurfaceLevel (%lu, %ph)",
-                      Level,
-                        ppSurfaceLevel );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::GetSurfaceLevel (%lu, %ph)",
+                       Level,
+                         ppSurfaceLevel );
 
       return pTex->GetSurfaceLevel (Level, ppSurfaceLevel);
     }
     STDMETHOD(LockRect)(THIS_ UINT Level,D3DLOCKED_RECT* pLockedRect,CONST RECT* pRect,DWORD Flags) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::LockRect (%lu, %ph, %ph, %x)",
-                      Level,
-                        pLockedRect,
-                          pRect,
-                            Flags );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::LockRect (%lu, %ph, %ph, %x)",
+                       Level,
+                         pLockedRect,
+                           pRect,
+                             Flags );
 
       return pTex->LockRect (Level, pLockedRect, pRect, Flags);
     }
     STDMETHOD(UnlockRect)(THIS_ UINT Level) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::UnlockRect (%lu)", Level );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::UnlockRect (%lu)", Level );
 
       return pTex->UnlockRect (Level);
     }
     STDMETHOD(AddDirtyRect)(THIS_ CONST RECT* pDirtyRect) {
-      tex_log.Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetDirtyRect (...)" );
+      tex_log->Log ( L"[ Tex. Mgr ] ISKTextureD3D9::SetDirtyRect (...)" );
 
       return pTex->AddDirtyRect (pDirtyRect);
     }

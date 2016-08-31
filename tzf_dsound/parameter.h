@@ -43,7 +43,7 @@ public:
   bool load (void)
   {
     if (ini != nullptr) {
-      INI::File::Section& section = ini->get_section (ini_section);
+      iSK_INISection& section = ini->get_section (ini_section);
 
       if (section.contains_key (ini_key)) {
         set_value_str (section.get_value (ini_key));
@@ -60,11 +60,11 @@ public:
     bool ret = false;
 
     if (ini != nullptr) {
-      INI::File::Section& section = ini->get_section (ini_section);
+      iSK_INISection& section = ini->get_section (ini_section);
 
       // If this operation actually creates a section, we need to make sure
       //   that section has a name!
-      section.name = ini_section;
+      section.set_name (ini_section);
 
       if (section.contains_key (ini_key)) {
         section.get_value (ini_key) = get_value_str ().c_str ();
@@ -81,7 +81,7 @@ public:
     return ret;
   }
 
-  void register_to_ini (INI::File* file, std::wstring section, std::wstring key)
+  void register_to_ini (iSK_INI* file, std::wstring section, std::wstring key)
   {
     ini         = file;
     ini_section = section;
@@ -90,7 +90,7 @@ public:
 
 protected:
 private:
-  INI::File*           ini;
+  iSK_INI*             ini;
   std::wstring         ini_section;
   std::wstring         ini_key;
 };

@@ -111,8 +111,8 @@ public:
     QueryPerformanceCounter_Original (&time);
 
     if ((double)(time.QuadPart - next.QuadPart) / (double)freq.QuadPart / (ms / 1000.0) > (limiter_tolerance * fps)) {
-      //dll_log.Log ( L" * Frame ran long (%3.01fx expected) - restarting"
-                    //L" limiter...",
+      //dll_log->Log ( L" * Frame ran long (%3.01fx expected) - restarting"
+                     //L" limiter...",
              //(double)(time.QuadPart - next.QuadPart) / (double)freq.QuadPart / (ms / 1000.0) / fps );
       restart = true;
     }
@@ -143,7 +143,7 @@ public:
 
         if (GetForegroundWindow () != tzf::RenderFix::hWndDevice &&
             tzf::FrameRateFix::fullscreen) {
-          //dll_log.Log (L"[FrameLimit]  # Restarting framerate limiter; fullscreen Alt+Tab...");
+          //dll_log->Log (L"[FrameLimit]  # Restarting framerate limiter; fullscreen Alt+Tab...");
           restart = true;
           break;
         }
@@ -156,7 +156,7 @@ public:
     }
 
     else {
-      dll_log.Log (L"[FrameLimit] Lost time");
+      dll_log->Log (L"[FrameLimit] Lost time");
       start.QuadPart += -next.QuadPart;
     }
 
@@ -196,7 +196,7 @@ SK_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   if ( pparams->BackBufferWidth            == 1 &&
        pparams->BackBufferHeight           == 1 &&
        pparams->FullScreen_RefreshRateInHz == 0 ) {
-    dll_log.Log (L"[   D3D9   ] * Fake D3D9Ex Device Detected... Ignoring!");
+    dll_log->Log (L"[   D3D9   ] * Fake D3D9Ex Device Detected... Ignoring!");
     return SK_SetPresentParamsD3D9_Original (device, pparams);
   }
 
@@ -206,15 +206,15 @@ SK_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   if (pparams != nullptr) {
     memcpy (&present_params, pparams, sizeof D3DPRESENT_PARAMETERS);
 
-    dll_log.Log ( L"[   D3D9   ] %% Caught D3D9 Swapchain :: Fullscreen=%s "
-                  L" (%lux%lu@%lu Hz) "
-                  L" [Device Window: 0x%04X]",
-                    pparams->Windowed ? L"False" :
-                                        L"True",
-                      pparams->BackBufferWidth,
-                        pparams->BackBufferHeight,
-                          pparams->FullScreen_RefreshRateInHz,
-                            pparams->hDeviceWindow );
+    dll_log->Log ( L"[   D3D9   ] %% Caught D3D9 Swapchain :: Fullscreen=%s "
+                   L" (%lux%lu@%lu Hz) "
+                   L" [Device Window: 0x%04X]",
+                     pparams->Windowed ? L"False" :
+                                         L"True",
+                       pparams->BackBufferWidth,
+                         pparams->BackBufferHeight,
+                           pparams->FullScreen_RefreshRateInHz,
+                             pparams->hDeviceWindow );
 
     tzf::RenderFix::hWndDevice = pparams->hDeviceWindow;
 
@@ -307,23 +307,23 @@ BinkOpen_Detour ( const char* filename,
 
   // Optionally play some other video (or no video)...
   if (! _stricmp (filename, "RAW\\MOVIE\\AM_TOZ_OP_001.BK2")) {
-    dll_log.LogEx (true, L"[IntroVideo] >> Using %ws for Opening Movie ...",
-                   config.system.intro_video.c_str ());
+    dll_log->LogEx (true, L"[IntroVideo] >> Using %ws for Opening Movie ...",
+                    config.system.intro_video.c_str ());
 
     sprintf (szBypassName, "%ws", config.system.intro_video.c_str ());
 
     bink_ret = BinkOpen_Original (szBypassName, unknown0);
 
-    dll_log.LogEx ( false,
-                      L" %s!\n",
-                        bink_ret != nullptr ? L"Success" :
-                                              L"Failed" );
+    dll_log->LogEx ( false,
+                       L" %s!\n",
+                         bink_ret != nullptr ? L"Success" :
+                                               L"Failed" );
   } else {
     bink_ret = BinkOpen_Original (filename, unknown0);
   }
 
   if (bink_ret != nullptr) {
-    dll_log.Log (L"[FrameLimit] * Disabling TargetFPS -- Bink Video Opened");
+    dll_log->Log (L"[FrameLimit] * Disabling TargetFPS -- Bink Video Opened");
 
     tzf::RenderFix::bink = true;
     tzf::FrameRateFix::Begin30FPSEvent ();
@@ -341,7 +341,7 @@ BinkClose_Detour (DWORD unknown)
 {
   BinkClose_Original (unknown);
 
-  dll_log.Log (L"[FrameLimit] * Restoring TargetFPS -- Bink Video Closed");
+  dll_log->Log (L"[FrameLimit] * Restoring TargetFPS -- Bink Video Closed");
 
   tzf::RenderFix::bink = false;
   tzf::FrameRateFix::End30FPSEvent ();
@@ -421,11 +421,11 @@ TZF_LuaHook (void)
   }
 
 #if 0
-  dll_log.Log (L"[  60 FPS  ]Lua script loaded: \"%S\"", name);
+  dll_log->Log (L"[  60 FPS  ]Lua script loaded: \"%S\"", name);
 #endif
 
   if (! strcmp (name, "MEP_100_130_010_PF_Script")) {
-    dll_log.Log (L"[  60 FPS  ] * Replacing priest script...");
+    dll_log->Log (L"[  60 FPS  ] * Replacing priest script...");
 
     *pSz     = lua_bytecode_priest_size;
     *pBuffer = lua_bytecode_priest;
@@ -493,11 +493,11 @@ tzf::FrameRateFix::Init (void)
       uintptr_t addr = (uintptr_t)TZF_Scan (sig, 16);
 
       if (addr != NULL) {
-        dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode Address: %06Xh", addr);
+        dll_log->Log (L"[FrameLimit] Scanned SpeedResetCode Address: %06Xh", addr);
         config.framerate.speedresetcode_addr = addr;
       }
       else {
-        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode memory!");
+        dll_log->Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode memory!");
       }
     }
 
@@ -508,15 +508,15 @@ tzf::FrameRateFix::Init (void)
       uintptr_t addr = (uintptr_t)TZF_Scan (sig, 12);
 
       if (addr != NULL && *((DWORD *)((uint8_t *)addr + 8)) == 0x2) {
-        dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode3 Address: %06Xh", addr + 8);
+        dll_log->Log (L"[FrameLimit] Scanned SpeedResetCode3 Address: %06Xh", addr + 8);
         config.framerate.speedresetcode3_addr = addr + 8;
       }
       else {
-        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode3 memory!");
+        dll_log->Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode3 memory!");
       }
     }
 
-    dll_log.LogEx (true, L"[FrameLimit]  * Installing variable rate simulation... ");
+    dll_log->LogEx (true, L"[FrameLimit]  * Installing variable rate simulation... ");
 
     DWORD dwOld;
 
@@ -562,14 +562,14 @@ tzf::FrameRateFix::Init (void)
       if (addr != NULL) {
         config.framerate.speedresetcode2_addr = addr + 3;
 
-        dll_log.Log (L"[FrameLimit] Scanned SpeedResetCode2 Address: %06Xh", addr + 3);
+        dll_log->Log (L"[FrameLimit] Scanned SpeedResetCode2 Address: %06Xh", addr + 3);
 
         TICK_ADDR_BASE = *(DWORD *)((uint8_t *)(addr + 11));
 
-        dll_log.Log (L"[FrameLimit]  >> TICK_ADDR_BASE: %06Xh", TICK_ADDR_BASE);
+        dll_log->Log (L"[FrameLimit]  >> TICK_ADDR_BASE: %06Xh", TICK_ADDR_BASE);
       }
       else {
-        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode2 memory!");
+        dll_log->Log (L"[FrameLimit]  >> ERROR: Unable to find SpeedResetCode2 memory!");
       }
     }
 
@@ -611,11 +611,11 @@ tzf::FrameRateFix::Init (void)
                   CalcTickScale (1000.0f * (1.0f / target_fps)) );
     SK_GetCommandProcessor ()->ProcessCommandLine (scale);
 
-    dll_log.LogEx ( false, L"Field=%lu FPS, Battle=%lu FPS (%s), Cutscene=%lu FPS\n",
-                      target_fps,
-                        config.framerate.battle_target,
-                          config.framerate.battle_adaptive ? L"Adaptive" : L"Fixed",
-                            config.framerate.cutscene_target );
+    dll_log->LogEx ( false, L"Field=%lu FPS, Battle=%lu FPS (%s), Cutscene=%lu FPS\n",
+                       target_fps,
+                         config.framerate.battle_target,
+                           config.framerate.battle_adaptive ? L"Adaptive" : L"Fixed",
+                             config.framerate.cutscene_target );
   }
 
   variable_speed_installed = true;
@@ -635,10 +635,10 @@ tzf::FrameRateFix::Init (void)
       if (addr != NULL) {
         config.framerate.limiter_branch_addr = addr + 3;
 
-        dll_log.Log (L"[FrameLimit] Scanned Limiter Branch Address: %06Xh", addr + 3);
+        dll_log->Log (L"[FrameLimit] Scanned Limiter Branch Address: %06Xh", addr + 3);
       }
       else {
-        dll_log.Log (L"[FrameLimit]  >> ERROR: Unable to find LimiterBranchAddr memory!");
+        dll_log->Log (L"[FrameLimit]  >> ERROR: Unable to find LimiterBranchAddr memory!");
       }
     }
 
@@ -659,7 +659,7 @@ tzf::FrameRateFix::Init (void)
     void *addr = TZF_Scan (sig, 14);
 
     if (addr != NULL) {
-      dll_log.Log (L"[  60 FPS  ] Scanned Lua Loader Address: %06Xh", addr);
+      dll_log->Log (L"[  60 FPS  ] Scanned Lua Loader Address: %06Xh", addr);
 
       DWORD hookOffset = (PtrToUlong (&TZF_LuaHook) - (uintptr_t)addr - 5);
       memcpy (new_code + 1, &hookOffset, 4);
@@ -667,23 +667,23 @@ tzf::FrameRateFix::Init (void)
       pLuaReturn = (LPVOID)((uintptr_t)addr + 7);
     }
     else {
-      dll_log.Log (L"[  60 FPS  ]  >> ERROR: Unable to find Lua loader address! Priest bug will occur.");
+      dll_log->Log (L"[  60 FPS  ]  >> ERROR: Unable to find Lua loader address! Priest bug will occur.");
     }
   }
 
-  eTB_CommandProcessor* pCmdProc =
+  SK_ICommandProcessor* pCmdProc =
     SK_GetCommandProcessor ();
 
   // Special K already has something named this ... get it out of there!
   pCmdProc->RemoveVariable ("TargetFPS");
 
-  pCmdProc->AddVariable ("TargetFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.target));
-  pCmdProc->AddVariable ("BattleFPS",      new eTB_VarStub <int>  ( (int *)&config.framerate.battle_target));
-  pCmdProc->AddVariable ("BattleAdaptive", new eTB_VarStub <bool> ((bool *)&config.framerate.battle_adaptive));
-  pCmdProc->AddVariable ("CutsceneFPS",    new eTB_VarStub <int>  ( (int *)&config.framerate.cutscene_target));
+  pCmdProc->AddVariable ("TargetFPS",      TZF_CreateVar (SK_IVariable::Int,      (int *)&config.framerate.target));
+  pCmdProc->AddVariable ("BattleFPS",      TZF_CreateVar (SK_IVariable::Int,      (int *)&config.framerate.battle_target));
+  pCmdProc->AddVariable ("BattleAdaptive", TZF_CreateVar (SK_IVariable::Boolean, (bool *)&config.framerate.battle_adaptive));
+  pCmdProc->AddVariable ("CutsceneFPS",    TZF_CreateVar (SK_IVariable::Int,      (int *)&config.framerate.cutscene_target));
 
   // No matter which technique we use, these things need to be options
-  pCmdProc->AddVariable ("MinimizeLatency",   new eTB_VarStub <bool>  (&config.framerate.minimize_latency));
+  pCmdProc->AddVariable ("MinimizeLatency",   TZF_CreateVar (SK_IVariable::Boolean, &config.framerate.minimize_latency));
 
   // Hook this no matter what, because it lowers the _REPORTED_ CPU usage,
   //   and some people would object if we suddenly changed this behavior :P
@@ -693,10 +693,10 @@ tzf::FrameRateFix::Init (void)
            (LPVOID *)&pfnSleep );
   TZF_EnableHook (pfnSleep);
 
-  pCmdProc->AddVariable ("AllowFakeSleep",    new eTB_VarStub <bool>  (&config.framerate.allow_fake_sleep));
-  pCmdProc->AddVariable ("YieldProcessor",    new eTB_VarStub <bool>  (&config.framerate.yield_processor));
+  pCmdProc->AddVariable ("AllowFakeSleep", TZF_CreateVar (SK_IVariable::Boolean, &config.framerate.allow_fake_sleep));
+  pCmdProc->AddVariable ("YieldProcessor", TZF_CreateVar (SK_IVariable::Boolean, &config.framerate.yield_processor));
 
-  pCmdProc->AddVariable ("AutoAdjust", new eTB_VarStub <bool> (&config.framerate.auto_adjust));
+  pCmdProc->AddVariable ("AutoAdjust",     TZF_CreateVar (SK_IVariable::Boolean, &config.framerate.auto_adjust));
 }
 
 void
@@ -785,21 +785,21 @@ tzf::FrameRateFix::CommandProcessor* tzf::FrameRateFix::CommandProcessor::pCommP
 
 tzf::FrameRateFix::CommandProcessor::CommandProcessor (void)
 {
-  tick_scale_ = new eTB_VarStub <int> (&tick_scale, this);
+  tick_scale_ = TZF_CreateVar (SK_IVariable::Int, &tick_scale, this);
 
-  eTB_CommandProcessor* pCmdProc =
+  SK_ICommandProcessor* pCmdProc =
     SK_GetCommandProcessor ();
 
   pCmdProc->AddVariable ("TickScale", tick_scale_);
 
-  pCmdProc->AddVariable ("UseAccumulator",   new eTB_VarStub <bool>  (&use_accumulator));
-  pCmdProc->AddVariable ("MaxFrameLatency",  new eTB_VarStub <int>   (&max_latency));
-  pCmdProc->AddVariable ("WaitForVBLANK",    new eTB_VarStub <bool>  (&wait_for_vblank));
-  pCmdProc->AddVariable ("LimiterTolerance", new eTB_VarStub <float> (&limiter_tolerance));
+  pCmdProc->AddVariable ("UseAccumulator",   TZF_CreateVar (SK_IVariable::Boolean, &use_accumulator));
+  pCmdProc->AddVariable ("MaxFrameLatency",  TZF_CreateVar (SK_IVariable::Int,     &max_latency));
+  pCmdProc->AddVariable ("WaitForVBLANK",    TZF_CreateVar (SK_IVariable::Boolean, &wait_for_vblank));
+  pCmdProc->AddVariable ("LimiterTolerance", TZF_CreateVar (SK_IVariable::Float,   &limiter_tolerance));
 }
 
 bool
-tzf::FrameRateFix::CommandProcessor::OnVarChange (eTB_Variable* var, void* val)
+tzf::FrameRateFix::CommandProcessor::OnVarChange (SK_IVariable* var, void* val)
 {
   DWORD dwOld;
 
@@ -948,9 +948,9 @@ tzf::FrameRateFix::RenderTick (void)
         last_frame_battle = true;
 
 #if 0
-        dll_log.Log ( L"[FrameLimit] ** Adjusting TickScale because of battle framerate change "
-                      L"(Expected: ~%4.2f ms, Got: %4.2f ms)",
-                        last_scale * 16.666667f, dt * (1.0 / 60.0) * 1000.0 );
+        dll_log->Log ( L"[FrameLimit] ** Adjusting TickScale because of battle framerate change "
+                       L"(Expected: ~%4.2f ms, Got: %4.2f ms)",
+                         last_scale * 16.666667f, dt * (1.0 / 60.0) * 1000.0 );
 #endif
       }
 

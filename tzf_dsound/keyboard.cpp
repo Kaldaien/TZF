@@ -114,12 +114,12 @@ tzf::KeyboardFix::Init (void)
 
       swapped_keys.push_back (std::pair <uint16_t, uint16_t> (first, second));
 
-      dll_log.Log (L"[ Keyboard ] # SDL Scancode Swap: (%i <-> %i)", first, second);
+      dll_log->Log (L"[ Keyboard ] # SDL Scancode Swap: (%i <-> %i)", first, second);
     } else {
       // Do not allow multiple remapping
-      dll_log.Log ( L"[ Keyboard ] @ SDL Scancode Remapped Multiple Times! -- (%i <-> %i)",
-                      first,
-                        second );
+      dll_log->Log ( L"[ Keyboard ] @ SDL Scancode Remapped Multiple Times! -- (%i <-> %i)",
+                       first,
+                         second );
     }
   }
 

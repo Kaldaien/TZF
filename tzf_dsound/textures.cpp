@@ -83,7 +83,7 @@ extern QueryPerformanceCounter_t QueryPerformanceCounter_Original;
 tzf::RenderFix::TextureManager
   tzf::RenderFix::tex_mgr;
 
-tzf_logger_t tex_log;
+iSK_Logger* tex_log;
 
 #include <set>
 
@@ -441,14 +441,14 @@ D3D9StretchRect_Detour (      IDirect3DDevice9    *This,
     } else
       dest = *pDestRect;
 
-    dll_log.Log ( L"[FrameTrace] StretchRect      - "
-                  L"%s[%lu,%lu/%lu,%lu] ==> %s[%lu,%lu/%lu,%lu]",
-                  pSourceRect != nullptr ?
-                    L" " : L" *",
-                  source.left, source.top, source.right, source.bottom,
-                  pDestRect != nullptr ?
-                    L" " : L" *",
-                  dest.left,   dest.top,   dest.right,   dest.bottom );
+    dll_log->Log ( L"[FrameTrace] StretchRect      - "
+                   L"%s[%lu,%lu/%lu,%lu] ==> %s[%lu,%lu/%lu,%lu]",
+                   pSourceRect != nullptr ?
+                     L" " : L" *",
+                   source.left, source.top, source.right, source.bottom,
+                   pDestRect != nullptr ?
+                     L" " : L" *",
+                   dest.left,   dest.top,   dest.right,   dest.bottom );
   }
 #endif
 
@@ -469,16 +469,16 @@ D3D9SetRenderState_Detour (IDirect3DDevice9*  This,
 {
   // Ignore anything that's not the primary render device.
   if (This != tzf::RenderFix::pDevice) {
-    dll_log.Log (L"[Render Fix] >> WARNING: SetRenderState came from unknown IDirect3DDevice9! << ");
+    dll_log->Log (L"[Render Fix] >> WARNING: SetRenderState came from unknown IDirect3DDevice9! << ");
 
     return D3D9SetRenderState_Original (This, State, Value);
   }
 
 #if 0
   if (tzf::RenderFix::tracer.log) {
-    dll_log.Log ( L"[FrameTrace] SetRenderState  - State: %24s, Value: %lu",
-                    SK_D3D9_RenderStateToStr (State),
-                      Value );
+    dll_log->Log ( L"[FrameTrace] SetRenderState  - State: %24s, Value: %lu",
+                     SK_D3D9_RenderStateToStr (State),
+                       Value );
   }
 #endif
 
@@ -498,10 +498,10 @@ D3D9CreateRenderTarget_Detour (IDirect3DDevice9     *This,
                                IDirect3DSurface9   **ppSurface,
                                HANDLE               *pSharedHandle)
 {
-  tex_log.Log (L"[Unexpected][!] IDirect3DDevice9::CreateRenderTarget (%lu, %lu, "
-                      L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
-                 Width, Height, Format, MultiSample, MultisampleQuality,
-                 Lockable, ppSurface, pSharedHandle);
+  tex_log->Log (L"[Unexpected][!] IDirect3DDevice9::CreateRenderTarget (%lu, %lu, "
+                       L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
+                  Width, Height, Format, MultiSample, MultisampleQuality,
+                  Lockable, ppSurface, pSharedHandle);
 
   return D3D9CreateRenderTarget_Original (This, Width, Height, Format,
                                           MultiSample, MultisampleQuality,
@@ -521,10 +521,10 @@ D3D9CreateDepthStencilSurface_Detour (IDirect3DDevice9     *This,
                                       IDirect3DSurface9   **ppSurface,
                                       HANDLE               *pSharedHandle)
 {
-  tex_log.Log (L"[Unexpected][!] IDirect3DDevice9::CreateDepthStencilSurface (%lu, %lu, "
-                      L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
-                 Width, Height, Format, MultiSample, MultisampleQuality,
-                 Discard, ppSurface, pSharedHandle);
+  tex_log->Log (L"[Unexpected][!] IDirect3DDevice9::CreateDepthStencilSurface (%lu, %lu, "
+                       L"%lu, %lu, %lu, %lu, %08Xh, %08Xh)",
+                  Width, Height, Format, MultiSample, MultisampleQuality,
+                  Discard, ppSurface, pSharedHandle);
 
   return D3D9CreateDepthStencilSurface_Original (This, Width, Height, Format,
                                                  MultiSample, MultisampleQuality,
@@ -626,7 +626,7 @@ D3D9SetTexture_Detour (
 
 
   //if (tzf::RenderFix::tracer.log) {
-    //dll_log.Log ( L"[FrameTrace] SetTexture      - Sampler: %lu, pTexture: %ph",
+    //dll_log->Log ( L"[FrameTrace] SetTexture      - Sampler: %lu, pTexture: %ph",
                      //Sampler, pTexture );
   //}
 
@@ -698,15 +698,15 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
 
 #if 0
   if (Usage == D3DUSAGE_RENDERTARGET)
-  dll_log.Log (L" [!] IDirect3DDevice9::CreateTexture (%lu, %lu, %lu, %lu, "
-                                                  L"%lu, %lu, %08Xh, %08Xh)",
-                 Width, Height, Levels, Usage, Format, Pool, ppTexture,
-                 pSharedHandle);
+  dll_log->Log (L" [!] IDirect3DDevice9::CreateTexture (%lu, %lu, %lu, %lu, "
+                                                   L"%lu, %lu, %08Xh, %08Xh)",
+                  Width, Height, Levels, Usage, Format, Pool, ppTexture,
+                  pSharedHandle);
 #endif
 
 #if 0
   //if (config.textures.log) {
-    tex_log.Log ( L"[Load Trace] >> Creating Texture: "
+    tex_log->Log ( L"[Load Trace] >> Creating Texture: "
                   L"(%d x %d), Format: %s, Usage: [%s], Pool: %s",
                     Width, Height,
                       SK_D3D9_FormatToStr (Format),
@@ -768,7 +768,7 @@ D3D9BeginScene_Detour (IDirect3DDevice9* This)
 {
   // Ignore anything that's not the primary render device.
   if (This != tzf::RenderFix::pDevice) {
-    dll_log.Log (L"[Render Fix] >> WARNING: D3D9 BeginScene came from unknown IDirect3DDevice9! << ");
+    dll_log->Log (L"[Render Fix] >> WARNING: D3D9 BeginScene came from unknown IDirect3DDevice9! << ");
 
     return D3D9BeginScene_Original (This);
   }
@@ -953,20 +953,20 @@ extern QueryPerformanceCounter_t QueryPerformanceCounter_Original;
                                                                               \
     VirtualProtect (&vftable [_Index], __PTR_SIZE, __PAGE_PRIVS, &dwProtect); \
                                                                               \
-    /*dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",*/\
+    /*dll_log->Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",*/\
                  /*L##_Name, vftable [_Index],                              */\
                  /*SK_DescribeVirtualProtectFlags (dwProtect));             */\
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
+    /*dll_log->Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
     VirtualProtect (&vftable [_Index], __PTR_SIZE, dwProtect, &dwProtect);    \
                                                                               \
-    /*dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",*/\
+    /*dll_log->Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",*/\
                   /*L##_Name, vftable [_Index],                               */\
                   /*SK_DescribeVirtualProtectFlags (dwProtect));              */\
   }                                                                           \
@@ -1578,17 +1578,66 @@ TZFix_LoadQueuedTextures (void)
       sprintf (szFormatted, " (%lu outstanding)", textures_to_stream.size ());
       mod_text += szFormatted;
     }
-
-    mod_text += "\n\n";
-  }
-
-  if (config.textures.cache && __show_cache) {
-    mod_text += "Texture Cache\n";
-    mod_text += "-------------\n";
-    mod_text += tzf::RenderFix::tex_mgr.osdStats ();
   }
 
   int loads = 0;
+
+  std::vector <tzf_tex_load_s *> finished;
+
+  if (resample_pool != nullptr)
+    finished = resample_pool->getFinished ();
+
+  for (auto it = finished.begin (); it != finished.end (); it++) {
+    tzf_tex_load_s* load =
+      *it;
+
+    QueryPerformanceCounter_Original (&load->end);
+
+    if (true) {
+      tex_log->Log ( L"[%s] Finished %s texture %08x (%5.2f MiB in %9.4f ms)",
+                       (load->type == tzf_tex_load_s::Stream) ? L"Inject Tex" :
+                         (load->type == tzf_tex_load_s::Immediate) ? L"Inject Tex" :
+                                                                     L" Resample ",
+                       (load->type == tzf_tex_load_s::Stream) ? L"streaming" :
+                         (load->type == tzf_tex_load_s::Immediate) ? L"loading" :
+                                                                     L"filtering",
+                         load->checksum,
+                           (double)load->SrcDataSize / (1024.0f * 1024.0f),
+                             1000.0f * (double)(load->end.QuadPart - load->start.QuadPart) /
+                                       (double)load->freq.QuadPart );
+    }
+
+    tzf::RenderFix::Texture* pTex =
+      tzf::RenderFix::tex_mgr.getTexture (load->checksum);
+
+    if (pTex != nullptr) {
+      pTex->load_time = 1000.0f * (double)(load->end.QuadPart - load->start.QuadPart) /
+                                      (double)load->freq.QuadPart;
+    }
+
+    ISKTextureD3D9* pSKTex =
+      (ISKTextureD3D9 *)load->pDest;
+
+    if (pSKTex->refs == 0 && load->pSrc != nullptr) {
+      tex_log->Log (L"[ Tex. Mgr ] >> Original texture no longer referenced, discarding new one!");
+      load->pSrc->Release ();
+    } else {
+      QueryPerformanceCounter_Original (&pSKTex->last_used);
+
+      pSKTex->pTexOverride  = load->pSrc;
+      pSKTex->override_size = load->SrcDataSize;
+
+      tzf::RenderFix::tex_mgr.addInjected (load->SrcDataSize);
+    }
+
+    finished_streaming (load->checksum);
+
+    tzf::RenderFix::tex_mgr.updateOSD ();
+
+    ++loads;
+
+    delete load;
+  }
 
   //
   // If the size changes, check to see if we need a purge - if so, schedule one.
@@ -1610,62 +1659,7 @@ TZFix_LoadQueuedTextures (void)
     }
   }
 
-  std::vector <tzf_tex_load_s *> finished;
-
-  if (resample_pool != nullptr)
-    finished = resample_pool->getFinished ();
-
-  for (auto it = finished.begin (); it != finished.end (); it++) {
-    tzf_tex_load_s* load =
-      *it;
-
-    QueryPerformanceCounter_Original (&load->end);
-
-    if (true) {
-      tex_log.Log ( L"[%s] Finished %s texture %08x (%5.2f MiB in %9.4f ms)",
-                      (load->type == tzf_tex_load_s::Stream) ? L"Inject Tex" :
-                        (load->type == tzf_tex_load_s::Immediate) ? L"Inject Tex" :
-                                                                    L" Resample ",
-                      (load->type == tzf_tex_load_s::Stream) ? L"streaming" :
-                        (load->type == tzf_tex_load_s::Immediate) ? L"loading" :
-                                                                    L"filtering",
-                        load->checksum,
-                          (double)load->SrcDataSize / (1024.0f * 1024.0f),
-                            1000.0f * (double)(load->end.QuadPart - load->start.QuadPart) /
-                                      (double)load->freq.QuadPart );
-    }
-
-    tzf::RenderFix::Texture* pTex =
-      tzf::RenderFix::tex_mgr.getTexture (load->checksum);
-
-    if (pTex != nullptr) {
-      pTex->load_time = 1000.0f * (double)(load->end.QuadPart - load->start.QuadPart) /
-                                      (double)load->freq.QuadPart;
-    }
-
-    ISKTextureD3D9* pSKTex =
-      (ISKTextureD3D9 *)load->pDest;
-
-    if (pSKTex->refs == 0 && load->pSrc != nullptr) {
-      tex_log.Log (L"[ Tex. Mgr ] >> Original texture no longer referenced, discarding new one!");
-      load->pSrc->Release ();
-    } else {
-      QueryPerformanceCounter_Original (&pSKTex->last_used);
-
-      pSKTex->pTexOverride  = load->pSrc;
-      pSKTex->override_size = load->SrcDataSize;
-
-      tzf::RenderFix::tex_mgr.addInjected (load->SrcDataSize);
-    }
-
-    finished_streaming (load->checksum);
-
-    tzf::RenderFix::tex_mgr.updateOSD ();
-
-    ++loads;
-
-    delete load;
-  }
+  tzf::RenderFix::tex_mgr.osdStats ();
 }
 
 #include <set>
@@ -1824,8 +1818,8 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
             injectable_textures.find (checksum) !=
                      injectable_textures.end () )
   {
-    tex_log.LogEx ( true, L"[Inject Tex] Injectable texture for checksum (%08x)... ",
-                      checksum );
+    tex_log->LogEx ( true, L"[Inject Tex] Injectable texture for checksum (%08x)... ",
+                       checksum );
 
     tzf_tex_record_s record = injectable_textures [checksum];
 
@@ -1859,17 +1853,17 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
 
     if (load_op->type == tzf_tex_load_s::Stream) {
       if ((! remap_stream))
-        tex_log.LogEx ( false, L"streaming\n" );
+        tex_log->LogEx ( false, L"streaming\n" );
       else
-        tex_log.LogEx ( false, L"in-flight already\n" );
+        tex_log->LogEx ( false, L"in-flight already\n" );
     } else {
-      tex_log.LogEx ( false, L"blocking (deferred)\n" );
+      tex_log->LogEx ( false, L"blocking (deferred)\n" );
     }
   }
 
   bool will_replace = (load_op != nullptr || resample);
 
-  //tex_log.Log (L"D3DXCreateTextureFromFileInMemoryEx (... MipLevels=%lu ...)", MipLevels);
+  //tex_log->Log (L"D3DXCreateTextureFromFileInMemoryEx (... MipLevels=%lu ...)", MipLevels);
   hr =
     D3DXCreateTextureFromFileInMemoryEx_Original ( pDevice,
                                                      pSrcData,         SrcDataSize,
@@ -1896,7 +1890,7 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
       tzf::RenderFix::pad_buttons.tex_xbox = *ppTexture;
 
       if (GetFileAttributesW (L"custom_buttons.dds") != INVALID_FILE_ATTRIBUTES) {
-        tex_log.LogEx (true, L"[Inject Tex] Injecting custom gamepad buttons... ");
+        tex_log->LogEx (true, L"[Inject Tex] Injecting custom gamepad buttons... ");
 
         load_op           = new tzf_tex_load_s;
         load_op->pDevice  = pDevice;
@@ -1907,11 +1901,11 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
 
         if (load_op->type == tzf_tex_load_s::Stream) {
           if ((! remap_stream))
-            tex_log.LogEx ( false, L"streaming\n" );
+            tex_log->LogEx ( false, L"streaming\n" );
           else
-            tex_log.LogEx ( false, L"in-flight already\n" );
+            tex_log->LogEx ( false, L"in-flight already\n" );
         } else {
-          tex_log.LogEx ( false, L"blocking (deferred)\n" );
+          tex_log->LogEx ( false, L"blocking (deferred)\n" );
         }
 
         resample = false;
@@ -1984,7 +1978,7 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
       QueryPerformanceCounter_Original (&load_op->end);
 
       if (SUCCEEDED (hr)) {
-        tex_log.Log ( L"[Inject Tex] Finished synchronous texture %08x (%5.2f MiB in %9.4f ms)",
+        tex_log->Log ( L"[Inject Tex] Finished synchronous texture %08x (%5.2f MiB in %9.4f ms)",
                         load_op->checksum,
                           (double)load_op->SrcDataSize / (1024.0f * 1024.0f),
                             1000.0f * (double)(load_op->end.QuadPart - load_op->start.QuadPart) /
@@ -1999,7 +1993,7 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
 
         tsf::RenderFix::tex_mgr.addInjected (load_op->SrcDataSize);
       } else {
-        tex_log.Log ( L"[Inject Tex] *** FAILED synchronous texture %08x",
+        tex_log->Log ( L"[Inject Tex] *** FAILED synchronous texture %08x",
                         load_op->checksum );
       }
 
@@ -2051,14 +2045,14 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
     }
 
     if (false) {//config.textures.log) {
-      tex_log.Log ( L"[Load Trace] Texture:   (%lu x %lu) * <LODs: %lu> - FAST_CRC32: %X",
+      tex_log->Log ( L"[Load Trace] Texture:   (%lu x %lu) * <LODs: %lu> - FAST_CRC32: %X",
                       Width, Height, (*ppTexture)->GetLevelCount (), checksum );
-      tex_log.Log ( L"[Load Trace]              Usage: %-20s - Format: %-20s",
+      tex_log->Log ( L"[Load Trace]              Usage: %-20s - Format: %-20s",
                       SK_D3D9_UsageToStr    (Usage).c_str (),
                         SK_D3D9_FormatToStr (Format).c_str () );
-      tex_log.Log ( L"[Load Trace]                Pool: %s",
+      tex_log->Log ( L"[Load Trace]                Pool: %s",
                       SK_D3D9_PoolToStr (Pool) );
-      tex_log.Log ( L"[Load Trace]      Load Time: %6.4f ms", 
+      tex_log->Log ( L"[Load Trace]      Load Time: %6.4f ms", 
                     1000.0f * (double)(end.QuadPart - start.QuadPart) / (double)freq.QuadPart );
     }
   }
@@ -2170,9 +2164,9 @@ tzf::RenderFix::TextureManager::refTexture (tzf::RenderFix::Texture* pTex)
   InterlockedIncrement (&hits);
 
   if (false) {//config.textures.log) {
-    tex_log.Log ( L"[CacheTrace] Cache hit (%X), saved %2.1f ms",
-                    pTex->crc32,
-                      pTex->load_time );
+    tex_log->Log ( L"[CacheTrace] Cache hit (%X), saved %2.1f ms",
+                     pTex->crc32,
+                       pTex->load_time );
   }
 
   time_saved += pTex->load_time;
@@ -2211,7 +2205,7 @@ D3D9SetRenderTarget_Detour (
       if (pOld != nullptr) {
         wsprintf (wszDumpName, L"dump\\%03d_out_%p.png", draw_counter, pOld);
 
-        dll_log.Log ( L"[FrameTrace] >>> Dumped: Output RT to %s >>>", wszDumpName );
+        dll_log->Log ( L"[FrameTrace] >>> Dumped: Output RT to %s >>>", wszDumpName );
 
         dumping = true;
         //D3DXSaveSurfaceToFile (wszDumpName, D3DXIFF_PNG, pOld, nullptr, nullptr);
@@ -2219,7 +2213,7 @@ D3D9SetRenderTarget_Detour (
     }
 #endif
 
-    //dll_log.Log ( L"[FrameTrace] SetRenderTarget - RenderTargetIndex: %lu, pRenderTarget: %ph",
+    //dll_log->Log ( L"[FrameTrace] SetRenderTarget - RenderTargetIndex: %lu, pRenderTarget: %ph",
                     //RenderTargetIndex, pRenderTarget );
 
 #ifdef DUMP_RT
@@ -2228,7 +2222,7 @@ D3D9SetRenderTarget_Detour (
 
       wsprintf (wszDumpName, L"dump\\%03d_in_%p.png", ++draw_counter, pRenderTarget);
 
-      dll_log.Log ( L"[FrameTrace] <<< Dumped: Input RT to  %s  <<<", wszDumpName );
+      dll_log->Log ( L"[FrameTrace] <<< Dumped: Input RT to  %s  <<<", wszDumpName );
 
       dumping = true;
       //D3DXSaveSurfaceToFile (wszDumpName, D3DXIFF_PNG, pRenderTarget, nullptr, nullptr);
@@ -2248,8 +2242,7 @@ tzf::RenderFix::TextureManager::Init (void)
   if (config.textures.dump)
     CreateDirectoryW (TZFIX_TEXTURE_DIR, nullptr);
 
-  tex_log.silent = false;
-  tex_log.init ("logs/textures.log", "w+");
+  tex_log = TZF_CreateLog (L"logs/textures.log");
 
   d3dx9_43_dll = LoadLibrary (L"D3DX9_43.DLL");
 
@@ -2264,7 +2257,7 @@ tzf::RenderFix::TextureManager::Init (void)
     int             files  = 0;
     LARGE_INTEGER   liSize = { 0 };
 
-    tex_log.LogEx ( true, L"[Inject Tex] Enumerating injectable textures..." );
+    tex_log->LogEx ( true, L"[Inject Tex] Enumerating injectable textures..." );
 
     hFind = FindFirstFileW (TZFIX_TEXTURE_DIR L"\\inject\\textures\\blocking\\*", &fd);
 
@@ -2477,8 +2470,8 @@ tzf::RenderFix::TextureManager::Init (void)
     }
 #endif
 
-    tex_log.LogEx ( false, L" %lu files (%3.1f MiB)\n",
-                      files, (double)liSize.QuadPart / (1024.0 * 1024.0) );
+    tex_log->LogEx ( false, L" %lu files (%3.1f MiB)\n",
+                       files, (double)liSize.QuadPart / (1024.0 * 1024.0) );
   }
 
   if ( GetFileAttributesW (TZFIX_TEXTURE_DIR L"\\dump\\textures") !=
@@ -2490,7 +2483,7 @@ tzf::RenderFix::TextureManager::Init (void)
     int             files    = 0;
     LARGE_INTEGER   liSize   = { 0 };
 
-    tex_log.LogEx ( true, L"[ Dump Tex ] Enumerating dumped textures..." );
+    tex_log->LogEx ( true, L"[ Dump Tex ] Enumerating dumped textures..." );
 
     hFind = FindFirstFileW (TZFIX_TEXTURE_DIR L"\\dump\\textures\\*", &fd);
 
@@ -2529,8 +2522,8 @@ tzf::RenderFix::TextureManager::Init (void)
       FindClose (hFind);
     }
 
-    tex_log.LogEx ( false, L" %lu files (%3.1f MiB)\n",
-                      files, (double)liSize.QuadPart / (1024.0 * 1024.0) );
+    tex_log->LogEx ( false, L" %lu files (%3.1f MiB)\n",
+                       files, (double)liSize.QuadPart / (1024.0 * 1024.0) );
   }
 
   TZF_CreateDLLHook ( config.system.injector.c_str (),
@@ -2635,28 +2628,28 @@ tzf::RenderFix::TextureManager::Init (void)
 
   resample_pool = new SK_TextureThreadPool ();
 
-  eTB_CommandProcessor& command =
+  SK_ICommandProcessor& command =
     *SK_GetCommandProcessor ();
 
   command.AddVariable (
     "Textures.Remap",
-      new eTB_VarStub <bool> (&__remap_textures) );
+      TZF_CreateVar (SK_IVariable::Boolean, &__remap_textures) );
 
   command.AddVariable (
     "Textures.Purge",
-      new eTB_VarStub <bool> (&__need_purge) );
+      TZF_CreateVar (SK_IVariable::Boolean, &__need_purge) );
 
   command.AddVariable (
     "Textures.Trace",
-      new eTB_VarStub <bool> (&__log_used) );
+      TZF_CreateVar (SK_IVariable::Boolean, &__log_used) );
 
   command.AddVariable (
     "Textures.ShowCache",
-      new eTB_VarStub <bool> (&__show_cache) );
+      TZF_CreateVar (SK_IVariable::Boolean, &__show_cache) );
 
   command.AddVariable (
     "Textures.MaxCacheSize",
-      new eTB_VarStub <int> (&config.textures.max_cache_in_mib) );
+      TZF_CreateVar (SK_IVariable::Int,     &config.textures.max_cache_in_mib) );
 }
 
 
@@ -2679,11 +2672,11 @@ tzf::RenderFix::TextureManager::Shutdown (void)
 
   CloseHandle (decomp_semaphore);
 
-  tex_log.Log ( L"[Perf Stats] At shutdown: %7.2f seconds (%7.2f frames)"
-                L" saved by cache",
-                  time_saved / 1000.0f,
-                    time_saved / frame_time );
-  tex_log.close ();
+  tex_log->Log ( L"[Perf Stats] At shutdown: %7.2f seconds (%7.2f frames)"
+                 L" saved by cache",
+                   time_saved / 1000.0f,
+                     time_saved / frame_time );
+  tex_log->close ();
 
   FreeLibrary (d3dx9_43_dll);
 }
@@ -2696,17 +2689,17 @@ tzf::RenderFix::TextureManager::purge (void)
   uint64_t reclaimed          = 0;
   uint64_t reclaimed_injected = 0;
 
-  tex_log.Log (L"[ Tex. Mgr ] -- TextureManager::purge (...) -- ");
+  tex_log->Log (L"[ Tex. Mgr ] -- TextureManager::purge (...) -- ");
 
   // Purge any pending removes
   getTexture (0);
 
-  tex_log.Log ( L"[ Tex. Mgr ]  ***  Current Cache Size: %6.2f MiB "
-                                          L"(User Limit: %6.2f MiB)",
-                  (double)cacheSizeTotal () / (1024.0 * 1024.0),
-                    (double)config.textures.max_cache_in_mib );
+  tex_log->Log ( L"[ Tex. Mgr ]  ***  Current Cache Size: %6.2f MiB "
+                                           L"(User Limit: %6.2f MiB)",
+                   (double)cacheSizeTotal () / (1024.0 * 1024.0),
+                     (double)config.textures.max_cache_in_mib );
 
-  tex_log.Log (L"[ Tex. Mgr ]   Releasing textures...");
+  tex_log->Log (L"[ Tex. Mgr ]   Releasing textures...");
 
   std::unordered_map <uint32_t, tzf::RenderFix::Texture *>::iterator it =
     textures.begin ();
@@ -2779,25 +2772,25 @@ tzf::RenderFix::TextureManager::purge (void)
         reclaimed_injected += ovr_size;
       }
     } else {
-      tex_log.Log (L"[ Tex. Mgr ] Invalid reference count (%lu)!", tex_refs);
+      tex_log->Log (L"[ Tex. Mgr ] Invalid reference count (%lu)!", tex_refs);
     }
 
     ++released;
     reclaimed  += base_size;
   }
 
-  tex_log.Log ( L"[ Tex. Mgr ]   %4d textures (%4d remain)",
-                  released,
-                    textures.size () );
+  tex_log->Log ( L"[ Tex. Mgr ]   %4d textures (%4d remain)",
+                   released,
+                     textures.size () );
 
-  tex_log.Log ( L"[ Tex. Mgr ]   >> Reclaimed %6.2f MiB of memory (%6.2f MiB from %lu inject)",
-                  (double)reclaimed        / (1024.0 * 1024.0),
-                  (double)reclaimed_injected / (1024.0 * 1024.0),
-                          released_injected );
+  tex_log->Log ( L"[ Tex. Mgr ]   >> Reclaimed %6.2f MiB of memory (%6.2f MiB from %lu inject)",
+                   (double)reclaimed        / (1024.0 * 1024.0),
+                   (double)reclaimed_injected / (1024.0 * 1024.0),
+                           released_injected );
 
   updateOSD ();
 
-  tex_log.Log (L"[ Tex. Mgr ] ----------- Finished ------------ ");
+  tex_log->Log (L"[ Tex. Mgr ] ----------- Finished ------------ ");
 }
 
 void
@@ -2816,12 +2809,12 @@ tzf::RenderFix::TextureManager::reset (void)
   uint64_t reclaimed          = 0;
   uint64_t reclaimed_injected = 0;
 
-  tex_log.Log (L"[ Tex. Mgr ] -- TextureManager::reset (...) -- ");
+  tex_log->Log (L"[ Tex. Mgr ] -- TextureManager::reset (...) -- ");
 
   // Purge any pending removes
   getTexture (0);
 
-  tex_log.Log (L"[ Tex. Mgr ]   Releasing textures...");
+  tex_log->Log (L"[ Tex. Mgr ]   Releasing textures...");
 
   std::unordered_map <uint32_t, tzf::RenderFix::Texture *>::iterator it =
     textures.begin ();
@@ -2873,26 +2866,26 @@ tzf::RenderFix::TextureManager::reset (void)
     }
   }
 
-  tex_log.Log ( L"[ Tex. Mgr ]   %4d textures (%4d references)",
-                  release_count + unreleased_count,
-                    ref_count + ext_refs );
+  tex_log->Log ( L"[ Tex. Mgr ]   %4d textures (%4d references)",
+                   release_count + unreleased_count,
+                     ref_count + ext_refs );
 
   if (ext_refs > 0) {
-    tex_log.Log ( L"[ Tex. Mgr ] >> WARNING: The game is still holding references (%d) to %d textures !!!",
-                    ext_refs, ext_textures );
+    tex_log->Log ( L"[ Tex. Mgr ] >> WARNING: The game is still holding references (%d) to %d textures !!!",
+                     ext_refs, ext_textures );
   }
 
-  tex_log.Log ( L"[ Mem. Mgr ] === Memory Management Summary ===");
+  tex_log->Log ( L"[ Mem. Mgr ] === Memory Management Summary ===");
 
-  tex_log.Log ( L"[ Mem. Mgr ]  %12.2f MiB Freed",
-                  (double)reclaimed         / (1048576.0) );
-  tex_log.Log ( L"[ Mem. Mgr ]  %12.2f MiB Leaked",
-                  (double)(cacheSizeTotal () - reclaimed)
+  tex_log->Log ( L"[ Mem. Mgr ]  %12.2f MiB Freed",
+                   (double)reclaimed         / (1048576.0) );
+  tex_log->Log ( L"[ Mem. Mgr ]  %12.2f MiB Leaked",
+                   (double)(cacheSizeTotal () - reclaimed)
                                             / (1048576.0) );
 
   updateOSD ();
 
-  tex_log.Log (L"[ Tex. Mgr ] ----------- Finished ------------ ");
+  tex_log->Log (L"[ Tex. Mgr ] ----------- Finished ------------ ");
 }
 
 void
@@ -2961,7 +2954,7 @@ TZFix_LogUsedTextures (void)
     textures_used_last_dump.clear ();
     tex_dbg_idx = 0;
 
-    tex_log.Log (L"[ Tex. Log ] ---------- FrameTrace ----------- ");
+    tex_log->Log (L"[ Tex. Log ] ---------- FrameTrace ----------- ");
 
     for ( auto it  = textures_used.begin ();
                it != textures_used.end   ();
@@ -2979,21 +2972,21 @@ TZFix_LogUsedTextures (void)
 
         textures_used_last_dump.push_back (*it);
 
-        tex_log.Log ( L"[ Tex. Log ] %08x.dds  { Base: %6.2f MiB,  "
-                      L"Inject: %6.2f MiB,  Load Time: %8.3f ms }",
-                        *it,
-                          (double)pSKTex->tex_size /
-                            (1024.0 * 1024.0),
+        tex_log->Log ( L"[ Tex. Log ] %08x.dds  { Base: %6.2f MiB,  "
+                       L"Inject: %6.2f MiB,  Load Time: %8.3f ms }",
+                         *it,
+                           (double)pSKTex->tex_size /
+                             (1024.0 * 1024.0),
 
-                    pSKTex->override_size != 0 ? 
-                      (double)pSKTex->override_size / 
-                            (1024.0 * 1024.0) : 0.0,
+                     pSKTex->override_size != 0 ? 
+                       (double)pSKTex->override_size / 
+                             (1024.0 * 1024.0) : 0.0,
 
-                          tzf::RenderFix::tex_mgr.getTexture (*it)->load_time );
+                           tzf::RenderFix::tex_mgr.getTexture (*it)->load_time );
       }
     }
 
-    tex_log.Log (L"[ Tex. Log ] ---------- FrameTrace ----------- ");
+    tex_log->Log (L"[ Tex. Log ] ---------- FrameTrace ----------- ");
 
     __log_used = false;
   }
@@ -3034,7 +3027,7 @@ ResampleTexture (tzf_tex_load_s* load)
                       nullptr, nullptr,
                         &load->pSrc );
   } else {
-    tex_log.Log (L"[ Tex. Mgr ] Will not resample cubemap...");
+    tex_log->Log (L"[ Tex. Mgr ] Will not resample cubemap...");
   }
 
   delete [] load->pSrcData;
@@ -3145,15 +3138,15 @@ SK_TextureWorkerThread::ThreadProc (LPVOID user)
 
       size_t now    =  streaming_memory::data_len [GetCurrentThreadId ()];
       if (before != now) {
-        tex_log.Log ( L"[ Mem. Mgr ]  Trimmed %9lu bytes of temporary memory for tid=%x",
-                        before - now,
-                          GetCurrentThreadId () );
+        tex_log->Log ( L"[ Mem. Mgr ]  Trimmed %9lu bytes of temporary memory for tid=%x",
+                         before - now,
+                           GetCurrentThreadId () );
       }
     }
 
     else if (dwWaitStatus != (wait.thread_end)) {
-      dll_log.Log ( L"[ Tex. Mgr ] Unexpected Worker Thread Wait Status: %X",
-                      dwWaitStatus );
+      dll_log->Log ( L"[ Tex. Mgr ] Unexpected Worker Thread Wait Status: %X",
+                       dwWaitStatus );
     }
   } while (dwWaitStatus != (wait.thread_end));
 
