@@ -258,18 +258,20 @@ public:
 
   void Start (void)
   {
-    TZF_CreateDLLHook ( L"user32.dll", "GetCursorInfo",
+    TZF_CreateDLLHook2 ( L"user32.dll", "GetCursorInfo",
                         GetCursorInfo_Detour,
               (LPVOID*)&GetCursorInfo_Original );
 
-    TZF_CreateDLLHook ( L"user32.dll", "GetCursorPos",
+    TZF_CreateDLLHook2 ( L"user32.dll", "GetCursorPos",
                         GetCursorPos_Detour,
               (LPVOID*)&GetCursorPos_Original );
 
-    TZF_CreateDLLHook ( config.system.injector.c_str (),
+    TZF_CreateDLLHook2 ( config.system.injector.c_str (),
                         "SK_PluginKeyPress",
                         SK_TZF_PluginKeyPress,
              (LPVOID *)&SK_PluginKeyPress_Original );
+
+    TZF_ApplyQueuedHooks ();
   }
 
   void End (void)
@@ -400,6 +402,38 @@ TZF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
 
   return
     SK_CreateDLLHook (pwszModule,pszProcName,pDetour,ppOriginal,ppFuncAddr);
+}
+
+MH_STATUS
+WINAPI
+TZF_CreateDLLHook2 ( LPCWSTR pwszModule, LPCSTR  pszProcName,
+                     LPVOID  pDetour,    LPVOID *ppOriginal,
+                     LPVOID *ppFuncAddr )
+{
+  static HMODULE hParent = GetModuleHandle (config.system.injector.c_str ());
+
+  typedef MH_STATUS (WINAPI *SK_CreateDLLHook2_pfn)(
+        LPCWSTR pwszModule, LPCSTR  pszProcName,
+        LPVOID  pDetour,    LPVOID *ppOriginal, 
+        LPVOID *ppFuncAddr );
+  static SK_CreateDLLHook2_pfn SK_CreateDLLHook2 =
+    (SK_CreateDLLHook2_pfn)GetProcAddress (hParent, "SK_CreateDLLHook2");
+
+  return
+    SK_CreateDLLHook2 (pwszModule,pszProcName,pDetour,ppOriginal,ppFuncAddr);
+}
+
+MH_STATUS
+WINAPI
+TZF_ApplyQueuedHooks (void)
+{
+  static HMODULE hParent = GetModuleHandle (config.system.injector.c_str ());
+
+  typedef MH_STATUS (WINAPI *SK_ApplyQueuedHooks_pfn)(void);
+  static SK_ApplyQueuedHooks_pfn SK_ApplyQueuedHooks =
+    (SK_ApplyQueuedHooks_pfn)GetProcAddress (hParent, "SK_ApplyQueuedHooks");
+
+  return SK_ApplyQueuedHooks ();
 }
 
 MH_STATUS

@@ -27,6 +27,8 @@
 iSK_INI*
 TZF_CreateINI (const wchar_t* const wszName)
 {
+  extern HMODULE hInjectorDLL;
+
   typedef iSK_INI* (__stdcall *SK_CreateINI_pfn)(const wchar_t* const wszName);
   static SK_CreateINI_pfn SK_CreateINI = nullptr;
 
@@ -34,7 +36,7 @@ TZF_CreateINI (const wchar_t* const wszName)
     SK_CreateINI =
       (SK_CreateINI_pfn)
         GetProcAddress (
-          GetModuleHandle ( L"d3d9.dll" ),
+          hInjectorDLL,
             "SK_CreateINI"
         );
   }

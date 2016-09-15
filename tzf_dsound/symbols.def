@@ -1,3 +1,4 @@
 LIBRARY "tzfix"
 
 EXPORTS
+  SKPlugIn_Init = SKPlugIn_Init @1

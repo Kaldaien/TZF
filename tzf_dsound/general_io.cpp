@@ -288,27 +288,29 @@ OpenFile_Detour ( _In_    LPCSTR     lpFileName,
 void
 tzf::FileIO::Init (void)
 {
-  TZF_CreateDLLHook ( L"kernel32.dll", "CreateFileA",
-                      CreateFileA_Detour,
-           (LPVOID *)&CreateFileA_Original );
+  TZF_CreateDLLHook2 ( L"kernel32.dll", "CreateFileA",
+                       CreateFileA_Detour,
+            (LPVOID *)&CreateFileA_Original );
 
   //config.file_io.capture = true;
   if (config.file_io.capture) {
     if (tracer == nullptr)
       tracer = new FileTracer ();
 
-    TZF_CreateDLLHook ( L"kernel32.dll", "OpenFile",
-                        OpenFile_Detour,
-             (LPVOID *)&OpenFile_Original );
+    TZF_CreateDLLHook2 ( L"kernel32.dll", "OpenFile",
+                         OpenFile_Detour,
+              (LPVOID *)&OpenFile_Original );
 
-    TZF_CreateDLLHook ( L"kernel32.dll", "CreateFileW",
-                        CreateFileW_Detour,
-             (LPVOID *)&CreateFileW_Original );
+    TZF_CreateDLLHook2 ( L"kernel32.dll", "CreateFileW",
+                         CreateFileW_Detour,
+              (LPVOID *)&CreateFileW_Original );
 
-    TZF_CreateDLLHook ( L"kernel32.dll", "ReadFile",
-                        ReadFile_Detour,
-             (LPVOID *)&ReadFile_Original );
+    TZF_CreateDLLHook2 ( L"kernel32.dll", "ReadFile",
+                         ReadFile_Detour,
+              (LPVOID *)&ReadFile_Original );
   }
+
+  TZF_ApplyQueuedHooks ();
 }
 
 void

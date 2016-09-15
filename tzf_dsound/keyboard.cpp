@@ -78,13 +78,15 @@ tzf::KeyboardFix::Init (void)
   size_t len       = wcslen (pairs);
   size_t remaining = len;
 
-  TZF_CreateDLLHook ( L"SDL2.dll", "SDL_GetKeyFromScancode",
-                      SDL_GetKeyFromScancode_Detour,
-           (LPVOID *)&SDL_GetKeyFromScancode_Original );
+  TZF_CreateDLLHook2 ( L"SDL2.dll", "SDL_GetKeyFromScancode",
+                       SDL_GetKeyFromScancode_Detour,
+            (LPVOID *)&SDL_GetKeyFromScancode_Original );
 
-  TZF_CreateDLLHook ( L"SDL2.dll", "SDL_GetKeyboardState",
-                      SDL_GetKeyboardState_Detour,
-           (LPVOID *)&SDL_GetKeyboardState_Original );
+  TZF_CreateDLLHook2 ( L"SDL2.dll", "SDL_GetKeyboardState",
+                       SDL_GetKeyboardState_Detour,
+            (LPVOID *)&SDL_GetKeyboardState_Original );
+
+  TZF_ApplyQueuedHooks ();
 
   // Parse the swap pairs
   while (remaining > 0 && remaining <= len) {

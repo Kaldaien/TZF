@@ -44,13 +44,15 @@
 HMODULE hDLLMod      = { 0 }; // Handle to SELF
 HMODULE hInjectorDLL = { 0 }; // Handle to Special K
 
+std::wstring injector_dll;
+
 typedef void (__stdcall *SK_SetPluginName_pfn)(std::wstring name);
 SK_SetPluginName_pfn SK_SetPluginName = nullptr;
 
 extern void TZF_InitCompatBlacklist (void);
 
-unsigned int
-__stdcall
+DWORD
+WINAPI
 DllThread (LPVOID user)
 {
   std::wstring plugin_name = L"Tales of Zestiria \"Fix\" v " + TZF_VER_STR;
@@ -113,12 +115,13 @@ DllThread (LPVOID user)
     config.textures.dump                  = false;
     config.textures.cache                 = true;
 
+    config.system.injector = injector_dll;
+
     // Save a new config if none exists
     TZF_SaveConfig ();
   }
 
-  hInjectorDLL =
-    GetModuleHandle (config.system.injector.c_str ());
+  config.system.injector = injector_dll;
 
   SK_SetPluginName = 
     (SK_SetPluginName_pfn)
@@ -147,20 +150,45 @@ DllThread (LPVOID user)
   }
 
   if (TZF_Init_MinHook () == MH_OK) {
-    CoInitialize (nullptr);
+    CoInitializeEx (nullptr, COINIT_MULTITHREADED);
 
     tzf::SoundFix::Init     ();
     tzf::FileIO::Init       ();
     tzf::SteamFix::Init     ();
-    tzf::RenderFix::Init    ();
     tzf::FrameRateFix::Init ();
+    tzf::RenderFix::Init    ();
     tzf::KeyboardFix::Init  ();
   }
 
-  CloseHandle  (GetCurrentThread ());
-  _endthreadex (0);
-
   return 0;
+}
+
+__declspec (dllexport)
+BOOL
+WINAPI
+SKPlugIn_Init (HMODULE hModSpecialK)
+{
+  wchar_t wszSKFileName [MAX_PATH];
+          wszSKFileName [MAX_PATH - 1] = L'\0';
+
+  GetModuleFileName (hModSpecialK, wszSKFileName, MAX_PATH - 1);
+
+  injector_dll = wszSKFileName;
+
+  hInjectorDLL = hModSpecialK;
+
+#if 0
+  DllThread (nullptr);
+#else
+  CreateThread ( nullptr,
+                   0,
+                     DllThread,
+                       nullptr,
+                         0x00,
+                           nullptr );
+#endif
+
+  return TRUE;
 }
 
 BOOL
@@ -171,40 +199,39 @@ DllMain (HMODULE hModule,
 {
   switch (ul_reason_for_call)
   {
-  case DLL_PROCESS_ATTACH:
-  {
-#if 1
-    HANDLE hThread = (HANDLE)_beginthreadex (NULL, NULL, DllThread, 0, 0, NULL);
-#else
-    DllThread (nullptr);
-#endif
-  } break;
+    case DLL_PROCESS_ATTACH:
+    {
+      hDLLMod = hModule;
+    } break;
 
-  case DLL_THREAD_ATTACH:
-  case DLL_THREAD_DETACH:
-    break;
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+      break;
 
-  case DLL_PROCESS_DETACH:
-    tzf::SoundFix::Shutdown     ();
-    tzf::FileIO::Shutdown       ();
-    tzf::SteamFix::Shutdown     ();
-    tzf::RenderFix::Shutdown    ();
-    tzf::FrameRateFix::Shutdown ();
-    tzf::KeyboardFix::Shutdown  ();
+    case DLL_PROCESS_DETACH:
+    {
+      if (dll_log != nullptr) {
+        tzf::SoundFix::Shutdown     ();
+        tzf::FileIO::Shutdown       ();
+        tzf::SteamFix::Shutdown     ();
+        tzf::RenderFix::Shutdown    ();
+        tzf::FrameRateFix::Shutdown ();
+        tzf::KeyboardFix::Shutdown  ();
 
-    TZF_UnInit_MinHook ();
-    TZF_SaveConfig     ();
+        TZF_UnInit_MinHook ();
+        TZF_SaveConfig     ();
 
 
-    dll_log->LogEx ( false, L"=========== (Version: v %s) "
-                            L"===========\n",
-                              TZF_VER_STR.c_str () );
-    dll_log->LogEx ( true,  L"End TZFix Plug-In\n" );
-    dll_log->LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
-                            L"-------\n" );
+        dll_log->LogEx ( false, L"=========== (Version: v %s) "
+                                L"===========\n",
+                                  TZF_VER_STR.c_str () );
+        dll_log->LogEx ( true,  L"End TZFix Plug-In\n" );
+        dll_log->LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
+                                L"-------\n" );
 
-    dll_log->close ();
-    break;
+        dll_log->close ();
+      }
+    } break;
   }
 
   return TRUE;

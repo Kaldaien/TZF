@@ -25,7 +25,9 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring TZF_VER_STR = L"1.4.6";
+extern HMODULE hInjectorDLL;
+
+std::wstring TZF_VER_STR = L"1.4.7";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static
@@ -108,7 +110,7 @@ TZF_LoadConfig (std::wstring name)
   SK_GetConfigPath =
     (SK_GetConfigPath_pfn)
       GetProcAddress (
-        GetModuleHandle ( L"d3d9.dll" ),
+        hInjectorDLL,
           "SK_GetConfigPath"
       );
 

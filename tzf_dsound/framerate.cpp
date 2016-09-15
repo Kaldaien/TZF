@@ -55,11 +55,11 @@ float limiter_tolerance = 0.40f;
 int   max_latency       = 2;
 bool  wait_for_vblank   = true;
 
-typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
-Sleep_t Sleep_Original = nullptr;
+typedef void (WINAPI *Sleep_pfn)(DWORD dwMilliseconds);
+Sleep_pfn Sleep_Original = nullptr;
 
-typedef BOOL(WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
-QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
+typedef BOOL(WINAPI *QueryPerformanceCounter_pfn)(_Out_ LARGE_INTEGER *lpPerformanceCount);
+QueryPerformanceCounter_pfn QueryPerformanceCounter_Original = nullptr;
 
 class FramerateLimiter
 {
@@ -206,20 +206,22 @@ SK_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
   if (pparams != nullptr) {
     memcpy (&present_params, pparams, sizeof D3DPRESENT_PARAMETERS);
 
-    dll_log->Log ( L"[   D3D9   ] %% Caught D3D9 Swapchain :: Fullscreen=%s "
-                   L" (%lux%lu@%lu Hz) "
-                   L" [Device Window: 0x%04X]",
-                     pparams->Windowed ? L"False" :
-                                         L"True",
-                       pparams->BackBufferWidth,
-                         pparams->BackBufferHeight,
-                           pparams->FullScreen_RefreshRateInHz,
-                             pparams->hDeviceWindow );
+    if (device != nullptr) {
+      dll_log->Log ( L"[   D3D9   ] %% Caught D3D9 Swapchain :: Fullscreen=%s "
+                     L" (%lux%lu@%lu Hz) "
+                     L" [Device Window: 0x%04X]",
+                       pparams->Windowed ? L"False" :
+                                           L"True",
+                         pparams->BackBufferWidth,
+                           pparams->BackBufferHeight,
+                             pparams->FullScreen_RefreshRateInHz,
+                               pparams->hDeviceWindow );
+    }
 
-    tzf::RenderFix::hWndDevice = pparams->hDeviceWindow;
+    tzf::RenderFix::hWndDevice    = pparams->hDeviceWindow;
 
-    tzf::RenderFix::width  = present_params.BackBufferWidth;
-    tzf::RenderFix::height = present_params.BackBufferHeight;
+    tzf::RenderFix::width         = present_params.BackBufferWidth;
+    tzf::RenderFix::height        = present_params.BackBufferHeight;
     tzf::FrameRateFix::fullscreen = (! pparams->Windowed);
 
     // Change the Aspect Ratio
@@ -228,8 +230,6 @@ SK_SetPresentParamsD3D9_Detour (IDirect3DDevice9*      device,
 
     SK_GetCommandProcessor ()->ProcessCommandLine (szAspectCommand);
   }
-
-  //tzf::RenderFix::tex_mgr.reset ();
 
   return SK_SetPresentParamsD3D9_Original (device, pparams);
 }
@@ -293,8 +293,8 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
   return ret;
 }
 
-typedef void* (__stdcall *BinkOpen_t)(const char* filename, DWORD unknown0);
-BinkOpen_t BinkOpen_Original = nullptr;
+typedef void* (__stdcall *BinkOpen_pfn)(const char* filename, DWORD unknown0);
+BinkOpen_pfn BinkOpen_Original = nullptr;
 
 void*
 __stdcall
@@ -332,8 +332,8 @@ BinkOpen_Detour ( const char* filename,
   return bink_ret;
 }
 
-typedef void (__stdcall *BinkClose_t)(DWORD unknown);
-BinkClose_t BinkClose_Original = nullptr;
+typedef void (__stdcall *BinkClose_pfn)(DWORD unknown);
+BinkClose_pfn BinkClose_Original = nullptr;
 
 void
 __stdcall
@@ -447,6 +447,40 @@ TZF_LuaHook (void)
   }
 }
 
+typedef BOOL (WINAPI *CreateTimerQueueTimer_pfn)
+(
+  _Out_    PHANDLE             phNewTimer,
+  _In_opt_ HANDLE              TimerQueue,
+  _In_     WAITORTIMERCALLBACK Callback,
+  _In_opt_ PVOID               Parameter,
+  _In_     DWORD               DueTime,
+  _In_     DWORD               Period,
+  _In_     ULONG               Flags
+);
+
+CreateTimerQueueTimer_pfn CreateTimerQueueTimer_Original = nullptr;
+
+BOOL
+WINAPI
+CreateTimerQueueTimer_Override (
+  _Out_    PHANDLE             phNewTimer,
+  _In_opt_ HANDLE              TimerQueue,
+  _In_     WAITORTIMERCALLBACK Callback,
+  _In_opt_ PVOID               Parameter,
+  _In_     DWORD               DueTime,
+  _In_     DWORD               Period,
+  _In_     ULONG               Flags
+)
+{
+  // Fix compliance related issues present in both
+  //   Tales of Symphonia and Zestiria
+  if (Flags & 0x8) {
+    Period = 0;
+  }
+
+  return CreateTimerQueueTimer_Original (phNewTimer, TimerQueue, Callback, Parameter, DueTime, Period, Flags);
+}
+
 void
 tzf::FrameRateFix::Init (void)
 {
@@ -456,33 +490,33 @@ tzf::FrameRateFix::Init (void)
 
   target_fps = config.framerate.target;
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "SK_SetPresentParamsD3D9",
-                      SK_SetPresentParamsD3D9_Detour, 
-           (LPVOID *)&SK_SetPresentParamsD3D9_Original,
-                     &pfnSK_SetPresentParamsD3D9 );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "SK_SetPresentParamsD3D9",
+                       SK_SetPresentParamsD3D9_Detour, 
+            (LPVOID *)&SK_SetPresentParamsD3D9_Original,
+                      &pfnSK_SetPresentParamsD3D9 );
 
   bink_dll = LoadLibrary (L"bink2w32.dll");
 
-  TZF_CreateDLLHook ( L"bink2w32.dll", "_BinkOpen@8",
-                      BinkOpen_Detour, 
-           (LPVOID *)&BinkOpen_Original,
-                     &pfnBinkOpen );
+  TZF_CreateDLLHook2 ( L"bink2w32.dll", "_BinkOpen@8",
+                       BinkOpen_Detour, 
+            (LPVOID *)&BinkOpen_Original,
+                      &pfnBinkOpen );
 
-  TZF_CreateDLLHook ( L"bink2w32.dll", "_BinkClose@4",
-                      BinkClose_Detour, 
-           (LPVOID *)&BinkClose_Original,
-                     &pfnBinkClose );
+  TZF_CreateDLLHook2 ( L"bink2w32.dll", "_BinkClose@4",
+                       BinkClose_Detour, 
+            (LPVOID *)&BinkClose_Original,
+                      &pfnBinkClose );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "QueryPerformanceCounter_Detour",
-                      QueryPerformanceCounter_Detour, 
-           (LPVOID *)&QueryPerformanceCounter_Original,
-           (LPVOID *)&pfnQueryPerformanceCounter );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "QueryPerformanceCounter_Detour",
+                       QueryPerformanceCounter_Detour, 
+            (LPVOID *)&QueryPerformanceCounter_Original,
+            (LPVOID *)&pfnQueryPerformanceCounter );
 
-  TZF_EnableHook (pfnQueryPerformanceCounter);
-  TZF_EnableHook (pfnSK_SetPresentParamsD3D9);
+  TZF_CreateDLLHook2 ( L"kernel32.dll", "CreateTimerQueueTimer",
+                       CreateTimerQueueTimer_Override,
+            (LPVOID *)&CreateTimerQueueTimer_Original );
 
-  TZF_EnableHook (pfnBinkOpen);
-  TZF_EnableHook (pfnBinkClose);
+  TZF_ApplyQueuedHooks ();
 
   if (true) {
     if (*((DWORD *)config.framerate.speedresetcode_addr) != 0x428CB08D) {

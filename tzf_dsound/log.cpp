@@ -29,6 +29,8 @@ iSK_Logger* dll_log;
 iSK_Logger*
 TZF_CreateLog (const wchar_t* const wszName)
 {
+  extern HMODULE hInjectorDLL;
+
   typedef iSK_Logger* (__stdcall *SK_CreateLog_pfn)(const wchar_t* const wszName);
   static SK_CreateLog_pfn SK_CreateLog = nullptr;
 
@@ -36,7 +38,7 @@ TZF_CreateLog (const wchar_t* const wszName)
     SK_CreateLog =
       (SK_CreateLog_pfn)
         GetProcAddress (
-          GetModuleHandle ( L"d3d9.dll" ),
+          hInjectorDLL,
             "SK_CreateLog"
         );
   }

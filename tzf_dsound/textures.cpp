@@ -1030,12 +1030,12 @@ public:
       CreateEvent (nullptr, FALSE, FALSE, nullptr);
 
     thread_ =
-      (HANDLE)_beginthreadex ( nullptr,
-                                 0,
-                                   ThreadProc,
-                                     this,
-                                       0,
-                                         &thread_id_ );
+      (HANDLE)CreateThread ( nullptr,
+                               0,
+                                 ThreadProc,
+                                   this,
+                                     0,
+                                       (LPDWORD)&thread_id_ );
   }
 
   ~SK_TextureWorkerThread (void)
@@ -1074,7 +1074,7 @@ protected:
   static CRITICAL_SECTION cs_worker_init;
   static ULONG            num_threads_init;
 
-  static unsigned int __stdcall ThreadProc (LPVOID user);
+  static DWORD __stdcall ThreadProc (LPVOID user);
 
   SK_TextureThreadPool* pool_;
 
@@ -1155,12 +1155,12 @@ public:
       // Defer the creation of this until the first job is posted
       if (! spool_thread_) {
         spool_thread_ =
-          (HANDLE)_beginthreadex ( nullptr,
-                                     0,
-                                       Spooler,
-                                         this,
-                                           0,
-                                             nullptr );
+          (HANDLE)CreateThread ( nullptr,
+                                   0,
+                                     Spooler,
+                                       this,
+                                         0x00,
+                                           nullptr );
       }
 
       // Don't let the game free this while we are working on it...
@@ -1217,7 +1217,7 @@ public:
 
 
 protected:
-  static unsigned int __stdcall Spooler (LPVOID user);
+  static DWORD __stdcall Spooler (LPVOID user);
 
   tzf_tex_load_s* getNextJob   (void) {
     tzf_tex_load_s* job       = nullptr;
@@ -2526,50 +2526,50 @@ tzf::RenderFix::TextureManager::Init (void)
                        files, (double)liSize.QuadPart / (1024.0 * 1024.0) );
   }
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9SetRenderState_Override",
-                       D3D9SetRenderState_Detour,
-             (LPVOID*)&D3D9SetRenderState_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetRenderState_Override",
+                        D3D9SetRenderState_Detour,
+              (LPVOID*)&D3D9SetRenderState_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9BeginScene_Override",
-                       D3D9BeginScene_Detour,
-             (LPVOID*)&D3D9BeginScene_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9BeginScene_Override",
+                        D3D9BeginScene_Detour,
+              (LPVOID*)&D3D9BeginScene_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9StretchRect_Override",
-                       D3D9StretchRect_Detour,
-             (LPVOID*)&D3D9StretchRect_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9StretchRect_Override",
+                        D3D9StretchRect_Detour,
+              (LPVOID*)&D3D9StretchRect_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9CreateDepthStencilSurface_Override",
-                       D3D9CreateDepthStencilSurface_Detour,
-             (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9CreateDepthStencilSurface_Override",
+                        D3D9CreateDepthStencilSurface_Detour,
+              (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9CreateTexture_Override",
-                       D3D9CreateTexture_Detour,
-             (LPVOID*)&D3D9CreateTexture_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9CreateTexture_Override",
+                        D3D9CreateTexture_Detour,
+              (LPVOID*)&D3D9CreateTexture_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9SetTexture_Override",
-                       D3D9SetTexture_Detour,
-             (LPVOID*)&D3D9SetTexture_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetTexture_Override",
+                        D3D9SetTexture_Detour,
+              (LPVOID*)&D3D9SetTexture_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9SetRenderTarget_Override",
-                       D3D9SetRenderTarget_Detour,
-             (LPVOID*)&D3D9SetRenderTarget_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetRenderTarget_Override",
+                        D3D9SetRenderTarget_Detour,
+              (LPVOID*)&D3D9SetRenderTarget_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9SetDepthStencilSurface_Override",
-                       D3D9SetDepthStencilSurface_Detour,
-             (LPVOID*)&D3D9SetDepthStencilSurface_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetDepthStencilSurface_Override",
+                        D3D9SetDepthStencilSurface_Detour,
+              (LPVOID*)&D3D9SetDepthStencilSurface_Original );
 
-  TZF_CreateDLLHook ( L"D3DX9_43.DLL",
-                       "D3DXCreateTextureFromFileInMemoryEx",
-                        D3DXCreateTextureFromFileInMemoryEx_Detour,
-             (LPVOID *)&D3DXCreateTextureFromFileInMemoryEx_Original );
+  TZF_CreateDLLHook2 ( L"D3DX9_43.DLL",
+                        "D3DXCreateTextureFromFileInMemoryEx",
+                         D3DXCreateTextureFromFileInMemoryEx_Detour,
+              (LPVOID *)&D3DXCreateTextureFromFileInMemoryEx_Original );
 
   D3DXSaveTextureToFile =
     (D3DXSaveTextureToFile_pfn)
@@ -2650,6 +2650,8 @@ tzf::RenderFix::TextureManager::Init (void)
   command.AddVariable (
     "Textures.MaxCacheSize",
       TZF_CreateVar (SK_IVariable::Int,     &config.textures.max_cache_in_mib) );
+
+  TZF_ApplyQueuedHooks ();
 }
 
 
@@ -3035,7 +3037,7 @@ ResampleTexture (tzf_tex_load_s* load)
   return hr;
 }
 
-unsigned int
+DWORD
 __stdcall
 SK_TextureWorkerThread::ThreadProc (LPVOID user)
 {
@@ -3051,7 +3053,22 @@ SK_TextureWorkerThread::ThreadProc (LPVOID user)
   }
   LeaveCriticalSection (&cs_worker_init);
 
-  InterlockedIncrement (&num_threads_init);
+  SYSTEM_INFO sysinfo;
+  GetSystemInfo (&sysinfo);
+
+  ULONG thread_num    = InterlockedIncrement (&num_threads_init);
+
+  // If a system has more than 4 CPUs (logical or otherwise), let the last one
+  //   be dedicated to rendering.
+  ULONG processor_num = thread_num % ( sysinfo.dwNumberOfProcessors > 4 ?
+                                         sysinfo.dwNumberOfProcessors - 1 :
+                                         sysinfo.dwNumberOfProcessors );
+
+  // Tales of Symphonia and Zestiria both pin the render thread to the last
+  //   CPU... let's try to keep our worker threads OFF that CPU.
+
+  SetThreadIdealProcessor (GetCurrentThread (),      processor_num);
+  SetThreadAffinityMask   (GetCurrentThread (), 1 << processor_num);
 
   // Ghetto sync. barrier, since Windows 7 does not support them...
   while ( InterlockedCompareExchange (
@@ -3152,11 +3169,11 @@ SK_TextureWorkerThread::ThreadProc (LPVOID user)
 
   streaming_memory::trim (0, timeGetTime ());
 
-  _endthreadex (0);
+  //CloseHandle (GetCurrentThread ());
   return 0;
 }
 
-unsigned int
+DWORD
 __stdcall
 SK_TextureThreadPool::Spooler (LPVOID user)
 {
@@ -3213,7 +3230,7 @@ SK_TextureThreadPool::Spooler (LPVOID user)
     }
   }
 
-  _endthreadex (0);
+  //CloseHandle (GetCurrentThread ());
   return 0;
 }
 

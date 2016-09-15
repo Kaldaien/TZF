@@ -520,7 +520,7 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
 
     output   = "";
   } else
-    SK_DrawExternalOSD ("ToZFix", "");
+    SK_DrawExternalOSD ("ToZFix", mod_text);
 
   mod_text = "";
 
@@ -1343,12 +1343,10 @@ tzf::RenderFix::Init (void)
 {
   tex_mgr.Init ();
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetSamplerState_Override",
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9SetSamplerState_Override",
                       D3D9SetSamplerState_Detour,
             (LPVOID*)&D3D9SetSamplerState_Original,
                      &SetSamplerState );
-
-  TZF_EnableHook (SetSamplerState);
 
 #if 0
   TZF_CreateDLLHook ( L"d3d9.dll", "D3D9SetPixelShaderConstantF_Override",
@@ -1361,81 +1359,83 @@ tzf::RenderFix::Init (void)
 
 #if 1
   // Needed for shadow re-scaling
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetViewport_Override",
-                      D3D9SetViewport_Detour,
-            (LPVOID*)&D3D9SetViewport_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9SetViewport_Override",
+                       D3D9SetViewport_Detour,
+             (LPVOID*)&D3D9SetViewport_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetVertexShaderConstantF_Override",
-                      D3D9SetVertexShaderConstantF_Detour,
-            (LPVOID*)&D3D9SetVertexShaderConstantF_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9SetVertexShaderConstantF_Override",
+                       D3D9SetVertexShaderConstantF_Detour,
+             (LPVOID*)&D3D9SetVertexShaderConstantF_Original );
 
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetVertexShader_Override",
-                      D3D9SetVertexShader_Detour,
-            (LPVOID*)&D3D9SetVertexShader_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9SetVertexShader_Override",
+                       D3D9SetVertexShader_Detour,
+             (LPVOID*)&D3D9SetVertexShader_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetPixelShader_Override",
-                      D3D9SetPixelShader_Detour,
-            (LPVOID*)&D3D9SetPixelShader_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9SetPixelShader_Override",
+                       D3D9SetPixelShader_Detour,
+             (LPVOID*)&D3D9SetPixelShader_Original );
 
   // Needed for UI re-scaling
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9SetScissorRect_Override",
-                      D3D9SetScissorRect_Detour,
-            (LPVOID*)&D3D9SetScissorRect_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9SetScissorRect_Override",
+                       D3D9SetScissorRect_Detour,
+             (LPVOID*)&D3D9SetScissorRect_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9EndScene_Override",
-                      D3D9EndScene_Detour,
-            (LPVOID*)&D3D9EndScene_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9EndScene_Override",
+                       D3D9EndScene_Detour,
+             (LPVOID*)&D3D9EndScene_Original );
 #endif
 
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9Reset_Override",
-                      D3D9Reset_Detour,
-           (LPVOID *)&D3D9Reset_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9Reset_Override",
+                       D3D9Reset_Detour,
+            (LPVOID *)&D3D9Reset_Original );
 
 #if 0
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9UpdateTexture_Override",
-                      D3D9UpdateTexture_Detour,
-            (LPVOID*)&D3D9UpdateTexture_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9UpdateTexture_Override",
+                       D3D9UpdateTexture_Detour,
+             (LPVOID*)&D3D9UpdateTexture_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "D3D9UpdateSurface_Override",
-                      D3D9UpdateSurface_Detour,
-            (LPVOID*)&D3D9UpdateSurface_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9UpdateSurface_Override",
+                       D3D9UpdateSurface_Detour,
+             (LPVOID*)&D3D9UpdateSurface_Original );
 #endif
 
   user32_dll   = LoadLibrary (L"User32.dll");
 
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "SK_BeginBufferSwap",
-                      D3D9EndFrame_Pre,
-            (LPVOID*)&SK_BeginBufferSwap );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "SK_BeginBufferSwap",
+                       D3D9EndFrame_Pre,
+             (LPVOID*)&SK_BeginBufferSwap );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "SK_EndBufferSwap",
-                      D3D9EndFrame_Post,
-            (LPVOID*)&SK_EndBufferSwap );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "SK_EndBufferSwap",
+                       D3D9EndFrame_Post,
+             (LPVOID*)&SK_EndBufferSwap );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9DrawPrimitive_Override",
-                       D3D9DrawPrimitive_Detour,
-             (LPVOID*)&D3D9DrawPrimitive_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9DrawPrimitive_Override",
+                        D3D9DrawPrimitive_Detour,
+              (LPVOID*)&D3D9DrawPrimitive_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9DrawIndexedPrimitive_Override",
-                       D3D9DrawIndexedPrimitive_Detour,
-             (LPVOID*)&D3D9DrawIndexedPrimitive_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9DrawIndexedPrimitive_Override",
+                        D3D9DrawIndexedPrimitive_Detour,
+              (LPVOID*)&D3D9DrawIndexedPrimitive_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9DrawPrimitiveUP_Override",
-                       D3D9DrawPrimitiveUP_Detour,
-             (LPVOID*)&D3D9DrawPrimitiveUP_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9DrawPrimitiveUP_Override",
+                        D3D9DrawPrimitiveUP_Detour,
+              (LPVOID*)&D3D9DrawPrimitiveUP_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
-                      "D3D9DrawIndexedPrimitiveUP_Override",
-                       D3D9DrawIndexedPrimitiveUP_Detour,
-             (LPVOID*)&D3D9DrawIndexedPrimitiveUP_Original );
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9DrawIndexedPrimitiveUP_Override",
+                        D3D9DrawIndexedPrimitiveUP_Detour,
+              (LPVOID*)&D3D9DrawIndexedPrimitiveUP_Original );
 
   CommandProcessor* comm_proc = CommandProcessor::getInstance ();
+
+  TZF_ApplyQueuedHooks ();
 }
 
 void
