@@ -27,7 +27,7 @@
 
 extern HMODULE hInjectorDLL;
 
-std::wstring TZF_VER_STR = L"1.4.7";
+std::wstring TZF_VER_STR = L"1.4.9";
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static
@@ -101,7 +101,7 @@ struct {
   tzf::ParameterStringW* injector;
 } sys;
 
-typedef std::wstring (__stdcall *SK_GetConfigPath_pfn)(void);
+typedef const wchar_t* (__stdcall *SK_GetConfigPath_pfn)(void);
 static SK_GetConfigPath_pfn SK_GetConfigPath = nullptr;
 
 bool
@@ -115,8 +115,12 @@ TZF_LoadConfig (std::wstring name)
       );
 
   // Load INI File
-  std::wstring full_name = SK_GetConfigPath () + name + L".ini";
-  dll_ini = TZF_CreateINI ((wchar_t *)full_name.c_str ());
+  wchar_t wszFullName [ MAX_PATH + 2 ] = { L'\0' };
+
+  lstrcatW (wszFullName, SK_GetConfigPath ());
+  lstrcatW (wszFullName,       name.c_str ());
+  lstrcatW (wszFullName,             L".ini");
+  dll_ini = TZF_CreateINI (wszFullName);
 
 
   bool empty = dll_ini->get_sections ().empty ();
@@ -636,11 +640,16 @@ TZF_SaveConfig (std::wstring name, bool close_config)
   sys.intro_video->store         (config.system.intro_video);
   sys.injector->store            (config.system.injector);
 
-  std::wstring full_name = SK_GetConfigPath () +
-                             name              +
-                               L".ini";
+  wchar_t wszFullName [ MAX_PATH + 2 ] = { L'\0' };
 
-  dll_ini->write (full_name);
+  lstrcatW ( wszFullName,
+               SK_GetConfigPath () );
+  lstrcatW ( wszFullName,
+               name.c_str () );
+  lstrcatW ( wszFullName,
+               L".ini" );
+
+  dll_ini->write (wszFullName);
 
   if (close_config) {
     if (dll_ini != nullptr) {

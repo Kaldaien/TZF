@@ -51,7 +51,7 @@ SK_SetPluginName_pfn SK_SetPluginName = nullptr;
 
 extern void TZF_InitCompatBlacklist (void);
 
-DWORD
+unsigned int
 WINAPI
 DllThread (LPVOID user)
 {
@@ -150,13 +150,13 @@ DllThread (LPVOID user)
   }
 
   if (TZF_Init_MinHook () == MH_OK) {
-    CoInitializeEx (nullptr, COINIT_MULTITHREADED);
+    CoInitialize (nullptr);
 
     tzf::SoundFix::Init     ();
     tzf::FileIO::Init       ();
     tzf::SteamFix::Init     ();
-    tzf::FrameRateFix::Init ();
     tzf::RenderFix::Init    ();
+    tzf::FrameRateFix::Init ();
     tzf::KeyboardFix::Init  ();
   }
 
@@ -177,15 +177,10 @@ SKPlugIn_Init (HMODULE hModSpecialK)
 
   hInjectorDLL = hModSpecialK;
 
-#if 0
+#if 1
   DllThread (nullptr);
 #else
-  CreateThread ( nullptr,
-                   0,
-                     DllThread,
-                       nullptr,
-                         0x00,
-                           nullptr );
+  _beginthreadex ( nullptr, 0, DllThread, nullptr, 0x00, nullptr );
 #endif
 
   return TRUE;
