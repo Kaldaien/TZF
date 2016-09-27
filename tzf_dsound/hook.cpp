@@ -238,6 +238,48 @@ SK_TZF_PluginKeyPress ( BOOL Control,
   SK_PluginKeyPress_Original (Control, Shift, Alt, vkCode);
 }
 
+typedef LRESULT (CALLBACK *DetourWindowProc_pfn)(
+                   _In_  HWND   hWnd,
+                   _In_  UINT   uMsg,
+                   _In_  WPARAM wParam,
+                   _In_  LPARAM lParam );
+
+DetourWindowProc_pfn DetourWindowProc_Original = nullptr;
+
+LRESULT
+CALLBACK
+DetourWindowProc ( _In_  HWND   hWnd,
+                   _In_  UINT   uMsg,
+                   _In_  WPARAM wParam,
+                   _In_  LPARAM lParam )
+{
+  if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) {
+    static POINT last_p = { LONG_MIN, LONG_MIN };
+
+    POINT p;
+
+    p.x = MAKEPOINTS (lParam).x;
+    p.y = MAKEPOINTS (lParam).y;
+
+    if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
+      // Only do this if cursor actually moved!
+      //
+      //   Otherwise, it tricks the game into thinking the input device changed
+      //     from gamepad to mouse (and changes button icons).
+      if (last_p.x != p.x || last_p.y != p.y) {
+        CalcCursorPos (&p);
+
+        last_p = p;
+      }
+
+      return DetourWindowProc_Original (hWnd, uMsg, wParam, MAKELPARAM (p.x, p.y));
+    }
+
+    last_p = p;
+  }
+
+  return DetourWindowProc_Original (hWnd, uMsg, wParam, lParam);
+}
 
 class TZF_InputHooker
 {
@@ -271,6 +313,11 @@ public:
                         SK_TZF_PluginKeyPress,
              (LPVOID *)&SK_PluginKeyPress_Original );
 
+    TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                        "SK_DetourWindowProc",
+                        DetourWindowProc,
+             (LPVOID *)&DetourWindowProc_Original );
+
     TZF_ApplyQueuedHooks ();
   }
 
@@ -278,46 +325,6 @@ public:
   {
   }
 };
-
-
-
-WNDPROC original_wndproc = nullptr;
-
-
-LRESULT
-CALLBACK
-DetourWindowProc ( _In_  HWND   hWnd,
-                   _In_  UINT   uMsg,
-                   _In_  WPARAM wParam,
-                   _In_  LPARAM lParam )
-{
-  if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) {
-    static POINT last_p = { LONG_MIN, LONG_MIN };
-
-    POINT p;
-
-    p.x = MAKEPOINTS (lParam).x;
-    p.y = MAKEPOINTS (lParam).y;
-
-    if (game_state.needsFixedMouseCoords () && config.render.aspect_correction) {
-      // Only do this if cursor actually moved!
-      //
-      //   Otherwise, it tricks the game into thinking the input device changed
-      //     from gamepad to mouse (and changes button icons).
-      if (last_p.x != p.x || last_p.y != p.y) {
-        CalcCursorPos (&p);
-
-        last_p = p;
-      }
-
-      return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, MAKELPARAM (p.x, p.y));
-    }
-
-    last_p = p;
-  }
-
-  return CallWindowProc (original_wndproc, hWnd, uMsg, wParam, lParam);
-}
 
 
 BOOL
@@ -351,17 +358,6 @@ GetCursorPos_Detour (LPPOINT lpPoint)
   // Correct the cursor position for Aspect Ratio
   if (game_state.needsFixedMouseCoords () && config.render.aspect_correction)
     CalcCursorPos (lpPoint);
-
-  // Defer initialization of the Window Message redirection stuff until
-  //   the first time the game calls GetCursorPos (...)
-  if (original_wndproc == nullptr && tzf::RenderFix::hWndDevice != NULL) {
-    original_wndproc =
-      (WNDPROC)GetWindowLong (tzf::RenderFix::hWndDevice, GWL_WNDPROC);
-
-    SetWindowLong ( tzf::RenderFix::hWndDevice,
-                      GWL_WNDPROC,
-                        (LONG)DetourWindowProc );
-  }
 
   return ret;
 }

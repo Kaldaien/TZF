@@ -150,7 +150,7 @@ DllThread (LPVOID user)
   }
 
   if (TZF_Init_MinHook () == MH_OK) {
-    CoInitialize (nullptr);
+    CoInitializeEx (nullptr, COINIT_MULTITHREADED);
 
     tzf::SoundFix::Init     ();
     tzf::FileIO::Init       ();
@@ -158,6 +158,9 @@ DllThread (LPVOID user)
     tzf::RenderFix::Init    ();
     tzf::FrameRateFix::Init ();
     tzf::KeyboardFix::Init  ();
+
+    // Uncomment this when spawning a thread
+    //CoUninitialize ();
   }
 
   return 0;
@@ -168,8 +171,8 @@ BOOL
 WINAPI
 SKPlugIn_Init (HMODULE hModSpecialK)
 {
-  wchar_t wszSKFileName [MAX_PATH];
-          wszSKFileName [MAX_PATH - 1] = L'\0';
+  wchar_t wszSKFileName [ MAX_PATH + 2] = { L'\0' };
+          wszSKFileName [   MAX_PATH  ] =   L'\0';
 
   GetModuleFileName (hModSpecialK, wszSKFileName, MAX_PATH - 1);
 
@@ -186,6 +189,8 @@ SKPlugIn_Init (HMODULE hModSpecialK)
   return TRUE;
 }
 
+extern "C" BOOL WINAPI _CRT_INIT (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
+
 BOOL
 APIENTRY
 DllMain (HMODULE hModule,
@@ -196,11 +201,13 @@ DllMain (HMODULE hModule,
   {
     case DLL_PROCESS_ATTACH:
     {
+      _CRT_INIT ((HINSTANCE)hModule, ul_reason_for_call, nullptr);
       hDLLMod = hModule;
     } break;
 
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
+      _CRT_INIT ((HINSTANCE)hModule, ul_reason_for_call, nullptr);
       break;
 
     case DLL_PROCESS_DETACH:
@@ -226,6 +233,8 @@ DllMain (HMODULE hModule,
 
         dll_log->close ();
       }
+
+      _CRT_INIT ((HINSTANCE)hModule, ul_reason_for_call, nullptr);
     } break;
   }
 

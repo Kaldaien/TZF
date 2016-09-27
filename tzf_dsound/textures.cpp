@@ -2652,6 +2652,8 @@ tzf::RenderFix::TextureManager::Init (void)
       TZF_CreateVar (SK_IVariable::Int,     &config.textures.max_cache_in_mib) );
 }
 
+// Skip the purge step on shutdown
+bool shutting_down = false;
 
 void
 tzf::RenderFix::TextureManager::Shutdown (void)
@@ -2661,6 +2663,8 @@ tzf::RenderFix::TextureManager::Shutdown (void)
 
   while (! textures_to_stream.empty ())
     textures_to_stream.pop ();
+
+  shutting_down = true;
 
   tex_mgr.reset ();
 
@@ -2684,6 +2688,9 @@ tzf::RenderFix::TextureManager::Shutdown (void)
 void
 tzf::RenderFix::TextureManager::purge (void)
 {
+  if (shutting_down)
+    return;
+
   int      released           = 0;
   int      released_injected  = 0;
   uint64_t reclaimed          = 0;
@@ -2884,6 +2891,11 @@ tzf::RenderFix::TextureManager::reset (void)
                                             / (1048576.0) );
 
   updateOSD ();
+
+  // Commit this immediately, such that D3D9 Reset will not fail in
+  //   fullscreen mode...
+  TZFix_LoadQueuedTextures ();
+  purge                    ();
 
   tex_log->Log (L"[ Tex. Mgr ] ----------- Finished ------------ ");
 }
