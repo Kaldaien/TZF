@@ -294,6 +294,8 @@
     <ClCompile Include="textures.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\installer.dll" />
+    <None Include="..\version.ini" />
     <None Include="symbols.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -115,5 +115,7 @@
     <None Include="symbols.def">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="..\installer.dll" />
+    <None Include="..\version.ini" />
   </ItemGroup>
 </Project>
