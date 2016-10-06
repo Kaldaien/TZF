@@ -247,6 +247,7 @@
   <ItemGroup>
     <ClInclude Include="command.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="DLL_VERSION.H" />
     <ClInclude Include="framerate.h" />
     <ClInclude Include="general_io.h" />
     <ClInclude Include="hook.h" />
@@ -255,6 +256,7 @@
     <ClInclude Include="parameter.h" />
     <ClInclude Include="priest.lua.h" />
     <ClInclude Include="render.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="scanner.h" />
     <ClInclude Include="sound.h" />
     <ClInclude Include="steam.h" />
@@ -297,6 +299,9 @@
     <None Include="..\installer.dll" />
     <None Include="..\version.ini" />
     <None Include="symbols.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="version.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

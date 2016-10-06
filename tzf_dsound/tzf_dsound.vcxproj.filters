@@ -63,6 +63,12 @@
     <ClInclude Include="textures.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DLL_VERSION.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -117,5 +123,10 @@
     </None>
     <None Include="..\installer.dll" />
     <None Include="..\version.ini" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="version.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

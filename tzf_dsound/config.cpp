@@ -25,9 +25,11 @@
 #include "ini.h"
 #include "log.h"
 
+#include "DLL_VERSION.H"
+
 extern HMODULE hInjectorDLL;
 
-std::wstring TZF_VER_STR = L"1.4.9";
+std::wstring TZF_VER_STR = TZF_VERSION_STR_W;
 std::wstring DEFAULT_BK2 = L"RAW\\MOVIE\\AM_TOZ_OP_001.BK2";
 
 static
