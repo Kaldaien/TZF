@@ -194,3 +194,5 @@ FakesAssemblies/
 
 # Visual Studio 6 workspace options file
 *.opt
+/tzf_dsound.VC.VC.opendb
+/tzf_dsound.VC.db
