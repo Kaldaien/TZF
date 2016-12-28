@@ -462,6 +462,8 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
+  tzf::RenderFix::draw_state.cegui_active = true;
+
   void TZFix_LogUsedTextures (void);
   TZFix_LogUsedTextures ();
 
@@ -481,6 +483,8 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
   // Ignore anything that's not the primary render device.
   if (device != tzf::RenderFix::pDevice)
     return SK_EndBufferSwap (hr, device);
+
+  tzf::RenderFix::draw_state.cegui_active = false;
 
   scene_count = 0;
 
@@ -635,6 +639,10 @@ D3D9SetScissorRect_Detour (IDirect3DDevice9* This,
 {
   // Ignore anything that's not the primary render device.
   if (This != tzf::RenderFix::pDevice)
+    return D3D9SetScissorRect_Original (This, pRect);
+
+  // Let the mod's GUI render without any restrictions.
+  if (tzf::RenderFix::draw_state.cegui_active)
     return D3D9SetScissorRect_Original (This, pRect);
 
   // If we don't care about aspect ratio, then just early-out

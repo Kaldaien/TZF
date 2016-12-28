@@ -65,6 +65,7 @@ namespace RenderFix {
 
       int          draws          = 0; // Number of draw calls
       int          frames         = 0;
+      bool         cegui_active   = false;
     } extern draw_state;
 
 
