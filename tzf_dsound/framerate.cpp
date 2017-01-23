@@ -1000,3 +1000,15 @@ tzf::FrameRateFix::RenderTick (void)
 
   last_time.QuadPart = time.QuadPart;
 }
+
+float
+tzf::FrameRateFix::GetTargetFrametime (void)
+{
+  if (! variable_speed_installed)
+    return 33.33333f;
+
+  int32_t* pTickScale =
+    (int32_t *)(/*TZF_GetBaseAddr () + */TICK_ADDR_BASE);
+
+  return ( (float)(*pTickScale) * 16.6666666f );
+}

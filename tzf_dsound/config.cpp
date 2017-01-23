@@ -80,6 +80,8 @@ struct {
   tzf::ParameterBool*    dump;
   tzf::ParameterInt*     cache_size;
   tzf::ParameterInt*     worker_threads;
+  tzf::ParameterFloat*   lod_bias;
+  tzf::ParameterBool*    show_loading_text;
 } textures;
 
 
@@ -434,6 +436,26 @@ TZF_LoadConfig (std::wstring name)
       L"TZFIX.Textures",
         L"Remaster" );
 
+  textures.show_loading_text =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Show a loading indicator in OSD")
+      );
+  textures.show_loading_text->register_to_ini (
+    dll_ini,
+      L"TZFIX.Textures",
+        L"ShowLoadingIndicator" );
+
+  textures.lod_bias =
+    static_cast <tzf::ParameterFloat *>
+      (g_ParameterFactory.create_parameter <float> (
+        L"Texture LOD Bias")
+      );
+  textures.lod_bias->register_to_ini (
+    dll_ini,
+      L"TZFIX.Textures",
+        L"LODBias" );
+
   textures.cache_size = 
     static_cast <tzf::ParameterInt *>
       (g_ParameterFactory.create_parameter <int> (
@@ -566,11 +588,13 @@ TZF_LoadConfig (std::wstring name)
   render.rescale_shadows->load     (config.render.shadow_rescale);
   render.rescale_env_shadows->load (config.render.env_shadow_rescale);
 
-  textures.remaster->load       (config.textures.remaster);
-  textures.cache->load          (config.textures.cache);
-  textures.dump->load           (config.textures.dump);
-  textures.cache_size->load     (config.textures.max_cache_in_mib);
-  textures.worker_threads->load (config.textures.worker_threads);
+  textures.remaster->load          (config.textures.remaster);
+  textures.cache->load             (config.textures.cache);
+  textures.dump->load              (config.textures.dump);
+  textures.cache_size->load        (config.textures.max_cache_in_mib);
+  textures.worker_threads->load    (config.textures.worker_threads);
+  textures.lod_bias->load          (config.textures.lod_bias);
+  textures.show_loading_text->load (config.textures.show_loading_text);
 
   steam.allow_broadcasts->load  (config.steam.allow_broadcasts);
 
@@ -581,6 +605,8 @@ TZF_LoadConfig (std::wstring name)
   sys.version->load     (config.system.version);
   sys.intro_video->load (config.system.intro_video);
   sys.injector->load    (config.system.injector);
+
+  TZF_SaveConfig (name, false);
 
   if (empty)
     return false;
@@ -628,11 +654,13 @@ TZF_SaveConfig (std::wstring name, bool close_config)
   render.rescale_shadows->store     (config.render.shadow_rescale);
   render.rescale_env_shadows->store (config.render.env_shadow_rescale);
 
-  textures.remaster->store       (config.textures.remaster);
-  textures.cache->store          (config.textures.cache);
-  textures.dump->store           (config.textures.dump);
-  textures.cache_size->store     (config.textures.max_cache_in_mib);
-  textures.worker_threads->store (config.textures.worker_threads);
+  textures.remaster->store          (config.textures.remaster);
+  textures.cache->store             (config.textures.cache);
+  textures.dump->store              (config.textures.dump);
+  textures.cache_size->store        (config.textures.max_cache_in_mib);
+  textures.worker_threads->store    (config.textures.worker_threads);
+  textures.lod_bias->store          (config.textures.lod_bias);
+  textures.show_loading_text->store (config.textures.show_loading_text);
 
   steam.allow_broadcasts->store  (config.steam.allow_broadcasts);
 

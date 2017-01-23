@@ -25,8 +25,8 @@
 
 #include "command.h"
 
-struct IDirect3DDevice9;
-struct IDirect3DSurface9;
+#include <d3d9.h>
+#include <d3d9types.h>
 
 #include <Windows.h>
 
@@ -36,6 +36,16 @@ namespace tzf
   {
     void Init     ();
     void Shutdown ();
+
+    void Reset    ( IDirect3DDevice9      *This,
+                    D3DPRESENT_PARAMETERS *pPresentationParameters );
+
+    struct tzf_reset_state_s
+    {
+      bool     graphics   =   false;
+      bool     textures   =   false;
+    } extern
+        need_reset;
 
     class CommandProcessor : public SK_IVariableListener {
     public:

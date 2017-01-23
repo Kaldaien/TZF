@@ -43,6 +43,8 @@ namespace tzf
     long CalcTickScale (double elapsed_ms);
 
 
+    float GetTargetFrametime (void);
+
     //
     // At key points during the game, we need to disable the code that
     //  cuts timing in half. These places will be wrapped by calls to

@@ -51,7 +51,6 @@ struct tzf_config_t
     int   battle_target        = 60;
     bool  battle_adaptive      = false;
     int   cutscene_target      = 30;
-    bool  reshade_fix          = false;
   } framerate;
 
   struct {
@@ -77,6 +76,7 @@ struct tzf_config_t
     float    postproc_ratio     =  1.0f;
     bool     clear_blackbars    = true;
     int32_t  env_shadow_rescale = 0;
+    bool     dump_shaders       = false;
   } render;
 
   struct {
@@ -85,7 +85,14 @@ struct tzf_config_t
     bool     cache              = true;
     int32_t  max_cache_in_mib   = 2048L;
     int32_t  worker_threads     = 6;
+    bool     show_loading_text  = true;
+    float    lod_bias           = 0.0f;
   } textures;
+
+  struct {
+    bool     visible            = false;
+    bool     auto_pause         = true;
+  } control_panel;
 
   struct {
     std::wstring swap_keys = L"";

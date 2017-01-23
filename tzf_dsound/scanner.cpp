@@ -24,6 +24,14 @@
 
 #include <Windows.h>
 
+uintptr_t
+TZF_GetBaseAddr (void)
+{
+  static uintptr_t base = (uintptr_t)GetModuleHandle (nullptr);
+
+  return base;
+}
+
 void*
 TZF_Scan (uint8_t* pattern, size_t len, uint8_t* mask)
 {

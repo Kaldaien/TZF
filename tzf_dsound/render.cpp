@@ -51,6 +51,11 @@ DrawPrimitiveUP_pfn                     D3D9DrawPrimitiveUP_Original            
 DrawIndexedPrimitiveUP_pfn              D3D9DrawIndexedPrimitiveUP_Original          = nullptr;
 
 
+extern bool pending_loads            (void);
+extern void TZFix_LoadQueuedTextures (void);
+extern void TZFix_DrawConfigUI       (void);
+
+
 bool fullscreen_blit  = false;
 bool needs_aspect     = false;
 bool world_radial     = false;
@@ -135,7 +140,7 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
       Type == D3DSAMP_MIPMAPLODBIAS) {
     //dll_log->Log (L" [!] IDirect3DDevice9::SetSamplerState (...)");
 
-    if (Type < 8) {
+    if (Type <= D3DSAMP_MIPMAPLODBIAS) {
       //if (Value != D3DTEXF_ANISOTROPIC)
         //D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MAXANISOTROPY, aniso);
 
@@ -150,8 +155,11 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
           Value = D3DTEXF_ANISOTROPIC;
 
       // Clamp [0, oo)
-      if (Type == D3DSAMP_MIPMAPLODBIAS)
-        *(float *)Value = max (0.0f, *(float *)Value);
+      if (Type == D3DSAMP_MIPMAPLODBIAS) {
+        float fMax = config.textures.lod_bias;
+
+        Value = *reinterpret_cast <DWORD *> (&fMax);
+      }
     }
   }
 
@@ -160,6 +168,14 @@ D3D9SetSamplerState_Detour (IDirect3DDevice9*   This,
 
   if (Type == D3DSAMP_MAXMIPLEVEL)
     Value = 0;
+
+  {
+    float fMax = config.textures.lod_bias;
+
+    DWORD dwBias = *reinterpret_cast <DWORD *> (&fMax);
+
+    D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MIPMAPLODBIAS, dwBias);
+  }
 
   return D3D9SetSamplerState_Original (This, Sampler, Type, Value);
 }
@@ -226,7 +242,6 @@ crc32(uint32_t crc, const void *buf, size_t size)
 
   return crc ^ ~0U;
 }
-
 #include <map>
 std::unordered_map <LPVOID, uint32_t> vs_checksums;
 std::unordered_map <LPVOID, uint32_t> ps_checksums;
@@ -235,6 +250,89 @@ std::unordered_map <LPVOID, uint32_t> ps_checksums;
 //   looking it up in the above hashmaps.
 uint32_t vs_checksum = 0;
 uint32_t ps_checksum = 0;
+
+typedef interface ID3DXBuffer ID3DXBuffer;
+typedef interface ID3DXBuffer *LPD3DXBUFFER;
+
+// {8BA5FB08-5195-40e2-AC58-0D989C3A0102}
+DEFINE_GUID(IID_ID3DXBuffer, 
+0x8ba5fb08, 0x5195, 0x40e2, 0xac, 0x58, 0xd, 0x98, 0x9c, 0x3a, 0x1, 0x2);
+
+#undef INTERFACE
+#define INTERFACE ID3DXBuffer
+
+DECLARE_INTERFACE_(ID3DXBuffer, IUnknown)
+{
+    // IUnknown
+    STDMETHOD  (        QueryInterface)   (THIS_ REFIID iid, LPVOID *ppv) PURE;
+    STDMETHOD_ (ULONG,  AddRef)           (THIS) PURE;
+    STDMETHOD_ (ULONG,  Release)          (THIS) PURE;
+
+    // ID3DXBuffer
+    STDMETHOD_ (LPVOID, GetBufferPointer) (THIS) PURE;
+    STDMETHOD_ (DWORD,  GetBufferSize)    (THIS) PURE;
+};
+
+typedef HRESULT (WINAPI *D3DXDisassembleShader_pfn)(
+  _In_  const DWORD         *pShader,
+  _In_        BOOL            EnableColorCode,
+  _In_        LPCSTR         pComments,
+  _Out_       LPD3DXBUFFER *ppDisassembly
+);
+
+D3DXDisassembleShader_pfn D3DXDisassembleShader = nullptr;
+
+void
+SK_D3D9_DumpShader ( const wchar_t* wszPrefix,
+                           uint32_t crc32,
+                           LPVOID   pbFunc )
+{
+  static bool dump = config.render.dump_shaders;
+
+  if (dump) {
+    if (GetFileAttributes (L"TBFix_Res\\dump\\shaders") !=
+         FILE_ATTRIBUTE_DIRECTORY) {
+      CreateDirectoryW (L"TBFix_Res",                nullptr);
+      CreateDirectoryW (L"TBFix_Res\\dump",          nullptr);
+      CreateDirectoryW (L"TBFix_Res\\dump\\shaders", nullptr);
+    }
+
+    wchar_t wszDumpName [MAX_PATH];
+    _swprintf ( wszDumpName,
+                  L"TBFix_Res\\dump\\shaders\\%s_%08x.html",
+                    wszPrefix, crc32 );
+
+    if (D3DXDisassembleShader == nullptr)
+      D3DXDisassembleShader =
+        (D3DXDisassembleShader_pfn)
+          GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                             "D3DXDisassembleShader" );
+
+    if ( D3DXDisassembleShader           != nullptr &&
+         GetFileAttributes (wszDumpName) == INVALID_FILE_ATTRIBUTES ) {
+      LPD3DXBUFFER pDisasm;
+
+      HRESULT hr =
+        D3DXDisassembleShader ((DWORD *)pbFunc, TRUE, "", &pDisasm);
+
+      if (SUCCEEDED (hr)) {
+        FILE* fDump =
+          _wfopen (wszDumpName, L"wb");
+
+        if (fDump != NULL) {
+          fwrite ( pDisasm->GetBufferPointer (),
+                     pDisasm->GetBufferSize  (),
+                       1,
+                         fDump );
+          fclose (fDump);
+        }
+
+        pDisasm->Release ();
+      }
+    }
+  }
+}
+
 
 typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_pfn)
   (IDirect3DDevice9*       This,
@@ -252,25 +350,49 @@ D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetVertexShader_Original (This, pShader);
 
+#if 0
+  static DWORD dwLastTid = GetCurrentThreadId ();
+
+  if (dwLastTid != GetCurrentThreadId ()) {
+    dll_log->Log ( L"[   D3D9   ]  >> WARNING:  Multi-threaded Rendering "
+                                     L" {SetVertexShader}  "
+                                     L"(last_tid=%x, new_tid=%x, r_tid=%x)",
+                 dwLastTid, GetCurrentThreadId (), tbf::RenderFix::dwRenderThreadID );
+    dwLastTid = GetCurrentThreadId ();
+  }
+#endif
+
+  if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
+    return D3D9SetVertexShader_Original (This, pShader);
+
+
   if (g_pVS != pShader) {
     if (pShader != nullptr) {
       if (vs_checksums.find (pShader) == vs_checksums.end ()) {
-        UINT len = 2048;
-        char szFunc [2048];
+        UINT len;
+        pShader->GetFunction (nullptr, &len);
 
-        pShader->GetFunction (szFunc, &len);
+        void* pbFunc = malloc (len);
 
-        vs_checksums [pShader] = crc32 (0, szFunc, len);
+        if (pbFunc != nullptr) {
+          pShader->GetFunction (pbFunc, &len);
+
+          vs_checksums [pShader] = crc32 (0, pbFunc, len);
+
+          SK_D3D9_DumpShader (L"vs", vs_checksums [pShader], pbFunc);
+
+          free (pbFunc);
+        }
       }
-      else {
-        vs_checksum = 0;
-      }
-
-      vs_checksum = vs_checksums [pShader];
+    }
+    else {
+      vs_checksum = 0;
     }
   }
 
-  g_pVS = pShader;
+  vs_checksum = vs_checksums [pShader];
+  g_pVS       = pShader;
+
   return D3D9SetVertexShader_Original (This, pShader);
 }
 
@@ -291,26 +413,51 @@ D3D9SetPixelShader_Detour (IDirect3DDevice9*      This,
   if (This != tzf::RenderFix::pDevice)
     return D3D9SetPixelShader_Original (This, pShader);
 
+#if 0
+  static DWORD dwLastTid = GetCurrentThreadId ();
+
+  if (dwLastTid != GetCurrentThreadId ()) {
+    dll_log->Log ( L"[   D3D9   ]  >> WARNING:  Multi-threaded Rendering "
+                                     L" {SetPixelShader }  "
+                                     L"(last_tid=%x, new_tid=%x, r_tid=%x)",
+                 dwLastTid, GetCurrentThreadId (), tbf::RenderFix::dwRenderThreadID );
+    dwLastTid = GetCurrentThreadId ();
+  }
+#endif
+
+  if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
+    return D3D9SetPixelShader_Original (This, pShader);
+
+
   if (g_pPS != pShader) {
     if (pShader != nullptr) {
       if (ps_checksums.find (pShader) == ps_checksums.end ()) {
-        UINT len = 8191;
-        char szFunc [8192] = { 0 };
+        UINT len;
+        pShader->GetFunction (nullptr, &len);
 
-        pShader->GetFunction (szFunc, &len);
+        void* pbFunc = malloc (len);
 
-        ps_checksums [pShader] = crc32 (0, szFunc, len);
+        if (pbFunc != nullptr) {
+          pShader->GetFunction (pbFunc, &len);
+
+          ps_checksums [pShader] = crc32 (0, pbFunc, len);
+
+          SK_D3D9_DumpShader (L"ps", ps_checksums [pShader], pbFunc);
+
+          free (pbFunc);
+        }
       }
     } else {
       ps_checksum = 0;
     }
-
-    ps_checksum = ps_checksums [pShader];
   }
 
-  g_pPS = pShader;
+  ps_checksum = ps_checksums [pShader];
+  g_pPS       = pShader;
+
   return D3D9SetPixelShader_Original (This, pShader);
 }
+
 
 
 //
@@ -364,6 +511,10 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
   // Ignore anything that's not the primary render device.
   if (This != tzf::RenderFix::pDevice)
     return D3D9EndScene_Original (This);
+
+  if (pending_loads ()) {
+    TZFix_LoadQueuedTextures ();
+  }
 
   // EndScene is invoked multiple times per-frame, but we
   //   are only interested in the first.
@@ -436,10 +587,13 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
 
   HRESULT hr = D3D9EndScene_Original (This);
 
-  extern bool pending_loads (void);
-  if (pending_loads ()) {
-    extern void TZFix_LoadQueuedTextures (void);
-    TZFix_LoadQueuedTextures ();
+  if (SUCCEEDED (hr))
+  {
+    // Don't aspect ratio correct the config UI!
+    tzf::RenderFix::draw_state.cegui_active = true;
+
+    if (config.control_panel.visible)
+      TZFix_DrawConfigUI ();
   }
 
   game_state.in_skit = false;
@@ -462,6 +616,15 @@ void
 STDMETHODCALLTYPE
 D3D9EndFrame_Pre (void)
 {
+  static volatile
+    ULONGLONG frames = 0ULL;
+
+  ULONGLONG count = InterlockedIncrement (&frames);
+
+  if (count == 1) {
+    tzf::RenderFix::tex_mgr.Init ();
+  }
+
   tzf::RenderFix::draw_state.cegui_active = true;
 
   void TZFix_LogUsedTextures (void);
@@ -715,14 +878,15 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
     return D3D9SetViewport_Original (This, &rescaled_shadow);
   }
 
-#if 0
   //
   // Environmental Shadows
   //
-  if (pViewport->Width == pViewport->Height && 
-      (pViewport->Width ==  512 ||
-       pViewport->Width == 1024 ||
-       pViewport->Width == 2048)) {
+  if ( pViewport->Width == pViewport->Height && 
+       ( pViewport->Width ==  512 ||
+         pViewport->Width == 1024 ||
+         pViewport->Width == 2048 ||
+         pViewport->Width == 4096 ) )
+  {
     D3DVIEWPORT9 rescaled_shadow = *pViewport;
 
     rescaled_shadow.Width  <<= config.render.env_shadow_rescale;
@@ -730,7 +894,6 @@ D3D9SetViewport_Detour (IDirect3DDevice9* This,
 
     return D3D9SetViewport_Original (This, &rescaled_shadow);
   }
-#endif
 
   //
   // Adjust Post-Processing
@@ -1062,7 +1225,7 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
   //
   // Env Shadow
   //
-  if (StartRegister == 240 && Vector4fCount == 1) {
+  if (StartRegister == 240 && Vector4fCount == 1 && (pConstantData [0] == -pConstantData [1])) {
     uint32_t shift;
     uint32_t dim = 0;
 
@@ -1071,13 +1234,23 @@ D3D9SetVertexShaderConstantF_Detour (IDirect3DDevice9* This,
       //dll_log->Log (L" 512x512 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
-    if (pConstantData [0] == -1.0f / 1024.0f) {
+    else if (pConstantData [0] == -1.0f / 1024.0f) {
       dim = 1024UL;
       //dll_log->Log (L" 1024x1024 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
-    if (pConstantData [0] == -1.0f / 2048.0f) {
+    else if (pConstantData [0] == -1.0f / 2048.0f) {
       dim = 2048UL;
+      //dll_log->Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
+    }
+
+    else if (pConstantData [0] == -1.0f / 4096.0f) {
+      dim = 4096UL;
+      //dll_log->Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
+    }
+
+    else if (pConstantData [0] == -1.0f / 8192.0f) {
+      dim = 8192UL;
       //dll_log->Log (L" 2048x2048 Shadow: VS CRC: %lu, PS CRC: %lu", vs_checksum, ps_checksum);
     }
 
@@ -1315,6 +1488,35 @@ D3D9DrawIndexedPrimitiveUP_Detour ( IDirect3DDevice9* This,
 
 
 
+void
+tzf::RenderFix::Reset (  IDirect3DDevice9      *This,
+                         D3DPRESENT_PARAMETERS *pPresentationParameters )
+{
+  static volatile
+    ULONG reset_count = 0UL;
+
+  ULONG count = InterlockedIncrement (&reset_count);
+
+  if (pending_loads ())
+    TZFix_LoadQueuedTextures ();
+  
+  tex_mgr.reset              ();
+  
+  need_reset.textures = false;
+
+  need_reset.graphics = false;
+
+  vs_checksums.clear ();
+  ps_checksums.clear ();
+
+  g_pPS   = nullptr;
+  g_pVS   = nullptr;
+
+  pDevice = This;
+
+  width   = pPresentationParameters->BackBufferWidth;
+  height  = pPresentationParameters->BackBufferHeight;
+}
 
 typedef HRESULT (__stdcall *Reset_pfn)(
   IDirect3DDevice9     *This,
@@ -1329,18 +1531,22 @@ __stdcall
 D3D9Reset_Detour ( IDirect3DDevice9      *This,
                    D3DPRESENT_PARAMETERS *pPresentationParameters )
 {
-  if (This != tzf::RenderFix::pDevice)
-    return D3D9Reset_Original (This, pPresentationParameters);
-
-  tzf::RenderFix::tex_mgr.reset         ();
-
-  tzf::RenderFix::pDevice = This;
-
-  tzf::RenderFix::width  = pPresentationParameters->BackBufferWidth;
-  tzf::RenderFix::height = pPresentationParameters->BackBufferHeight;
+  tzf::RenderFix::Reset (This, pPresentationParameters);
 
   HRESULT hr =
     D3D9Reset_Original (This, pPresentationParameters);
+
+  if (SUCCEEDED (hr))
+  {
+    HWND hWnd = pPresentationParameters->hDeviceWindow;
+
+    DWORD dwStyle =
+      GetClassLong ( hWnd, GCL_STYLE );
+
+    dwStyle &= ~(CS_DBLCLKS);
+
+    SetClassLong ( hWnd, GCL_STYLE, dwStyle );
+  }
 
   return hr;
 }
@@ -1349,7 +1555,7 @@ D3D9Reset_Detour ( IDirect3DDevice9      *This,
 void
 tzf::RenderFix::Init (void)
 {
-  tex_mgr.Init ();
+  d3dx9_43_dll = LoadLibrary (L"D3DX9_43.DLL");
 
   TZF_CreateDLLHook2 ( config.system.injector.c_str (), "D3D9SetSamplerState_Override",
                       D3D9SetSamplerState_Detour,
@@ -1361,8 +1567,6 @@ tzf::RenderFix::Init (void)
                       D3D9SetPixelShaderConstantF_Detour,
             (LPVOID*)&D3D9SetPixelShaderConstantF_Original );
 #endif
-
-
 
 
 #if 1
@@ -1468,6 +1672,7 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   SK_IVariable* rescale_env_shadows = TZF_CreateVar (SK_IVariable::Int,     &config.render.env_shadow_rescale);
   SK_IVariable* postproc_ratio      = TZF_CreateVar (SK_IVariable::Float,   &config.render.postproc_ratio);
   SK_IVariable* clear_blackbars     = TZF_CreateVar (SK_IVariable::Boolean, &config.render.clear_blackbars);
+  SK_IVariable* lod_bias            = TZF_CreateVar (SK_IVariable::Float,   &config.textures.lod_bias);
 
   command.AddVariable ("AspectRatio",         aspect_ratio_);
   command.AddVariable ("FOVY",                fovy_);
@@ -1479,6 +1684,8 @@ tzf::RenderFix::CommandProcessor::CommandProcessor (void)
   command.AddVariable ("RescaleEnvShadows",   rescale_env_shadows);
   command.AddVariable ("PostProcessRatio",    postproc_ratio);
   command.AddVariable ("ClearBlackbars",      clear_blackbars);
+
+  command.AddVariable ("Textures.LODBias",      lod_bias);
 
   command.AddVariable ("TestVS", TZF_CreateVar (SK_IVariable::Int, &TEST_VS));
 
@@ -1564,3 +1771,6 @@ IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
 bool               tzf::RenderFix::bink                = false;
 
 HMODULE            tzf::RenderFix::user32_dll          = 0;
+
+tzf::RenderFix::tzf_reset_state_s
+                   tzf::RenderFix::need_reset;

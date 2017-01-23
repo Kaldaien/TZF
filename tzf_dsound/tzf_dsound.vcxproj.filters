@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\Control Panel UI">
+      <UniqueIdentifier>{5f29a82c-bada-42a0-b853-bb6a0a2afd85}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
@@ -115,6 +118,9 @@
     </ClCompile>
     <ClCompile Include="textures.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="control_panel.cpp">
+      <Filter>Source Files\Control Panel UI</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

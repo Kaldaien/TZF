@@ -49,10 +49,8 @@ typedef bool    (__stdcall *SK_FetchVersionInfo_pfn)(const wchar_t* wszProduct);
 
 std::wstring injector_dll;
 
-typedef void (__stdcall *SK_SetPluginName_pfn)(std::wstring name);
-SK_SetPluginName_pfn SK_SetPluginName = nullptr;
-
-extern void TZF_InitCompatBlacklist (void);
+typedef void (__stdcall *SKX_SetPluginName_pfn)(std::wstring name);
+SKX_SetPluginName_pfn SKX_SetPluginName = nullptr;
 
 unsigned int
 WINAPI
@@ -126,9 +124,9 @@ DllThread (LPVOID user)
 
   config.system.injector = injector_dll;
 
-  SK_SetPluginName = 
-    (SK_SetPluginName_pfn)
-      GetProcAddress (hInjectorDLL, "SK_SetPluginName");
+  SKX_SetPluginName = 
+    (SKX_SetPluginName_pfn)
+      GetProcAddress (hInjectorDLL, "SKX_SetPluginName");
   SK_GetCommandProcessor =
     (SK_GetCommandProcessor_pfn)
       GetProcAddress (hInjectorDLL, "SK_GetCommandProcessor");
@@ -136,8 +134,8 @@ DllThread (LPVOID user)
   //
   // If this is NULL, the injector system isn't working right!!!
   //
-  if (SK_SetPluginName != nullptr)
-    SK_SetPluginName (plugin_name);
+  if (SKX_SetPluginName != nullptr)
+    SKX_SetPluginName (plugin_name.c_str ());
 
   // Locate the gamestate address; having this as the first thing in the log
   //   file is tremendously handy in identifying which client version a user
@@ -211,8 +209,6 @@ SKPlugIn_Init (HMODULE hModSpecialK)
   return TRUE;
 }
 
-extern "C" BOOL WINAPI _CRT_INIT (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
-
 BOOL
 APIENTRY
 DllMain (HMODULE hModule,
@@ -223,13 +219,11 @@ DllMain (HMODULE hModule,
   {
     case DLL_PROCESS_ATTACH:
     {
-      _CRT_INIT ((HINSTANCE)hModule, ul_reason_for_call, nullptr);
       hDLLMod = hModule;
     } break;
 
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
-      _CRT_INIT ((HINSTANCE)hModule, ul_reason_for_call, nullptr);
       break;
 
     case DLL_PROCESS_DETACH:
@@ -255,8 +249,6 @@ DllMain (HMODULE hModule,
 
         dll_log->close ();
       }
-
-      _CRT_INIT ((HINSTANCE)hModule, ul_reason_for_call, nullptr);
     } break;
   }
 

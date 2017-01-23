@@ -732,6 +732,15 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
     Height <<= shift;
   }
 
+  else if (Width == Height && (Height == 512 || Height == 1024 || Height == 2048 || Height == 4096) &&
+                          Usage == D3DUSAGE_RENDERTARGET) {
+      //tex_log->Log (L"[Shadow Mgr] (Env. Resolution: (%lu x %lu) -- CREATE", Width, Height);
+      uint32_t shift = config.render.env_shadow_rescale;
+
+      Width  <<= shift;
+      Height <<= shift;
+  }
+
   //
   // Post-Processing (512x256) - FIXME damnit!
   //
@@ -743,8 +752,9 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
     }
   }
 
- if (Usage == D3DUSAGE_DEPTHSTENCIL) {
-    if (Width == Height && (Height == 512 || Height == 1024 || Height == 2048)) {
+  else if (Usage == D3DUSAGE_DEPTHSTENCIL) {
+    if (Width == Height && (Height == 512 || Height == 1024 || Height == 2048 || Height == 4096)) {
+      //tex_log->Log (L"[Shadow Mgr] (Env. Resolution: (%lu x %lu) -- CREATE", Width, Height);
       uint32_t shift = config.render.env_shadow_rescale;
 
       Width  <<= shift;
@@ -1540,43 +1550,45 @@ TZFix_LoadQueuedTextures (void)
     spin = 193;
 
   if (resampling) {
-    mod_text += spin;
+    if (config.textures.show_loading_text) {
+      mod_text += spin;
 
-    char szFormatted [64];
-    sprintf (szFormatted, "  Resampling: %li texture", resampling);
+      char szFormatted [64];
+      sprintf (szFormatted, "  Resampling: %li texture", resampling);
 
-    mod_text += szFormatted;
-
-    if (streaming > 1)
-      mod_text += 's';
-
-    int queue_len = resample_pool->queueLength ();
-
-    if (queue_len) {
-      sprintf (szFormatted, " (%lu queued)", queue_len);
       mod_text += szFormatted;
+
+      if (streaming > 1)
+        mod_text += 's';
+
+      int queue_len = resample_pool->queueLength ();
+
+      if (queue_len) {
+        sprintf (szFormatted, " (%lu queued)", queue_len);
+        mod_text += szFormatted;
+      }
+
+      mod_text += "\n\n";
     }
 
-    mod_text += "\n\n";
-  }
+    if (streaming) {
+      mod_text += spin;
 
-  if (streaming) {
-    mod_text += spin;
+      char szFormatted [64];
+      sprintf (szFormatted, "  Streaming: %li texture", streaming);
 
-    char szFormatted [64];
-    sprintf (szFormatted, "  Streaming: %li texture", streaming);
-
-    mod_text += szFormatted;
-
-    if (streaming > 1)
-      mod_text += 's';
-
-    sprintf (szFormatted, " [%7.2f MiB]", (double)streaming_bytes / (1024.0f * 1024.0f));
-    mod_text += szFormatted;
-
-    if (textures_to_stream.size ()) {
-      sprintf (szFormatted, " (%lu outstanding)", textures_to_stream.size ());
       mod_text += szFormatted;
+
+      if (streaming > 1)
+        mod_text += 's';
+
+      sprintf (szFormatted, " [%7.2f MiB]", (double)streaming_bytes / (1024.0f * 1024.0f));
+      mod_text += szFormatted;
+
+      if (textures_to_stream.size ()) {
+        sprintf (szFormatted, " (%lu outstanding)", textures_to_stream.size ());
+        mod_text += szFormatted;
+      }
     }
   }
 
@@ -1635,6 +1647,9 @@ TZFix_LoadQueuedTextures (void)
     tzf::RenderFix::tex_mgr.updateOSD ();
 
     ++loads;
+
+    // Remove the temporary reference
+    load->pDest->Release ();
 
     delete load;
   }
@@ -1794,10 +1809,16 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
   // Generate complete mipmap chains for best image quality
   //  (will increase load-time on uncached textures)
   if ((Pool == D3DPOOL_DEFAULT) && config.textures.remaster) {
-    if (Format == D3DFMT_DXT1 ||
-        Format == D3DFMT_DXT3 ||
-        Format == D3DFMT_DXT5)
-      if (Width >= 128 && Height >= 128) {
+    D3DXIMAGE_INFO info = { 0 };
+    D3DXGetImageInfoFromFileInMemory (pSrcData, SrcDataSize, &info);
+
+    D3DFORMAT fmt_real = info.Format;
+
+    if ( fmt_real == D3DFMT_DXT1 ||
+         fmt_real == D3DFMT_DXT3 ||
+         fmt_real == D3DFMT_DXT5 )
+      if (info.Width >= 128 && info.Height >= 128)
+      {
         // Don't resample faces
         if ( resample_blacklist.count (checksum) == 0 )
           resample = true;
@@ -1867,7 +1888,7 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
   hr =
     D3DXCreateTextureFromFileInMemoryEx_Original ( pDevice,
                                                      pSrcData,         SrcDataSize,
-                                                       Width,          Height,    will_replace ? 1 : MipLevels,
+                                                       Width,          Height,    MipLevels,
                                                          Usage,        Format,    Pool,
                                                            Filter,     MipFilter, ColorKey,
                                                              pSrcInfo, pPalette,
@@ -2013,9 +2034,12 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
       load_op->pSrcData    = new uint8_t [SrcDataSize];
       load_op->SrcDataSize = SrcDataSize;
 
+      swprintf (load_op->wszFilename, L"Resample_%x.dds", checksum);
+
       memcpy (load_op->pSrcData, pSrcData, SrcDataSize);
 
-      load_op->pDest = *ppTexture;
+      (*ppTexture)->AddRef ();
+      load_op->pDest       = *ppTexture;
 
       resample_pool->postJob (load_op);
     }
@@ -3034,7 +3058,8 @@ ResampleTexture (tzf_tex_load_s* load)
             img_info.Width, img_info.Height, 0,//D3DX_DEFAULT,
               0, img_info.Format,
                 D3DPOOL_DEFAULT,
-                  D3DX_FILTER_POINT, D3DX_FILTER_TRIANGLE | D3DX_FILTER_DITHER,
+                  D3DX_FILTER_TRIANGLE | D3DX_FILTER_DITHER,
+                  D3DX_FILTER_BOX      | D3DX_FILTER_DITHER,
                     0,
                       nullptr, nullptr,
                         &load->pSrc );

@@ -94,6 +94,12 @@ SK_TZF_PluginKeyPress ( BOOL Control,
   SK_ICommandProcessor& command =
     *SK_GetCommandProcessor ();
 
+  if (Control && Shift && vkCode == VK_BACK)  {
+    extern void TZFix_ToggleConfigUI (void);
+    TZFix_ToggleConfigUI             ();
+      TZF_SaveConfig                 ();
+  }
+
   if (Control && Shift) {
     if (vkCode == '1') {
       command.ProcessCommandLine ("AutoAdjust false");
@@ -300,11 +306,11 @@ public:
 
   void Start (void)
   {
-    TZF_CreateDLLHook2 ( L"user32.dll", "GetCursorInfo",
+    TZF_CreateDLLHook2 ( config.system.injector.c_str (), "SK_GetCursorInfo",
                         GetCursorInfo_Detour,
               (LPVOID*)&GetCursorInfo_Original );
 
-    TZF_CreateDLLHook2 ( L"user32.dll", "GetCursorPos",
+    TZF_CreateDLLHook2 ( config.system.injector.c_str (), "SK_GetCursorPos",
                         GetCursorPos_Detour,
               (LPVOID*)&GetCursorPos_Original );
 
