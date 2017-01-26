@@ -1907,18 +1907,24 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
       tzf::RenderFix::pad_buttons.tex_ps3 = *ppTexture;
     }
 
-    if (checksum == tzf::RenderFix::pad_buttons.crc32_xbox) {
+    if (checksum == tzf::RenderFix::pad_buttons.crc32_xbox)
+    {
       tzf::RenderFix::pad_buttons.tex_xbox = *ppTexture;
 
-      if (GetFileAttributesW (L"custom_buttons.dds") != INVALID_FILE_ATTRIBUTES) {
+      wchar_t wszFile [MAX_PATH + 2] = { L'\0' };
+
+      _swprintf ( wszFile,
+                    L"TZFix_Res\\Gamepads\\%s\\Buttons.dds",
+                      config.textures.gamepad.c_str () );
+
+      if (GetFileAttributesW (wszFile) != INVALID_FILE_ATTRIBUTES) {
         tex_log->LogEx (true, L"[Inject Tex] Injecting custom gamepad buttons... ");
 
         load_op           = new tzf_tex_load_s;
         load_op->pDevice  = pDevice;
         load_op->checksum = checksum;
         load_op->type     = tzf_tex_load_s::Immediate;
-
-        wcscpy (load_op->wszFilename, L"custom_buttons.dds");
+        wcsncpy (load_op->wszFilename, wszFile, MAX_PATH);
 
         if (load_op->type == tzf_tex_load_s::Stream) {
           if ((! remap_stream))
@@ -1932,7 +1938,6 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
         resample = false;
       }
     }
-
 
     if ( load_op != nullptr && ( load_op->type == tzf_tex_load_s::Stream ||
                                  load_op->type == tzf_tex_load_s::Immediate ) ) {
@@ -2091,6 +2096,18 @@ D3DXCreateTextureFromFileInMemoryEx_Detour (
     bool compressed = (fmt_real >= D3DFMT_DXT1 && fmt_real <= D3DFMT_DXT5);
 
     wchar_t wszPath [MAX_PATH];
+    _swprintf ( wszPath, L"%s\\dump",
+                  TZFIX_TEXTURE_DIR );
+
+    if (GetFileAttributesW (wszPath) != FILE_ATTRIBUTE_DIRECTORY)
+      CreateDirectoryW (wszPath, nullptr);
+
+    _swprintf ( wszPath, L"%s\\dump\\textures",
+                  TZFIX_TEXTURE_DIR );
+
+    if (GetFileAttributesW (wszPath) != FILE_ATTRIBUTE_DIRECTORY)
+      CreateDirectoryW (wszPath, nullptr);
+
     _swprintf ( wszPath, L"%s\\dump\\textures\\%s",
                   TZFIX_TEXTURE_DIR, SK_D3D9_FormatToStr (fmt_real, false).c_str () );
 

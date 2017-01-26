@@ -87,11 +87,12 @@ struct tzf_config_t
     int32_t  worker_threads     = 6;
     bool     show_loading_text  = true;
     float    lod_bias           = 0.0f;
+    std::wstring
+             gamepad            = L"Xbox360";
   } textures;
 
   struct {
     bool     visible            = false;
-    bool     auto_pause         = true;
   } control_panel;
 
   struct {

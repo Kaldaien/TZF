@@ -115,6 +115,7 @@ DllThread (LPVOID user)
     config.textures.remaster              = true;
     config.textures.dump                  = false;
     config.textures.cache                 = true;
+    config.textures.gamepad               = L"Xbox360";
 
     config.system.injector = injector_dll;
 
@@ -151,6 +152,9 @@ DllThread (LPVOID user)
   }
 
   if (TZF_Init_MinHook () == MH_OK) {
+    extern void TZFix_ImGui_Init (void);
+                TZFix_ImGui_Init ();
+
     CoInitializeEx (nullptr, COINIT_MULTITHREADED);
 
     tzf::SoundFix::Init     ();

@@ -591,9 +591,6 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
   {
     // Don't aspect ratio correct the config UI!
     tzf::RenderFix::draw_state.cegui_active = true;
-
-    if (config.control_panel.visible)
-      TZFix_DrawConfigUI ();
   }
 
   game_state.in_skit = false;

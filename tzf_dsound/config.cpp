@@ -94,6 +94,10 @@ struct {
   tzf::ParameterStringW* swap_keys;
 } keyboard;
 
+struct {
+  tzf::ParameterStringW* texture_set;
+} gamepad;
+
 
 struct {
   tzf::ParameterBool*    fix_priest;
@@ -477,6 +481,17 @@ TZF_LoadConfig (std::wstring name)
         L"WorkerThreads" );
 
 
+  gamepad.texture_set = 
+    static_cast <tzf::ParameterStringW *>
+      (g_ParameterFactory.create_parameter <std::wstring> (
+        L"Gamepad Textures to Use")
+      );
+  gamepad.texture_set->register_to_ini(
+    dll_ini,
+      L"TZFIX.Gamepad",
+        L"TextureSet" );
+
+
   keyboard.swap_keys =
     static_cast <tzf::ParameterStringW *>
       (g_ParameterFactory.create_parameter <std::wstring> (
@@ -596,6 +611,8 @@ TZF_LoadConfig (std::wstring name)
   textures.lod_bias->load          (config.textures.lod_bias);
   textures.show_loading_text->load (config.textures.show_loading_text);
 
+  gamepad.texture_set->load        (config.textures.gamepad);
+
   steam.allow_broadcasts->load  (config.steam.allow_broadcasts);
 
   keyboard.swap_keys->load (config.keyboard.swap_keys);
@@ -661,6 +678,8 @@ TZF_SaveConfig (std::wstring name, bool close_config)
   textures.worker_threads->store    (config.textures.worker_threads);
   textures.lod_bias->store          (config.textures.lod_bias);
   textures.show_loading_text->store (config.textures.show_loading_text);
+
+  gamepad.texture_set->store        (config.textures.gamepad);
 
   steam.allow_broadcasts->store  (config.steam.allow_broadcasts);
 
