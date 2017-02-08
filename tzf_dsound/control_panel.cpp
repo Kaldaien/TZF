@@ -1,6 +1,8 @@
 // ImGui - standalone example application for DirectX 9
 // If you are new to ImGui, see examples/README.txt and documentation at the top of imgui.cpp.
 
+#define NOMINMAX
+
 #include "imgui/imgui.h"
 #include <d3d9.h>
 #define DIRECTINPUT_VERSION 0x0800
@@ -9,12 +11,14 @@
 
 #include "config.h"
 #include "render.h"
+#include "textures.h"
 #include "framerate.h"
 #include "hook.h"
 #include "sound.h"
 
 #include <string>
 #include <vector>
+#include <algorithm>
 
 
 __declspec (dllimport)
@@ -22,8 +26,9 @@ bool
 SK_ImGui_ControlPanel (void);
 
 
-bool show_special_k_cfg = false;
-bool show_test_window = false;
+bool show_special_k_cfg   = false;
+bool show_texture_mod_dlg = false;
+bool show_test_window     = false;
 
 ImVec4 clear_col = ImColor(114, 144, 154);
 
@@ -35,6 +40,40 @@ struct {
 void
 __TZF_DefaultSetOverlayState (bool)
 {
+}
+
+#include <Mmdeviceapi.h>
+#include <audiopolicy.h>
+#include <endpointvolume.h>
+#include <atlbase.h>
+
+IAudioMeterInformation*
+TZFix_GetAudioMeterInfo (void)
+{
+  CComPtr <IMMDeviceEnumerator> pDevEnum = nullptr;
+
+  if (FAILED ((pDevEnum.CoCreateInstance (__uuidof (MMDeviceEnumerator)))))
+    return nullptr;
+
+  CComPtr <IMMDevice> pDevice;
+  if ( FAILED (
+         pDevEnum->GetDefaultAudioEndpoint ( eRender,
+                                               eConsole,
+                                                 &pDevice )
+              )
+     ) return nullptr;
+
+  IAudioMeterInformation* pMeterInfo = nullptr;
+
+  HRESULT hr = pDevice->Activate ( __uuidof (IAudioMeterInformation),
+                                     CLSCTX_ALL,
+                                       nullptr,
+                                         IID_PPV_ARGS_Helper (&pMeterInfo) );
+
+  if (SUCCEEDED (hr))
+    return pMeterInfo;
+
+  return nullptr;
 }
 
 void
@@ -75,6 +114,9 @@ TZFix_ToggleConfigUI (void)
   TZF_SaveConfig ();
 }
 
+extern
+bool
+TZFix_TextureModDlg (void);
 
 void
 TZFix_GamepadConfigDlg (void)
@@ -295,9 +337,11 @@ TZFix_DrawConfigUI (void)
                               //ImGui::GetIO ().Framerate );
   }
 
-  if (ImGui::CollapsingHeader ("Texture Options"))
+  if (ImGui::CollapsingHeader ("Textures", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen))
   {
-    if (ImGui::TreeNodeEx ("Quality Settings", ImGuiTreeNodeFlags_DefaultOpen))
+    ImGui::TreePush ("");
+
+    if (ImGui::CollapsingHeader ("Quality"))
     {
       if (ImGui::Checkbox ("Generate Mipmaps", &config.textures.remaster)) tzf::RenderFix::need_reset.graphics = true;
 
@@ -328,18 +372,124 @@ TZFix_DrawConfigUI (void)
       ImGui::TreePop    ();
     }
 
-    if (ImGui::TreeNode ("Texture Modding"))
+    if (ImGui::CollapsingHeader ("Performance", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen))
     {
-      if (ImGui::Checkbox ("Dump Textures  (TZFix_Res\\dump\\textures\\<format>\\*.dds)",    &config.textures.dump))     tzf::RenderFix::need_reset.graphics = true;
+      extern bool __remap_textures;
 
+      ImGui::PushStyleVar(ImGuiStyleVar_ChildWindowRounding, 15.0f);
+      ImGui::TreePush  ("");
+      ImGui::BeginChild  ("Texture Details", ImVec2 (0, 100), true);
+
+      ImGui::Columns   ( 3 );
+        ImGui::PushStyleColor (ImGuiCol_Text, ImVec4 (1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::Text    ( "          Size" );                                                                 ImGui::NextColumn ();
+        ImGui::Text    ( "      Activity" );                                                                 ImGui::NextColumn ();
+        ImGui::Text    ( "       Savings" );
+        ImGui::PopStyleColor  ();
+      ImGui::Columns   ( 1 );
+
+      ImGui::PushStyleColor
+                       ( ImGuiCol_Text, ImVec4 (0.75f, 0.75f, 0.75f, 1.0f) );
+
+      ImGui::Separator (   );
+
+      ImGui::Columns   ( 3 );
+        ImGui::Text    ( "%#6zu MiB Total",
+                                                       tzf::RenderFix::tex_mgr.cacheSizeTotal () >> 20ULL ); ImGui::NextColumn (); 
+        ImGui::TextColored
+                       (ImVec4 (0.3f, 1.0f, 0.3f, 1.0f),
+                         "%#5lu     Hits",             tzf::RenderFix::tex_mgr.getHitCount    ()          );  ImGui::NextColumn ();
+      ImGui::Columns   ( 1 );
+
+      ImGui::Separator (   );
+
+      ImColor  active   ( 1.0f,  1.0f,  1.0f, 1.0f);
+      ImColor  inactive (0.75f, 0.75f, 0.75f, 1.0f);
+      ImColor& color   = __remap_textures ? inactive : active;
+
+      ImGui::Columns   ( 3 );
+        ImGui::TextColored ( color,
+                               "%#6zu MiB Base",
+                                                       tzf::RenderFix::tex_mgr.cacheSizeBasic () >> 20ULL );  ImGui::NextColumn (); 
+        if (ImGui::IsItemClicked ())
+          __remap_textures = false;
+
+        ImGui::TextColored
+                       (ImVec4 (1.0f, 0.3f, 0.3f, 1.0f),
+                         "%#5lu   Misses",             tzf::RenderFix::tex_mgr.getMissCount   ()          );  ImGui::NextColumn ();
+        ImGui::Text    ( "Time:    %#7.01lf  s  ", tzf::RenderFix::tex_mgr.getTimeSaved       () / 1000.0f);
+      ImGui::Columns   ( 1 );
+
+      ImGui::Separator (   );
+
+      color = __remap_textures ? active : inactive;
+
+      ImGui::Columns   ( 3 );
+        ImGui::TextColored ( color,
+                               "%#6zu MiB Injected",
+                                                       tzf::RenderFix::tex_mgr.cacheSizeInjected () >> 20ULL ); ImGui::NextColumn (); 
+
+        if (ImGui::IsItemClicked ())
+          __remap_textures = true;
+
+        ImGui::TextColored (ImVec4 (0.555f, 0.555f, 1.0f, 1.0f),
+                         "%.2f  Hit/Miss",          (double)tzf::RenderFix::tex_mgr.getHitCount  () / 
+                                                     (double)tzf::RenderFix::tex_mgr.getMissCount()          ); ImGui::NextColumn ();
+        ImGui::Text    ( "Driver: %#7zu MiB  ",    tzf::RenderFix::tex_mgr.getByteSaved      () >> 20ULL );
+
+      ImGui::PopStyleColor
+                       (   );
+      ImGui::Columns   ( 1 );
+
+#if 0
+      ImGui::Separator (   );
+
+      ImGui::TreePush  ("");
+      ImGui::Checkbox  ("Enable Texture QuickLoad", &config.textures.quick_load);
+      ImGui::TreePop   (  );
+      
       if (ImGui::IsItemHovered ())
       {
-        ImGui::BeginTooltip ();
-        ImGui::Text         ("Enabling this will cause the game to run slower and waste disk space, only enable if you know what you are doing.");
-        ImGui::EndTooltip   ();
+        ImGui::BeginTooltip  (  );
+          ImGui::TextColored ( ImVec4 (0.9f, 0.9f, 0.9f, 1.f), 
+                                 "Only read the first texture level-of-detail from disk and split generation of the rest across all available CPU cores." );
+          ImGui::Separator   (  );
+          ImGui::TreePush    ("");
+            ImGui::Bullet    (  ); ImGui::SameLine ();
+            ImGui::TextColored ( ImColor (0.95f, 0.75f, 0.25f, 1.0f), 
+                                   "Typically this reduces hitching and load-times, but some pop-in may "
+                                   "become visible on lower-end CPUs." );
+            ImGui::Bullet    (  ); ImGui::SameLine ();
+            ImGui::TextColored  ( ImColor (0.95f, 0.75f, 0.25f, 1.0f),
+                                   "Ideally, this should be used with texture compression disabled." );
+            ImGui::SameLine  (  );
+            ImGui::Text      ("[Quality/Generate Mipmaps]");
+          ImGui::TreePop     (  );
+        ImGui::EndTooltip    (  );
       }
-      ImGui::TreePop    ();
+
+      if (config.textures.quick_load) {
+        ImGui::SameLine ();
+
+        if (ImGui::SliderInt("# of Threads", &config.textures.worker_threads, 2, 10)) {
+          need_restart = true;
+        }
+
+        if (ImGui::IsItemHovered ())
+          ImGui::SetTooltip ("Lower is actually better, the only reason to adjust this would be if you have an absurd number of CPU cores and pop-in bothers you ;)");
+      }
+#endif
+
+      ImGui::EndChild    ( );
+      ImGui::PopStyleVar ( );
+      ImGui::TreePop     ( );
     }
+
+    if (ImGui::Button ("Texture Modding Tools")) {
+      show_texture_mod_dlg = (! show_texture_mod_dlg);
+    }
+
+    ImGui::TreePop ();
   }
 
 #if 0
@@ -351,6 +501,7 @@ TZFix_DrawConfigUI (void)
 
   if (ImGui::CollapsingHeader ("Aspect Ratio"))
   {
+    ImGui::TreePush ("");
     ImGui::Checkbox ("Use Aspect Ratio Correction Everywhere",     &config.render.aspect_correction);
     ImGui::TreePush ("");
     ImGui::Checkbox ("Clear non-16:9 Region in Menus",             &config.render.clear_blackbars);
@@ -360,10 +511,13 @@ TZFix_DrawConfigUI (void)
     {
         ImGui::Checkbox ("Apply Correction (only) to Bink Videos", &config.render.blackbar_videos);
     }
+    ImGui::TreePop ();
   }
 
   if (ImGui::CollapsingHeader ("Post-Processing"))
   {
+    ImGui::TreePush ("");
+
     if ( ImGui::SliderFloat ("Post-Process Resolution Scale", &config.render.postproc_ratio, 0.0f, 2.0f) )
       tzf::RenderFix::need_reset.graphics = true;
 
@@ -372,10 +526,14 @@ TZFix_DrawConfigUI (void)
     ImGui::Bullet         (); ImGui::SameLine ();
     ImGui::TextWrapped    ("Changes to these settings will produce weird results until you change Screen Mode in-game..." );
     ImGui::PopStyleColor  ();
+
+    ImGui::TreePop ();
   }
 
   if (ImGui::CollapsingHeader ("Shadow Quality"))
   {
+    ImGui::TreePush ("");
+
     struct shadow_imp_s
     {
       shadow_imp_s (int scale)
@@ -416,12 +574,118 @@ TZFix_DrawConfigUI (void)
       shadows.last_sel                    =  shadows.radio;
       tzf::RenderFix::need_reset.graphics = true;
     }
+
+    ImGui::TreePop ();
   }
 
   static bool need_restart = false;
 
-  if (ImGui::CollapsingHeader ("Audio Configuration"))
-  { 
+  if (ImGui::CollapsingHeader ("Audio", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen))
+  {
+    ImGui::TreePush ("");
+
+    if (ImGui::CollapsingHeader ("Volume Levels", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen))
+    {
+      IAudioMeterInformation* pMeterInfo =
+        TZFix_GetAudioMeterInfo ();
+
+      if (pMeterInfo != nullptr)
+      {
+        UINT channels = 0;
+
+        if (SUCCEEDED (pMeterInfo->GetMeteringChannelCount (&channels)))
+        {
+          static float channel_peaks_    [32];
+
+          if (channels < 4)
+          {
+            ImGui::TextColored ( ImVec4 (0.9f, 0.7f, 0.2f, 1.0f),
+                                   "WARNING: Do not select Surround in-game, you will be missing center channel audio on your hardware!" );
+            ImGui::Separator   ();
+          }
+
+          struct
+          {
+            struct {
+              float inst_min = FLT_MAX;  DWORD dwMinSample = 0;  float disp_min = FLT_MAX;
+              float inst_max = FLT_MIN;  DWORD dwMaxSample = 0;  float disp_max = FLT_MIN;
+            } vu_peaks;
+
+            float peaks [120];
+            int   current_idx;
+          } static history [32];
+
+          #define VUMETER_TIME 300
+
+          ImGui::Columns (2);
+
+          for (int i = 0 ; i < std::min (config.audio.channels, channels); i++)
+          {
+            if (SUCCEEDED (pMeterInfo->GetChannelsPeakValues (channels, channel_peaks_)))
+            {
+              history [i].vu_peaks.inst_min = std::min (history [i].vu_peaks.inst_min, channel_peaks_ [i]);
+              history [i].vu_peaks.inst_max = std::max (history [i].vu_peaks.inst_max, channel_peaks_ [i]);
+
+              history [i].vu_peaks.disp_min    = history [i].vu_peaks.inst_min;
+
+              if (history [i].vu_peaks.dwMinSample < timeGetTime () - VUMETER_TIME * 3) {
+                history [i].vu_peaks.inst_min    = channel_peaks_ [i];
+                history [i].vu_peaks.dwMinSample = timeGetTime ();
+              }
+
+              history [i].vu_peaks.disp_max    = history [i].vu_peaks.inst_max;
+
+              if (history [i].vu_peaks.dwMaxSample < timeGetTime () - VUMETER_TIME * 3) {
+                history [i].vu_peaks.inst_max    = channel_peaks_ [i];
+                history [i].vu_peaks.dwMaxSample = timeGetTime ();
+              }
+
+              history [i].peaks [history [i].current_idx] = channel_peaks_ [i];
+              history [i].current_idx = (history [i].current_idx + 1) % IM_ARRAYSIZE (history [i].peaks);
+
+              ImGui::BeginGroup ();
+
+              ImGui::PlotLines ( "",
+                                  history [i].peaks,
+                                    IM_ARRAYSIZE (history [i].peaks),
+                                      history [i].current_idx,
+                                        "",
+                                             history [i].vu_peaks.disp_min,
+                                             1.0f,
+                                              ImVec2 (ImGui::GetContentRegionAvailWidth (), 80) );
+
+              //char szName [64];
+              //sprintf (szName, "Channel: %lu", i);
+
+              ImGui::PushStyleColor (ImGuiCol_PlotHistogram,     ImVec4 (0.9f, 0.1f, 0.1f, 0.15f));
+              ImGui::ProgressBar    (history [i].vu_peaks.disp_max, ImVec2 (-1.0f, 0.0f));
+              ImGui::PopStyleColor  ();
+
+              ImGui::ProgressBar    (channel_peaks_ [i],          ImVec2 (-1.0f, 0.0f));
+
+              ImGui::PushStyleColor (ImGuiCol_PlotHistogram,     ImVec4 (0.1f, 0.1f, 0.9f, 0.15f));
+              ImGui::ProgressBar    (history [i].vu_peaks.disp_min, ImVec2 (-1.0f, 0.0f));
+              ImGui::PopStyleColor  ();
+              ImGui::EndGroup ();
+
+              if (! (i % 2))
+              {
+                ImGui::SameLine (); ImGui::NextColumn ();
+              } else {
+                ImGui::Columns   ( 1 );
+                ImGui::Separator (   );
+                ImGui::Columns   ( 2 );
+              }
+            }
+          }
+
+          ImGui::Columns (1);
+        }
+
+        pMeterInfo->Release ();
+      }
+    }
+
     if (tzf::SoundFix::wasapi_init) {
       ImGui::PushStyleVar (ImGuiStyleVar_ChildWindowRounding, 16.0f);
       ImGui::BeginChild  ("Audio Details", ImVec2 (0, 80), true);
@@ -471,6 +735,8 @@ TZFix_DrawConfigUI (void)
         ImGui::SetTooltip ("May reduce audio quality, but can help with some weird USB headsets and Windows 7 / Older.");
       ImGui::TreePop  ();
     }
+
+    ImGui::TreePop ();
   }
 
   ImGui::PopItemWidth ();
@@ -524,6 +790,11 @@ TZFix_DrawConfigUI (void)
     ImGui::ShowTestWindow   (&show_test_window);
   }
 
+  if (show_texture_mod_dlg)
+  {
+    show_texture_mod_dlg = TZFix_TextureModDlg ();
+  }
+
   if ( SUCCEEDED (
          tzf::RenderFix::pDevice->BeginScene ()
        )
@@ -555,13 +826,15 @@ TZFix_ImGui_DrawFrame (DWORD dwFlags, void* user)
 void
 TZFix_ImGui_Init (void)
 {
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
                         "SK_ImGui_Toggle",
                         TZFix_ToggleConfigUI,
              (LPVOID *)&SK_ImGui_Toggle_Original );
 
-  TZF_CreateDLLHook ( config.system.injector.c_str (),
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
                         "SK_ImGui_DrawFrame",
                      TZFix_ImGui_DrawFrame,
              (LPVOID *)&SK_ImGui_DrawFrame_Original );
+
+  TZF_ApplyQueuedHooks ();
 }

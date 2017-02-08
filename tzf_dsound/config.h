@@ -80,15 +80,17 @@ struct tzf_config_t
   } render;
 
   struct {
-    bool     dump               = false;
-    bool     remaster           = false;
-    bool     cache              = true;
-    int32_t  max_cache_in_mib   = 2048L;
-    int32_t  worker_threads     = 6;
-    bool     show_loading_text  = true;
-    float    lod_bias           = 0.0f;
-    std::wstring
-             gamepad            = L"Xbox360";
+    bool     dump                = false;
+    bool     remaster            = false;
+    bool     cache               = true;
+    int32_t  max_cache_in_mib    = 2048L;
+    int32_t  worker_threads      = 6;
+    bool     show_loading_text   = true;
+    float    lod_bias            = 0.0f;
+    std::wstring                 
+             gamepad             = L"Xbox360";
+    bool     on_demand_dump      = false;
+    bool     highlight_debug_tex = true;
   } textures;
 
   struct {

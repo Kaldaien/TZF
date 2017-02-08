@@ -213,6 +213,38 @@ SKPlugIn_Init (HMODULE hModSpecialK)
   return TRUE;
 }
 
+__declspec (dllexport)
+BOOL
+WINAPI
+SKPlugIn_Shutdown (LPVOID* lpReserved)
+{
+  UNREFERENCED_PARAMETER (lpReserved);
+
+  if (dll_log != nullptr) {
+    tzf::SoundFix::Shutdown     ();
+    tzf::FileIO::Shutdown       ();
+    tzf::SteamFix::Shutdown     ();
+    tzf::RenderFix::Shutdown    ();
+    tzf::FrameRateFix::Shutdown ();
+    tzf::KeyboardFix::Shutdown  ();
+
+    TZF_SaveConfig     ();
+    TZF_UnInit_MinHook ();
+
+
+    dll_log->LogEx ( false, L"=========== (Version: v %s) "
+                            L"===========\n",
+                              TZF_VER_STR.c_str () );
+    dll_log->LogEx ( true,  L"End TZFix Plug-In\n" );
+    dll_log->LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
+                            L"-------\n" );
+
+    dll_log->close ();
+  }
+
+  return TRUE;
+}
+
 BOOL
 APIENTRY
 DllMain (HMODULE hModule,
@@ -232,27 +264,6 @@ DllMain (HMODULE hModule,
 
     case DLL_PROCESS_DETACH:
     {
-      if (dll_log != nullptr) {
-        tzf::SoundFix::Shutdown     ();
-        tzf::FileIO::Shutdown       ();
-        tzf::SteamFix::Shutdown     ();
-        tzf::RenderFix::Shutdown    ();
-        tzf::FrameRateFix::Shutdown ();
-        tzf::KeyboardFix::Shutdown  ();
-
-        TZF_UnInit_MinHook ();
-        TZF_SaveConfig     ();
-
-
-        dll_log->LogEx ( false, L"=========== (Version: v %s) "
-                                L"===========\n",
-                                  TZF_VER_STR.c_str () );
-        dll_log->LogEx ( true,  L"End TZFix Plug-In\n" );
-        dll_log->LogEx ( false, L"------- [Tales of Zestiria  \"Fix\"] "
-                                L"-------\n" );
-
-        dll_log->close ();
-      }
     } break;
   }
 

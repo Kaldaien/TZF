@@ -20,6 +20,8 @@
 *
 **/
 
+#define NOMINMAX
+
 #include "render.h"
 #include "framerate.h"
 #include "config.h"
@@ -362,8 +364,8 @@ D3D9SetVertexShader_Detour (IDirect3DDevice9*       This,
   }
 #endif
 
-  if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
-    return D3D9SetVertexShader_Original (This, pShader);
+  //if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
+    //return D3D9SetVertexShader_Original (This, pShader);
 
 
   if (g_pVS != pShader) {
@@ -425,8 +427,8 @@ D3D9SetPixelShader_Detour (IDirect3DDevice9*      This,
   }
 #endif
 
-  if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
-    return D3D9SetPixelShader_Original (This, pShader);
+  //if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
+    //return D3D9SetPixelShader_Original (This, pShader);
 
 
   if (g_pPS != pShader) {
@@ -503,6 +505,8 @@ int draw_count  = 0;
 int next_draw   = 0;
 int scene_count = 0;
 
+std::string mod_text;
+
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -512,14 +516,17 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
   if (This != tzf::RenderFix::pDevice)
     return D3D9EndScene_Original (This);
 
-  if (pending_loads ()) {
-    TZFix_LoadQueuedTextures ();
-  }
+  //if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
+    //return D3D9EndScene_Original (This);
 
   // EndScene is invoked multiple times per-frame, but we
   //   are only interested in the first.
   if (scene_count++ > 0)
     return D3D9EndScene_Original (This);
+
+  if (pending_loads ()) {
+    TZFix_LoadQueuedTextures ();
+  }
 
   if ( ((game_state.hasFixedAspect ()     &&
          config.render.aspect_correction) ||
@@ -587,10 +594,62 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
 
   HRESULT hr = D3D9EndScene_Original (This);
 
+  tzf::RenderFix::draw_state.cegui_active = true;
+
   if (SUCCEEDED (hr))
   {
-    // Don't aspect ratio correct the config UI!
-    tzf::RenderFix::draw_state.cegui_active = true;
+  typedef BOOL (__stdcall *SKX_DrawExternalOSD_pfn)(const char* szAppName, const char* szText);
+
+  static HMODULE               hMod =
+    GetModuleHandle (config.system.injector.c_str ());
+  static SKX_DrawExternalOSD_pfn SKX_DrawExternalOSD
+    =
+    (SKX_DrawExternalOSD_pfn)GetProcAddress (hMod, "SKX_DrawExternalOSD");
+
+  static DWORD dwFirstTime     = timeGetTime ();
+  static bool  show_disclaimer = true;
+
+  if (show_disclaimer)
+  {
+    if (timeGetTime() > dwFirstTime + 10000UL)
+      show_disclaimer = false;
+
+    SKX_DrawExternalOSD ("ToZFix", "Press Ctrl + Shift + O         to toggle In-Game OSD\n"
+                                   "Press Ctrl + Shift + Backspace to access In-Game Config Menu");
+  }
+
+  else
+  {
+    extern bool  __show_cache;
+    extern DWORD last_queue_update;
+
+    if (last_queue_update + 250 < timeGetTime ())
+      mod_text = "";
+
+    if (__show_cache)
+    {
+      std::string output;
+
+      output  = "Texture Cache\n";
+      output += "-------------\n";
+      output += tzf::RenderFix::tex_mgr.osdStats ();
+
+      if (! mod_text.empty ()) {
+        output += "\n";
+        output += mod_text;
+      }
+
+      SKX_DrawExternalOSD ("ToZFix", output.c_str ());
+
+      output = "";
+    }
+
+    else if (config.textures.show_loading_text)
+      SKX_DrawExternalOSD ("ToZFix", mod_text.c_str ());
+
+    else
+      SKX_DrawExternalOSD ("ToZFix", "");
+  }
   }
 
   game_state.in_skit = false;
@@ -622,7 +681,8 @@ D3D9EndFrame_Pre (void)
     tzf::RenderFix::tex_mgr.Init ();
   }
 
-  tzf::RenderFix::draw_state.cegui_active = true;
+  //if (GetCurrentThreadId () != InterlockedExchangeAdd (&tzf::RenderFix::dwRenderThreadID, 0))
+    //return SK_BeginBufferSwap ();
 
   void TZFix_LogUsedTextures (void);
   TZFix_LogUsedTextures ();
@@ -630,10 +690,8 @@ D3D9EndFrame_Pre (void)
   if (! config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
-  return SK_BeginBufferSwap ();
+  SK_BeginBufferSwap ();
 }
-
-std::string mod_text;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -644,49 +702,16 @@ D3D9EndFrame_Post (HRESULT hr, IUnknown* device)
   if (device != tzf::RenderFix::pDevice)
     return SK_EndBufferSwap (hr, device);
 
-  tzf::RenderFix::draw_state.cegui_active = false;
-
   scene_count = 0;
 
-  tzf::RenderFix::dwRenderThreadID = GetCurrentThreadId ();
+  InterlockedExchange (&tzf::RenderFix::dwRenderThreadID, GetCurrentThreadId ());
 
   hr = SK_EndBufferSwap (hr, device);
-
-  extern bool pending_loads (void);
-  if (pending_loads ()) {
-    extern void TZFix_LoadQueuedTextures (void);
-    TZFix_LoadQueuedTextures ();
-  }
 
   if (config.framerate.minimize_latency)
     tzf::FrameRateFix::RenderTick ();
 
-  typedef BOOL (__stdcall *SK_DrawExternalOSD_pfn)(std::string app_name, std::string text);
-
-  static HMODULE               hMod =
-    GetModuleHandle (config.system.injector.c_str ());
-  static SK_DrawExternalOSD_pfn SK_DrawExternalOSD
-    =
-    (SK_DrawExternalOSD_pfn)GetProcAddress (hMod, "SK_DrawExternalOSD");
-
-  extern bool __show_cache;
-
-  if (__show_cache) {
-    static std::string output;
-
-    output  = "Texture Cache\n";
-    output += "-------------\n";
-    output += tzf::RenderFix::tex_mgr.osdStats ();
-
-    output += mod_text;
-
-    SK_DrawExternalOSD ("ToZFix", output);
-
-    output   = "";
-  } else
-    SK_DrawExternalOSD ("ToZFix", mod_text);
-
-  mod_text = "";
+  tzf::RenderFix::draw_state.cegui_active = false;
 
   return hr;
 }
@@ -1500,7 +1525,6 @@ tzf::RenderFix::Reset (  IDirect3DDevice9      *This,
   tex_mgr.reset              ();
   
   need_reset.textures = false;
-
   need_reset.graphics = false;
 
   vs_checksums.clear ();
@@ -1536,13 +1560,6 @@ D3D9Reset_Detour ( IDirect3DDevice9      *This,
   if (SUCCEEDED (hr))
   {
     HWND hWnd = pPresentationParameters->hDeviceWindow;
-
-    DWORD dwStyle =
-      GetClassLong ( hWnd, GCL_STYLE );
-
-    dwStyle &= ~(CS_DBLCLKS);
-
-    SetClassLong ( hWnd, GCL_STYLE, dwStyle );
   }
 
   return hr;
@@ -1755,14 +1772,16 @@ tzf::RenderFix::CommandProcessor::OnVarChange (SK_IVariable* var, void* val)
 }
 
 
-tzf::RenderFix::CommandProcessor* tzf::RenderFix::CommandProcessor::pCommProc;
+tzf::RenderFix::CommandProcessor*
+                   tzf::RenderFix::CommandProcessor::pCommProc
+                                                       = nullptr;
 
-HWND              tzf::RenderFix::hWndDevice = NULL;
-IDirect3DDevice9* tzf::RenderFix::pDevice    = nullptr;
+HWND               tzf::RenderFix::hWndDevice          = NULL;
+IDirect3DDevice9*  tzf::RenderFix::pDevice             = nullptr;
 
-uint32_t tzf::RenderFix::width            = 0UL;
-uint32_t tzf::RenderFix::height           = 0UL;
-uint32_t tzf::RenderFix::dwRenderThreadID = 0UL;
+          uint32_t tzf::RenderFix::width               = 0UL;
+          uint32_t tzf::RenderFix::height              = 0UL;
+volatile ULONG     tzf::RenderFix::dwRenderThreadID    = 0UL;
 
 IDirect3DSurface9* tzf::RenderFix::pPostProcessSurface = nullptr;
 bool               tzf::RenderFix::bink                = false;

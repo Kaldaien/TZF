@@ -1,4 +1,5 @@
 LIBRARY "tzfix"
 
 EXPORTS
-  SKPlugIn_Init = SKPlugIn_Init @1
+  SKPlugIn_Init     = SKPlugIn_Init     @1
+  SKPlugIn_Shutdown = SKPlugIn_Shutdown @2

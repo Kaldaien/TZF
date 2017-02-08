@@ -22,6 +22,8 @@
 #ifndef __TZFIX__TEXTURES_H__
 #define __TZFIX__TEXTURES_H__
 
+#define NOMINMAX
+
 #include "log.h"
 extern iSK_Logger* tex_log;
 
@@ -30,8 +32,37 @@ extern iSK_Logger* tex_log;
 
 #include <set>
 #include <map>
+#include <limits>
+#include <cstdint>
+#include <algorithm>
 
 interface ISKTextureD3D9;
+
+
+typedef enum D3DXIMAGE_FILEFORMAT {
+  D3DXIFF_BMP = 0,
+  D3DXIFF_JPG = 1,
+  D3DXIFF_TGA = 2,
+  D3DXIFF_PNG = 3,
+  D3DXIFF_DDS = 4,
+  D3DXIFF_PPM = 5,
+  D3DXIFF_DIB = 6,
+  D3DXIFF_HDR = 7,
+  D3DXIFF_PFM = 8,
+  D3DXIFF_FORCE_DWORD = 0x7fffffff
+} D3DXIMAGE_FILEFORMAT, *LPD3DXIMAGE_FILEFORMAT;
+
+#define D3DX_DEFAULT ((UINT) -1)
+typedef struct D3DXIMAGE_INFO {
+  UINT                 Width;
+  UINT                 Height;
+  UINT                 Depth;
+  UINT                 MipLevels;
+  D3DFORMAT            Format;
+  D3DRESOURCETYPE      ResourceType;
+  D3DXIMAGE_FILEFORMAT ImageFileFormat;
+} D3DXIMAGE_INFO, *LPD3DXIMAGE_INFO;
+
 
 namespace tzf {
 namespace RenderFix {
@@ -106,6 +137,7 @@ namespace RenderFix {
     IDirect3DTexture9* tex_xbox   = nullptr;
   } extern pad_buttons;
 
+
   class TextureManager {
   public:
     void Init     (void);
@@ -116,13 +148,20 @@ namespace RenderFix {
     tzf::RenderFix::Texture* getTexture (uint32_t crc32);
     void                     addTexture (uint32_t crc32, tzf::RenderFix::Texture* pTex, size_t size);
 
+    bool                     reloadTexture (uint32_t crc32);
+
     // Record a cached reference
-    void                     refTexture (tzf::RenderFix::Texture* pTex);
+    void                     refTexture  (tzf::RenderFix::Texture* pTex);
+
+    // Similar, just call this to indicate a cache miss
+    void                     missTexture (void) {
+      InterlockedIncrement (&misses);
+    }
 
     void                     reset (void);
     void                     purge (void); // WIP
 
-    int                      numTextures (void) {
+    size_t                   numTextures (void) {
       return textures.size ();
     }
     int                      numInjectedTextures (void);
@@ -141,10 +180,35 @@ namespace RenderFix {
     std::string              osdStats  (void) { return osd_stats; }
     void                     updateOSD (void);
 
+
+    float                    getTimeSaved (void) { return time_saved;                               }
+    LONG64                   getByteSaved (void) { return InterlockedAdd64       (&bytes_saved, 0); }
+    ULONG                    getHitCount  (void) { return InterlockedExchangeAdd (&hits,   0UL);    }
+    ULONG                    getMissCount (void) { return InterlockedExchangeAdd (&misses, 0UL);    }
+
+
+
+    BOOL                     isTexturePowerOfTwo (UINT sampler)
+    {
+      return sampler_flags [sampler < 255 ? sampler : 255].power_of_two;
+    }
+
+    // Sttate of the active texture for each sampler,
+    //   needed to correct some texture coordinate address
+    //     problems in the base game.
+    struct
+    {
+      BOOL power_of_two;
+    } sampler_flags [256] = { 0 };
+
+
   private:
     std::unordered_map <uint32_t, tzf::RenderFix::Texture*> textures;
     float                                                   time_saved     = 0.0f;
+    LONG64                                                  bytes_saved    = 0LL;
+
     ULONG                                                   hits           = 0UL;
+    ULONG                                                   misses         = 0UL;
 
     LONG64                                                  basic_size     = 0LL;
     LONG64                                                  injected_size  = 0LL;
@@ -352,29 +416,6 @@ public:
                                       //     set when SetTexture (...) is called.
 };
 
-typedef enum D3DXIMAGE_FILEFORMAT { 
-  D3DXIFF_BMP          = 0,
-  D3DXIFF_JPG          = 1,
-  D3DXIFF_TGA          = 2,
-  D3DXIFF_PNG          = 3,
-  D3DXIFF_DDS          = 4,
-  D3DXIFF_PPM          = 5,
-  D3DXIFF_DIB          = 6,
-  D3DXIFF_HDR          = 7,
-  D3DXIFF_PFM          = 8,
-  D3DXIFF_FORCE_DWORD  = 0x7fffffff
-} D3DXIMAGE_FILEFORMAT, *LPD3DXIMAGE_FILEFORMAT;
-
-#define D3DX_DEFAULT ((UINT) -1)
-typedef struct D3DXIMAGE_INFO {
-  UINT                 Width;
-  UINT                 Height;
-  UINT                 Depth;
-  UINT                 MipLevels;
-  D3DFORMAT            Format;
-  D3DRESOURCETYPE      ResourceType;
-  D3DXIMAGE_FILEFORMAT ImageFileFormat;
-} D3DXIMAGE_INFO, *LPD3DXIMAGE_INFO;
 typedef HRESULT (STDMETHODCALLTYPE *D3DXCreateTextureFromFileInMemoryEx_pfn)
 (
   _In_        LPDIRECT3DDEVICE9  pDevice,
@@ -465,6 +506,41 @@ typedef HRESULT (STDMETHODCALLTYPE *SetDepthStencilSurface_pfn)(
   _In_ IDirect3DDevice9      *This,
   _In_ IDirect3DSurface9     *pNewZStencil
 );
+
+
+HRESULT
+TZF_DumpTexture (D3DFORMAT fmt, uint32_t checksum, IDirect3DTexture9* pTex);
+
+bool
+TZF_IsTextureDumped (uint32_t checksum);
+
+bool
+TZF_DeleteDumpedTexture (D3DFORMAT fmt, uint32_t checksum);
+
+enum tzf_load_method_t {
+  Streaming,
+  Blocking,
+  DontCare
+};
+
+struct tzf_tex_record_s {
+  unsigned int               archive = std::numeric_limits <unsigned int>::max ();
+           int               fileno  = 0UL;
+  enum     tzf_load_method_t method  = DontCare;
+           size_t            size    = 0UL;
+};
+
+std::vector <std::wstring>
+TZF_GetTextureArchives (void);
+
+std::vector < std::pair < uint32_t, tzf_tex_record_s > >
+TZF_GetInjectableTextures (void);
+
+tzf_tex_record_s*
+TZF_GetInjectableTexture (uint32_t checksum);
+
+void
+TZF_RefreshDataSources (void);
 
 
 #endif /* __TZFIX__TEXTURES_H__ */

@@ -44,8 +44,7 @@ namespace tzf
     {
       bool     graphics   =   false;
       bool     textures   =   false;
-    } extern
-        need_reset;
+    } extern need_reset;
 
     class CommandProcessor : public SK_IVariableListener {
     public:
@@ -76,7 +75,7 @@ namespace tzf
     extern IDirect3DDevice9*  pDevice;
     extern HWND               hWndDevice;
 
-    extern uint32_t           dwRenderThreadID;
+    extern volatile ULONG     dwRenderThreadID;
     extern bool               bink; // True if a bink video is playing
 
     extern HMODULE            d3dx9_43_dll;

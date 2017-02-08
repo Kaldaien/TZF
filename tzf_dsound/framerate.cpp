@@ -22,6 +22,9 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 
+#define NOMINMAX
+#include <algorithm>
+
 #include "framerate.h"
 #include "config.h"
 #include "log.h"
@@ -516,8 +519,6 @@ tzf::FrameRateFix::Init (void)
                        CreateTimerQueueTimer_Override,
             (LPVOID *)&CreateTimerQueueTimer_Original );
 
-  TZF_ApplyQueuedHooks ();
-
   if (true) {
     if (*((DWORD *)config.framerate.speedresetcode_addr) != 0x428CB08D) {
       uint8_t sig [] = { 0x8D, 0xB0, 0x8C, 0x42,
@@ -721,11 +722,13 @@ tzf::FrameRateFix::Init (void)
 
   // Hook this no matter what, because it lowers the _REPORTED_ CPU usage,
   //   and some people would object if we suddenly changed this behavior :P
-  TZF_CreateDLLHook ( config.system.injector.c_str (), "Sleep_Detour",
-                      Sleep_Detour, 
-           (LPVOID *)&Sleep_Original,
-           (LPVOID *)&pfnSleep );
-  TZF_EnableHook (pfnSleep);
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (), "Sleep_Detour",
+                       Sleep_Detour, 
+            (LPVOID *)&Sleep_Original,
+         (LPVOID *)&pfnSleep );
+
+  TZF_ApplyQueuedHooks ();
+  TZF_EnableHook       (pfnSleep);
 
   pCmdProc->AddVariable ("AllowFakeSleep", TZF_CreateVar (SK_IVariable::Boolean, &config.framerate.allow_fake_sleep));
   pCmdProc->AddVariable ("YieldProcessor", TZF_CreateVar (SK_IVariable::Boolean, &config.framerate.yield_processor));
@@ -888,10 +891,10 @@ tzf::FrameRateFix::CalcTickScale (double elapsed_ms)
   const double tick_ms  = (1.0 / 60.0) * 1000.0;
   const double inv_rate =  1.0 / target_fps;
 
-  long scale = min (max (elapsed_ms / tick_ms, 1), 7);
+  long scale = std::min (std::max (elapsed_ms / tick_ms, 1.0), 7.0);
 
   if (scale > 6)
-    scale = max (inv_rate / (1.0 / 60.0), 1);
+    scale = std::max (inv_rate / (1.0 / 60.0), 1.0);
 
   return scale;
 }

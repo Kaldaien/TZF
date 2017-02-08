@@ -21,8 +21,10 @@
 **/
 
 #define _CRT_SECURE_NO_WARNINGS
+#define NOMINMAX
 
 #include <string>
+#include <algorithm>
 
 #include "hook.h"
 #include "log.h"
@@ -198,14 +200,20 @@ SK_TZF_PluginKeyPress ( BOOL Control,
 
     else if (vkCode == VK_OEM_6) {
       extern std::vector <uint32_t> textures_used_last_dump;
-      extern int                    tex_dbg_idx;
+      extern uint32_t               tex_dbg_idx;
       ++tex_dbg_idx;
 
-      if (tex_dbg_idx > textures_used_last_dump.size ())
-        tex_dbg_idx = textures_used_last_dump.size ();
+      extern uint32_t debug_tex_id;
 
-      extern int debug_tex_id;
-      debug_tex_id = (int)textures_used_last_dump [tex_dbg_idx];
+      if ((int32_t)tex_dbg_idx < 0 || (! textures_used_last_dump.size ())) {
+        tex_dbg_idx  = -1;
+        debug_tex_id =  0;
+      } else {
+        if (tex_dbg_idx >= textures_used_last_dump.size ())
+          tex_dbg_idx = std::max (0UL, (uint32_t)textures_used_last_dump.size () - 1UL);
+
+        debug_tex_id = textures_used_last_dump [tex_dbg_idx];
+      }
 
       tzf::RenderFix::tex_mgr.updateOSD ();
 
@@ -214,19 +222,19 @@ SK_TZF_PluginKeyPress ( BOOL Control,
 
     else if (vkCode == VK_OEM_4) {
       extern std::vector <uint32_t> textures_used_last_dump;
-      extern int                    tex_dbg_idx;
-      extern int                    debug_tex_id;
+      extern uint32_t               tex_dbg_idx;
+      extern uint32_t               debug_tex_id;
 
       --tex_dbg_idx;
 
-      if (tex_dbg_idx < 0) {
-        tex_dbg_idx = -1;
-        debug_tex_id = 0;
+      if ((int32_t)tex_dbg_idx < 0 || (! textures_used_last_dump.size ())) {
+        tex_dbg_idx  = -1;
+        debug_tex_id =  0;
       } else {
-        if (tex_dbg_idx > textures_used_last_dump.size ())
-          tex_dbg_idx = textures_used_last_dump.size ();
+        if (tex_dbg_idx >= textures_used_last_dump.size ())
+          tex_dbg_idx = std::max (0UL, (uint32_t)textures_used_last_dump.size () - 1UL);
 
-        debug_tex_id = (int)textures_used_last_dump [tex_dbg_idx];
+        debug_tex_id = textures_used_last_dump [tex_dbg_idx];
       }
 
       tzf::RenderFix::tex_mgr.updateOSD ();

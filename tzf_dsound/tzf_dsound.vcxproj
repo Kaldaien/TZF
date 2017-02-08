@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
@@ -29,26 +29,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -185,6 +185,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <SDLCheck>false</SDLCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <AdditionalIncludeDirectories>include\</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -223,6 +224,8 @@
       <CreateHotpatchableImage>true</CreateHotpatchableImage>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>false</OmitFramePointers>
+      <AdditionalIncludeDirectories>
+      </AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -287,6 +290,48 @@
     </ClCompile>
     <Text Include="keyboard.h" />
     <ClCompile Include="log.cpp" />
+    <ClCompile Include="lzma\7zAlloc.c" />
+    <ClCompile Include="lzma\7zArcIn.c" />
+    <ClCompile Include="lzma\7zBuf.c" />
+    <ClCompile Include="lzma\7zBuf2.c" />
+    <ClCompile Include="lzma\7zCrc.c" />
+    <ClCompile Include="lzma\7zCrcOpt.c" />
+    <ClCompile Include="lzma\7zDec.c" />
+    <ClCompile Include="lzma\7zFile.c" />
+    <ClCompile Include="lzma\7zStream.c" />
+    <ClCompile Include="lzma\Aes.c" />
+    <ClCompile Include="lzma\AesOpt.c" />
+    <ClCompile Include="lzma\Alloc.c" />
+    <ClCompile Include="lzma\Bcj2.c" />
+    <ClCompile Include="lzma\Bcj2Enc.c" />
+    <ClCompile Include="lzma\Bra.c" />
+    <ClCompile Include="lzma\Bra86.c" />
+    <ClCompile Include="lzma\BraIA64.c" />
+    <ClCompile Include="lzma\CpuArch.c" />
+    <ClCompile Include="lzma\Delta.c" />
+    <ClCompile Include="lzma\LzFind.c" />
+    <ClCompile Include="lzma\LzFindMt.c" />
+    <ClCompile Include="lzma\Lzma2Dec.c" />
+    <ClCompile Include="lzma\Lzma2Enc.c" />
+    <ClCompile Include="lzma\Lzma86Dec.c" />
+    <ClCompile Include="lzma\Lzma86Enc.c" />
+    <ClCompile Include="lzma\LzmaDec.c" />
+    <ClCompile Include="lzma\LzmaEnc.c" />
+    <ClCompile Include="lzma\LzmaLib.c" />
+    <ClCompile Include="lzma\MtCoder.c" />
+    <ClCompile Include="lzma\Ppmd7.c" />
+    <ClCompile Include="lzma\Ppmd7Dec.c" />
+    <ClCompile Include="lzma\Ppmd7Enc.c" />
+    <ClCompile Include="lzma\Sha256.c" />
+    <ClCompile Include="lzma\Sort.c" />
+    <ClCompile Include="lzma\Threads.c" />
+    <ClCompile Include="lzma\Xz.c" />
+    <ClCompile Include="lzma\XzCrc64.c" />
+    <ClCompile Include="lzma\XzCrc64Opt.c" />
+    <ClCompile Include="lzma\XzDec.c" />
+    <ClCompile Include="lzma\XzEnc.c" />
+    <ClCompile Include="lzma\XzIn.c" />
+    <ClCompile Include="mod_tools.cpp" />
     <ClCompile Include="parameter.cpp" />
     <ClCompile Include="render.cpp" />
     <ClCompile Include="scanner.cpp" />
