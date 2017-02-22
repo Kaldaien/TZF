@@ -204,9 +204,45 @@ TZFix_DrawConfigUI (void)
   ImGuiIO& io =
     ImGui::GetIO ();
 
-  ImGui::SetNextWindowPosCenter       (ImGuiSetCond_Always);
-  ImGui::SetNextWindowSizeConstraints (ImVec2 (500, 50),  ImVec2 ( ImGui::GetIO ().DisplaySize.x * 0.95f,
-                                                                    ImGui::GetIO ().DisplaySize.y * 0.95f ) );
+  static bool first_frame = true;
+
+  extern HMODULE hInjectorDLL;
+
+  typedef void (__stdcall *SK_ImGui_DrawEULA_pfn)(LPVOID reserved);
+
+  static SK_ImGui_DrawEULA_pfn SK_ImGui_DrawEULA =
+    (SK_ImGui_DrawEULA_pfn)GetProcAddress ( hInjectorDLL,
+                                              "SK_ImGui_DrawEULA" );
+
+  struct {
+    bool show             = true;
+    bool never_show_again = config.input.ui.never_show_eula;
+  } static show_eula;
+  
+  if (show_eula.show && (! show_eula.never_show_again)) {
+    SK_ImGui_DrawEULA (&show_eula);
+
+    if (show_eula.never_show_again) config.input.ui.never_show_eula = true;
+  }
+
+  static int frame = 0;
+
+  if (frame++ < 10)
+    ImGui::SetNextWindowPosCenter (ImGuiSetCond_Always);
+
+  if (io.DisplaySize.x != tzf::RenderFix::width ||
+      io.DisplaySize.y != tzf::RenderFix::height)
+  {
+    frame = 0;
+
+    io.DisplaySize.x = (float)tzf::RenderFix::width;
+    io.DisplaySize.y = (float)tzf::RenderFix::height;
+
+    ImGui::SetNextWindowPosCenter (ImGuiSetCond_Always);;
+  }
+
+  ImGui::SetNextWindowSizeConstraints (ImVec2 (500, 50),  ImVec2 ( ImGui::GetIO ().DisplaySize.x * 0.85f,
+                                                                    ImGui::GetIO ().DisplaySize.y * 0.85f ) );
 
   if (was_reset) {
     ImGui::SetNextWindowSize (ImVec2 (500, 50), ImGuiSetCond_Always);
@@ -223,6 +259,20 @@ TZFix_DrawConfigUI (void)
                );
 
   ImGui::PushItemWidth (ImGui::GetWindowWidth () * 0.666f);
+
+  if (ImGui::CollapsingHeader ("UI Scale"))
+  {
+    ImGui::TreePush    ("");
+
+    ImGui::SliderFloat ("Scale (only 1.0 is officially supported)", &config.input.ui.scale, 1.0f, 3.0f);
+
+    ImGui::TreePop     ();
+  }
+
+      io.FontGlobalScale = config.input.ui.scale;
+  const  float font_size           =  ImGui::GetFont ()->FontSize                                     * io.FontGlobalScale;
+  const  float font_size_multiline = font_size + ImGui::GetStyle ().ItemSpacing.y + ImGui::GetStyle ().ItemInnerSpacing.y;
+
 
   if (ImGui::CollapsingHeader ("Framerate Control", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen))
   {
@@ -284,12 +334,12 @@ TZFix_DrawConfigUI (void)
                                   szAvg,
                                     0.0f,
                                       2.0f * tzf::FrameRateFix::GetTargetFrametime (),
-                                        ImVec2 ( 600, 82 ) );
+                                        ImVec2 (0, font_size * 7) );
                         
     ImGui::SameLine     ();
 
     ImGui::PushItemWidth (210);
-    ImGui::BeginChild   ( "Sub2", ImVec2 ( 210, 82 ), true );
+    ImGui::BeginChild   ( "Sub2", ImVec2 ( font_size * 30, font_size * 7 ), true );
 
     int cutscene = 0, battle = 0, world = 0;
 
@@ -378,7 +428,10 @@ TZFix_DrawConfigUI (void)
 
       ImGui::PushStyleVar(ImGuiStyleVar_ChildWindowRounding, 15.0f);
       ImGui::TreePush  ("");
-      ImGui::BeginChild  ("Texture Details", ImVec2 (0, 100), true);
+
+      ImGui::BeginChild  ("Texture Details", ImVec2 ( font_size           * 70,
+                                                      font_size_multiline * 6.1f ),
+                                               true );
 
       ImGui::Columns   ( 3 );
         ImGui::PushStyleColor (ImGuiCol_Text, ImVec4 (1.0f, 1.0f, 1.0f, 1.0f));
@@ -399,6 +452,8 @@ TZFix_DrawConfigUI (void)
         ImGui::TextColored
                        (ImVec4 (0.3f, 1.0f, 0.3f, 1.0f),
                          "%#5lu     Hits",             tzf::RenderFix::tex_mgr.getHitCount    ()          );  ImGui::NextColumn ();
+        ImGui::Text    ( "Budget: %#7zu MiB  ",        tzf::RenderFix::pDevice->
+                                                                       GetAvailableTextureMem ()  / 1048576UL );
       ImGui::Columns   ( 1 );
 
       ImGui::Separator (   );
@@ -417,7 +472,7 @@ TZFix_DrawConfigUI (void)
         ImGui::TextColored
                        (ImVec4 (1.0f, 0.3f, 0.3f, 1.0f),
                          "%#5lu   Misses",             tzf::RenderFix::tex_mgr.getMissCount   ()          );  ImGui::NextColumn ();
-        ImGui::Text    ( "Time:    %#7.01lf  s  ", tzf::RenderFix::tex_mgr.getTimeSaved       () / 1000.0f);
+        ImGui::Text    ( "Time:    %#6.04lf  s  ", tzf::RenderFix::tex_mgr.getTimeSaved       () / 1000.0f);
       ImGui::Columns   ( 1 );
 
       ImGui::Separator (   );
@@ -434,19 +489,18 @@ TZFix_DrawConfigUI (void)
 
         ImGui::TextColored (ImVec4 (0.555f, 0.555f, 1.0f, 1.0f),
                          "%.2f  Hit/Miss",          (double)tzf::RenderFix::tex_mgr.getHitCount  () / 
-                                                     (double)tzf::RenderFix::tex_mgr.getMissCount()          ); ImGui::NextColumn ();
-        ImGui::Text    ( "Driver: %#7zu MiB  ",    tzf::RenderFix::tex_mgr.getByteSaved      () >> 20ULL );
+                                                    (double)tzf::RenderFix::tex_mgr.getMissCount ()          ); ImGui::NextColumn ();
+        ImGui::Text    ( "Driver: %#7zu MiB  ",    tzf::RenderFix::tex_mgr.getByteSaved          () >> 20ULL );
 
       ImGui::PopStyleColor
                        (   );
       ImGui::Columns   ( 1 );
 
-#if 0
       ImGui::Separator (   );
 
+#if 0
       ImGui::TreePush  ("");
       ImGui::Checkbox  ("Enable Texture QuickLoad", &config.textures.quick_load);
-      ImGui::TreePop   (  );
       
       if (ImGui::IsItemHovered ())
       {
@@ -471,23 +525,55 @@ TZFix_DrawConfigUI (void)
       if (config.textures.quick_load) {
         ImGui::SameLine ();
 
-        if (ImGui::SliderInt("# of Threads", &config.textures.worker_threads, 2, 10)) {
+        
+        if (ImGui::SliderInt ("# of Threads", &config.textures.worker_threads, 3, 9))
+        {
+          // Only allow odd numbers of threads
+          config.textures.worker_threads += 1 - (config.textures.worker_threads & 0x1);
+
           need_restart = true;
         }
 
         if (ImGui::IsItemHovered ())
           ImGui::SetTooltip ("Lower is actually better, the only reason to adjust this would be if you have an absurd number of CPU cores and pop-in bothers you ;)");
       }
+      ImGui::TreePop      ( );
 #endif
 
-      ImGui::EndChild    ( );
-      ImGui::PopStyleVar ( );
-      ImGui::TreePop     ( );
+      ImGui::EndChild     ( );
+      ImGui::PopStyleVar  ( );
+
+#if 0
+      if (ImGui::CollapsingHeader ("Thread Stats"))
+      {
+        std::vector <tzf_tex_thread_stats_s> stats =
+          tzf::RenderFix::tex_mgr.getThreadStats ();
+
+        int thread_id = 0;
+
+        for ( auto it : stats ) {
+          ImGui::Text ("Thread #%lu  -  %6lu jobs retired, %5lu MiB loaded  -  %.6f User / %.6f Kernel / %3.1f Idle",
+                          thread_id++,
+                            it.jobs_retired, it.bytes_loaded >> 20UL,
+                              (double)ULARGE_INTEGER { it.runtime.user.dwLowDateTime,   it.runtime.user.dwHighDateTime   }.QuadPart / 10000000.0,
+                              (double)ULARGE_INTEGER { it.runtime.kernel.dwLowDateTime, it.runtime.kernel.dwHighDateTime }.QuadPart / 10000000.0,
+                              (double)ULARGE_INTEGER { it.runtime.idle.dwLowDateTime,   it.runtime.idle.dwHighDateTime   }.QuadPart / 10000000.0 );
+        }
+      }
+#endif
+      ImGui::TreePop      ( );
     }
 
-    if (ImGui::Button ("Texture Modding Tools")) {
+    if (ImGui::Button ("  Texture Modding Tools  ")) {
       show_texture_mod_dlg = (! show_texture_mod_dlg);
     }
+
+    ImGui::SameLine ();
+
+    ImGui::SliderInt ("Texture Cache Size", &config.textures.max_cache_in_mib, 384, 2048, "%.0f MiB");
+
+    if (ImGui::IsItemHovered ())
+      ImGui::SetTooltip ("Lower this if the reported budget (on the Performance tab) ever becomes negative.");
 
     ImGui::TreePop ();
   }
@@ -520,13 +606,6 @@ TZFix_DrawConfigUI (void)
 
     if ( ImGui::SliderFloat ("Post-Process Resolution Scale", &config.render.postproc_ratio, 0.0f, 2.0f) )
       tzf::RenderFix::need_reset.graphics = true;
-
-    ImGui::Columns        (1);
-    ImGui::PushStyleColor (ImGuiCol_Text, ImColor (0.975f, 0.1f, 0.975f, 1.0f));
-    ImGui::Bullet         (); ImGui::SameLine ();
-    ImGui::TextWrapped    ("Changes to these settings will produce weird results until you change Screen Mode in-game..." );
-    ImGui::PopStyleColor  ();
-
     ImGui::TreePop ();
   }
 
@@ -556,12 +635,6 @@ TZFix_DrawConfigUI (void)
 
     ImGui::Combo ("Character Shadow Resolution",     &shadows.radio,     "Normal\0Enhanced\0High\0Ultra\0\0");
     ImGui::Combo ("Environmental Shadow Resolution", &env_shadows.radio, "Normal\0High\0Ultra\0\0");
-
-    ImGui::Columns        (1);
-    ImGui::PushStyleColor (ImGuiCol_Text, ImColor (0.975f, 0.1f, 0.975f, 1.0f));
-    ImGui::Bullet         (); ImGui::SameLine ();
-    ImGui::TextWrapped    ("Changes to these settings will produce weird results until you change Screen Mode in-game..." );
-    ImGui::PopStyleColor  ();
 
     if (env_shadows.radio != env_shadows.last_sel) {
       config.render.env_shadow_rescale    = env_shadows.radio;
@@ -741,6 +814,9 @@ TZFix_DrawConfigUI (void)
 
   ImGui::PopItemWidth ();
 
+  ImGui::Separator (   );
+  ImGui::Columns   ( 2 );
+
   if (ImGui::Button ("   Gamepad Config   "))
     ImGui::OpenPopup ("Gamepad Config");
 
@@ -756,6 +832,26 @@ TZFix_DrawConfigUI (void)
   if (ImGui::Selectable ("...", show_test_window))
     show_test_window = (! show_test_window);
 
+  ImGui::SameLine (0.0f, 60.0f);
+
+  if (ImGui::Selectable (" ... ", show_test_window))
+    show_test_window = (! show_test_window);
+
+  ImGui::NextColumn ();
+
+  ImGui::Checkbox ("Apply Changes Immediately ", &config.render.auto_apply_changes);
+
+  if (ImGui::IsItemHovered())
+  {
+    ImGui::BeginTooltip ();
+    ImGui::PushStyleColor (ImGuiCol_Text, ImColor (0.95f, 0.75f, 0.25f, 1.0f));
+    ImGui::Text           ("Third-Party Software May Not Like This\n\n");
+    ImGui::PushStyleColor (ImGuiCol_Text, ImColor (0.75f, 0.75f, 0.75f, 1.0f));
+    ImGui::BulletText     ("You also may not when it takes 5 seconds to change some settings ;)");
+    ImGui::PopStyleColor  (2);
+    ImGui::EndTooltip     ();
+  }
+
   bool extra_details = false;
 
   if (need_restart || tzf::RenderFix::need_reset.graphics || tzf::RenderFix::need_reset.textures)
@@ -770,14 +866,29 @@ TZFix_DrawConfigUI (void)
       ImGui::BulletText     ("Game Restart Required");
       ImGui::PopStyleColor  ();
     }
-  
-    if (tzf::RenderFix::need_reset.graphics || tzf::RenderFix::need_reset.textures) {
-      ImGui::PushStyleColor  (ImGuiCol_Text, ImVec4 (1.0f, 0.8f, 0.2f, 1.0f));
-      ImGui::Bullet          ( ); ImGui::SameLine ();
-      ImGui::TextWrapped     ( "You have made changes that will not apply until you change Screen Modes in Graphics Settings, "
-                               "or by performing Alt + Tab with the game set to Fullscreen mode.\n" );
-      ImGui::PopStyleColor   ( );
-      ImGui::PopTextWrapPos  ( );
+
+    if (tzf::RenderFix::need_reset.graphics || tzf::RenderFix::need_reset.textures)
+    {
+      if (! config.render.auto_apply_changes)
+      {
+        ImGui::PushStyleColor  (ImGuiCol_Text, ImVec4 (1.0f, 0.8f, 0.2f, 1.0f));
+        ImGui::Bullet          ( ); ImGui::SameLine ();
+        
+        ImGui::TextWrapped     ( "You have made changes to settings that require the game to re-load resources...");
+        ImGui::Button          ( "  Apply Now  " );
+        
+        if (ImGui::IsItemHovered ()) ImGui::SetTooltip ("Click this before complaining that things look weird.");
+        if (ImGui::IsItemClicked ()) tzf::RenderFix::TriggerReset ();
+        
+        ImGui::PopStyleColor   ( );
+        ImGui::PopTextWrapPos  ( );
+      }
+
+      else
+      {
+        ImGui::TextColored           (ImVec4 (0.95f, 0.65f, 0.15f, 1.0f), "Applying Changes...");
+        tzf::RenderFix::TriggerReset ();
+      }
     }
   }
 
@@ -835,6 +946,4 @@ TZFix_ImGui_Init (void)
                         "SK_ImGui_DrawFrame",
                      TZFix_ImGui_DrawFrame,
              (LPVOID *)&SK_ImGui_DrawFrame_Original );
-
-  TZF_ApplyQueuedHooks ();
 }

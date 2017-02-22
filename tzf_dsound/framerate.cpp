@@ -727,7 +727,6 @@ tzf::FrameRateFix::Init (void)
             (LPVOID *)&Sleep_Original,
          (LPVOID *)&pfnSleep );
 
-  TZF_ApplyQueuedHooks ();
   TZF_EnableHook       (pfnSleep);
 
   pCmdProc->AddVariable ("AllowFakeSleep", TZF_CreateVar (SK_IVariable::Boolean, &config.framerate.allow_fake_sleep));

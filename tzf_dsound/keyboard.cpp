@@ -86,8 +86,6 @@ tzf::KeyboardFix::Init (void)
                        SDL_GetKeyboardState_Detour,
             (LPVOID *)&SDL_GetKeyboardState_Original );
 
-  TZF_ApplyQueuedHooks ();
-
   // Parse the swap pairs
   while (remaining > 0 && remaining <= len) {
     wchar_t* wszSwapPair = pairs;

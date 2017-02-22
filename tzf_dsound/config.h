@@ -77,6 +77,8 @@ struct tzf_config_t
     bool     clear_blackbars    = true;
     int32_t  env_shadow_rescale = 0;
     bool     dump_shaders       = false;
+    bool     auto_apply_changes = false;
+    bool     osd_disclaimer     = true;
   } render;
 
   struct {
@@ -92,6 +94,13 @@ struct tzf_config_t
     bool     on_demand_dump      = false;
     bool     highlight_debug_tex = true;
   } textures;
+
+  struct {
+    struct {
+      float  scale               = 1.0f;
+      bool   never_show_eula     = false;
+    } ui;
+  } input;
 
   struct {
     bool     visible            = false;

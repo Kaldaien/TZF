@@ -164,6 +164,8 @@ DllThread (LPVOID user)
     tzf::FrameRateFix::Init ();
     tzf::KeyboardFix::Init  ();
 
+    TZF_ApplyQueuedHooks ();
+
     // Uncomment this when spawning a thread
     //CoUninitialize ();
   }

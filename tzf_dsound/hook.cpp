@@ -97,7 +97,11 @@ SK_TZF_PluginKeyPress ( BOOL Control,
     *SK_GetCommandProcessor ();
 
   if (Control && Shift) {
-    if (vkCode == '1') {
+    if (vkCode == 'O') {
+      config.render.osd_disclaimer = false;
+    }
+
+    else if (vkCode == '1') {
       command.ProcessCommandLine ("AutoAdjust false");
       command.ProcessCommandLine ("TargetFPS 60");
       command.ProcessCommandLine ("BattleFPS 60");
@@ -325,8 +329,6 @@ public:
                         "SK_DetourWindowProc",
                         DetourWindowProc,
              (LPVOID *)&DetourWindowProc_Original );
-
-    TZF_ApplyQueuedHooks ();
   }
 
   void End (void)

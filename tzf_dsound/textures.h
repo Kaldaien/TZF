@@ -64,6 +64,18 @@ typedef struct D3DXIMAGE_INFO {
 } D3DXIMAGE_INFO, *LPD3DXIMAGE_INFO;
 
 
+struct tzf_tex_thread_stats_s {
+  ULONGLONG bytes_loaded;
+  LONG      jobs_retired;
+
+  struct {
+    FILETIME start, end;
+    FILETIME user,  kernel;
+    FILETIME idle; // Computed: (now - start) - (user + kernel)
+  } runtime;
+};
+
+
 namespace tzf {
 namespace RenderFix {
 #if 0
@@ -141,6 +153,7 @@ namespace RenderFix {
   class TextureManager {
   public:
     void Init     (void);
+    void Hook     (void);
     void Shutdown (void);
 
     void                     removeTexture   (ISKTextureD3D9* pTexD3D9);
@@ -187,6 +200,25 @@ namespace RenderFix {
     ULONG                    getMissCount (void) { return InterlockedExchangeAdd (&misses, 0UL);    }
 
 
+    void                     resetUsedTextures (void);
+    void                     applyTexture      (IDirect3DBaseTexture9* tex);
+
+    std::vector <IDirect3DBaseTexture9 *>
+                             getUsedRenderTargets (void);
+    uint32_t                 getRenderTargetCreationTime 
+                                                  (IDirect3DBaseTexture9* rt);
+    void                     trackRenderTarget    (IDirect3DBaseTexture9* rt);
+    bool                     isRenderTarget       (IDirect3DBaseTexture9* rt);
+    bool                     isUsedRenderTarget   (IDirect3DBaseTexture9* rt);
+
+    void                     queueScreenshot      (wchar_t* wszFileName, bool hudless = true);
+    bool                     wantsScreenshot      (void);
+    HRESULT                  takeScreenshot       (IDirect3DSurface9* pSurf);
+
+    std::vector<tzf_tex_thread_stats_s>
+                             getThreadStats       (void);
+
+
 
     BOOL                     isTexturePowerOfTwo (UINT sampler)
     {
@@ -203,18 +235,29 @@ namespace RenderFix {
 
 
   private:
+    struct {
+      // In lieu of actually wrapping render targets with a COM interface, just add the creation time
+      //   as the mapped parameter
+      std::unordered_map <IDirect3DBaseTexture9 *, uint32_t> render_targets;
+    } known;
+    
+    struct {
+      std::unordered_set <IDirect3DBaseTexture9 *> render_targets;
+    } used;
+
     std::unordered_map <uint32_t, tzf::RenderFix::Texture*> textures;
-    float                                                   time_saved     = 0.0f;
-    LONG64                                                  bytes_saved    = 0LL;
+    float                                                   time_saved      = 0.0f;
+    LONG64                                                  bytes_saved     = 0LL;
 
-    ULONG                                                   hits           = 0UL;
-    ULONG                                                   misses         = 0UL;
+    ULONG                                                   hits            = 0UL;
+    ULONG                                                   misses          = 0UL;
 
-    LONG64                                                  basic_size     = 0LL;
-    LONG64                                                  injected_size  = 0LL;
-    ULONG                                                   injected_count = 0UL;
+    LONG64                                                  basic_size      = 0LL;
+    LONG64                                                  injected_size   = 0LL;
+    ULONG                                                   injected_count  = 0UL;
 
-    std::string                                             osd_stats      = "";
+    std::string                                             osd_stats       = "";
+    bool                                                    want_screenshot = false;
 
     CRITICAL_SECTION                                        cs_cache;
   } extern tex_mgr;

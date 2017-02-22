@@ -72,6 +72,7 @@ struct {
   tzf::ParameterInt*     rescale_env_shadows;
   tzf::ParameterFloat*   postproc_ratio;
   tzf::ParameterBool*    clear_blackbars;
+  tzf::ParameterBool*    auto_apply_changes;
 } render;
 
 struct {
@@ -98,6 +99,12 @@ struct {
 struct {
   tzf::ParameterStringW* texture_set;
 } gamepad;
+
+struct {
+  tzf::ParameterFloat*   scale;
+  tzf::ParameterBool*    show_osd_message;
+  tzf::ParameterBool*    show_licenses;
+} imgui;
 
 
 struct {
@@ -410,6 +417,17 @@ TZF_LoadConfig (std::wstring name)
        L"TZFIX.Render",
          L"ClearBlackbars" );
 
+   render.auto_apply_changes =
+     static_cast <tzf::ParameterBool *>
+       (g_ParameterFactory.create_parameter <bool> (
+         L"Apply Changes Immediately")
+       );
+   render.auto_apply_changes->register_to_ini(
+     dll_ini,
+       L"TZFIX.Render",
+         L"AutoApplyChanges"
+   );
+
 
   textures.cache =
     static_cast <tzf::ParameterBool *>
@@ -501,6 +519,37 @@ TZF_LoadConfig (std::wstring name)
     dll_ini,
       L"TZFIX.Gamepad",
         L"TextureSet" );
+
+
+  imgui.scale =
+    static_cast <tzf::ParameterFloat *>
+      (g_ParameterFactory.create_parameter <float> (
+        L"Font Scale for Config UI")
+      );
+  imgui.scale->register_to_ini(
+    dll_ini,
+      L"ImGui.General",
+        L"Scale" );
+
+  imgui.show_licenses =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Show License Info")
+      );
+  imgui.show_licenses->register_to_ini(
+    dll_ini,
+      L"ImGui.General",
+        L"HasReadLicenses" );
+
+  imgui.show_osd_message =
+    static_cast <tzf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Show OSD Message")
+      );
+  imgui.show_osd_message->register_to_ini(
+    dll_ini,
+      L"ImGui.General",
+        L"ShowOSDDisclaimer" );
 
 
   keyboard.swap_keys =
@@ -604,6 +653,7 @@ TZF_LoadConfig (std::wstring name)
   render.aspect_correct_vids->load (config.render.blackbar_videos);
   render.aspect_correction->load   (config.render.aspect_correction);
   render.clear_blackbars->load     (config.render.clear_blackbars);
+  render.auto_apply_changes->load  (config.render.auto_apply_changes);
 
   // The video aspect ratio correction option is scheduled for removal anyway, so
   //   this hack is okay...
@@ -624,6 +674,10 @@ TZF_LoadConfig (std::wstring name)
   textures.show_loading_text->load (config.textures.show_loading_text);
 
   gamepad.texture_set->load        (config.textures.gamepad);
+
+  imgui.scale->load                (config.input.ui.scale);
+  imgui.show_licenses->load        (config.input.ui.never_show_eula);
+  imgui.show_osd_message->load     (config.render.osd_disclaimer);
 
   steam.allow_broadcasts->load  (config.steam.allow_broadcasts);
 
@@ -662,13 +716,10 @@ TZF_SaveConfig (std::wstring name, bool close_config)
   framerate.disable_limiter->store      (config.framerate.disable_limiter);
   framerate.auto_adjust->store          (config.framerate.auto_adjust);
 
-  //
-  // Don't store changes to this preference made while the game is running
-  //
-  //framerate.target->store          (config.framerate.target);
-  //framerate.battle_target->store   (config.framerate.battle_target);
+  framerate.target->store          (config.framerate.target);
+  framerate.battle_target->store   (config.framerate.battle_target);
   //framerate.battle_adaptive->store (config.framerate.battle_adaptive);
-  //framerate.cutscene_target->store (config.framerate.cutscene_target);
+  framerate.cutscene_target->store (config.framerate.cutscene_target);
 
   render.aspect_addr->store   (config.render.aspect_addr);
   render.fovy_addr->store     (config.render.fovy_addr);
@@ -682,6 +733,7 @@ TZF_SaveConfig (std::wstring name, bool close_config)
   render.postproc_ratio->store      (config.render.postproc_ratio);
   render.rescale_shadows->store     (config.render.shadow_rescale);
   render.rescale_env_shadows->store (config.render.env_shadow_rescale);
+  render.auto_apply_changes->store  (config.render.auto_apply_changes);
 
   textures.remaster->store          (config.textures.remaster);
   textures.cache->store             (config.textures.cache);
@@ -693,6 +745,10 @@ TZF_SaveConfig (std::wstring name, bool close_config)
   textures.show_loading_text->store (config.textures.show_loading_text);
 
   gamepad.texture_set->store        (config.textures.gamepad);
+
+  imgui.scale->store                (config.input.ui.scale);
+  imgui.show_licenses->store        (config.input.ui.never_show_eula);
+  imgui.show_osd_message->store     (config.render.osd_disclaimer);
 
   steam.allow_broadcasts->store  (config.steam.allow_broadcasts);
 

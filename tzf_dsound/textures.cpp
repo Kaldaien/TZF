@@ -90,6 +90,9 @@ extern QueryPerformanceCounter_t QueryPerformanceCounter_Original;
 tzf::RenderFix::TextureManager
   tzf::RenderFix::tex_mgr;
 
+extern uint32_t vs_checksum;
+extern uint32_t ps_checksum;
+
 iSK_Logger* tex_log = nullptr;
 
 #include <set>
@@ -116,6 +119,76 @@ void TZFix_LoadQueuedTextures (void);
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
+
+// Cleanup
+std::queue         <std::wstring>        screenshots_to_delete;
+
+class TBF_AutoCritSection
+{
+public:
+  TBF_AutoCritSection (CRITICAL_SECTION* crit_sec) : cs_ (crit_sec) {
+    EnterCriticalSection (cs_);
+  };
+
+  ~TBF_AutoCritSection (void) {
+    LeaveCriticalSection (cs_);
+  }
+
+private:
+  CRITICAL_SECTION* cs_;
+};
+
+
+template <typename _T>
+class TBF_HashSet
+{
+public:
+  TBF_HashSet (void) {
+    InitializeCriticalSection (&cs_);
+  }
+
+  ~TBF_HashSet (void) {
+    DeleteCriticalSection (&cs_);
+  }
+
+  void emplace (_T item)
+  {
+    TBF_AutoCritSection auto_crit (&cs_);
+
+    container_.emplace (item);
+  }
+
+  void erase (_T item)
+  {
+    TBF_AutoCritSection auto_crit (&cs_);
+
+    container_.erase (item);
+  }
+
+  bool contains (_T item)
+  {
+    TBF_AutoCritSection auto_crit (&cs_);
+
+    return container_.count (item) != 0;
+  }
+
+  bool empty (void)
+  {
+    TBF_AutoCritSection auto_crit (&cs_);
+
+    return container_.empty ();
+  }
+
+protected:
+private:
+  std::unordered_set <_T> container_;
+  CRITICAL_SECTION        cs_;
+};
+
+
+TBF_HashSet <IDirect3DSurface9 *> outstanding_screenshots; // Not excellent screenshots, but screenhots
+                                                           //   that aren't finished yet and we can't reset
+                                                           //     the D3D9 device because of.
 
 std::unordered_map <uint32_t, tzf_tex_record_s> injectable_textures;
 std::vector        <std::wstring>               archives;
@@ -151,7 +224,7 @@ TZF_GetInjectableTexture (uint32_t checksum)
 
 // The set of textures used during the last frame
 std::vector        <uint32_t>                   textures_last_frame;
-std::set           <uint32_t>                   textures_used;
+std::unordered_set <uint32_t>                   textures_used;
 std::unordered_set <uint32_t>                   non_power_of_two_textures;
 
 // Textures that we will not allow injection for
@@ -582,6 +655,53 @@ tzf::RenderFix::TextureManager::cacheSizeTotal (void)
   return cacheSizeBasic () + cacheSizeInjected ();
 }
 
+bool
+tzf::RenderFix::TextureManager::isRenderTarget (IDirect3DBaseTexture9* pTex)
+{
+  return known.render_targets.count (pTex) != 0;
+}
+
+void
+tzf::RenderFix::TextureManager::trackRenderTarget (IDirect3DBaseTexture9* pTex)
+{
+  if (! known.render_targets.count (pTex))
+    known.render_targets.try_emplace (pTex, (uint32_t)known.render_targets.size ());
+}
+
+void
+tzf::RenderFix::TextureManager::applyTexture (IDirect3DBaseTexture9* pTex)
+{
+  if (known.render_targets.count (pTex) != 0)
+    used.render_targets.emplace (pTex);
+}
+
+bool
+tzf::RenderFix::TextureManager::isUsedRenderTarget (IDirect3DBaseTexture9* pTex)
+{
+  return used.render_targets.count (pTex) != 0;
+}
+
+void
+tzf::RenderFix::TextureManager::resetUsedTextures (void)
+{
+  used.render_targets.clear ();
+}
+
+std::vector <IDirect3DBaseTexture9 *>
+tzf::RenderFix::TextureManager::getUsedRenderTargets (void)
+{
+  return std::vector <IDirect3DBaseTexture9 *> (used.render_targets.begin (), used.render_targets.end ());
+}
+
+uint32_t
+tzf::RenderFix::TextureManager::getRenderTargetCreationTime (IDirect3DBaseTexture9* pTex)
+{
+  if (known.render_targets.count (pTex))
+    return known.render_targets [pTex];
+
+  return 0xFFFFFFFFUL;
+}
+
 #include "render.h"
 
 COM_DECLSPEC_NOTHROW
@@ -623,8 +743,10 @@ D3D9SetDepthStencilSurface_Detour (
 }
 
 
-uint32_t debug_tex_id = 0UL;
-uint32_t current_tex  = 0ui32;
+uint32_t debug_tex_id      =   0UL;
+uint32_t current_tex [256] = { 0ui32 };
+
+extern SetSamplerState_pfn D3D9SetSamplerState_Original;
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -657,17 +779,35 @@ D3D9SetTexture_Detour (
                      //Sampler, pTexture );
   //}
 
+
+  tzf::RenderFix::tex_mgr.applyTexture (pTexture);
+  tzf::RenderFix::tracked_rt.active  = (pTexture == tzf::RenderFix::tracked_rt.tracking_tex);
+
+  if (tzf::RenderFix::tracked_rt.active)
+  {
+    tzf::RenderFix::tracked_rt.vertex_shaders.emplace (vs_checksum);
+    tzf::RenderFix::tracked_rt.pixel_shaders.emplace  (ps_checksum);
+  }
+
+
+  uint32_t tex_crc32 = 0x0;
+
   void* dontcare;
   if ( pTexture != nullptr &&
        pTexture->QueryInterface (IID_SKTextureD3D9, &dontcare) == S_OK ) {
     ISKTextureD3D9* pSKTex =
       (ISKTextureD3D9 *)pTexture;
 
-    current_tex = pSKTex->tex_crc32;
+    current_tex [std::min (255UL, Sampler)] = pSKTex->tex_crc32;
 
-    textures_used.insert (pSKTex->tex_crc32);
+    if (vs_checksum == tzf::RenderFix::tracked_vs.crc32)  tzf::RenderFix::tracked_vs.current_textures [std::min (15UL, Sampler)] = pSKTex->tex_crc32;
+    if (ps_checksum == tzf::RenderFix::tracked_ps.crc32)  tzf::RenderFix::tracked_ps.current_textures [std::min (15UL, Sampler)] = pSKTex->tex_crc32;
+
+    textures_used.emplace (pSKTex->tex_crc32);
 
     QueryPerformanceCounter_Original (&pSKTex->last_used);
+
+    tex_crc32 = pSKTex->tex_crc32;
 
     //
     // This is how blocking is implemented -- only do it when a texture that needs
@@ -695,6 +835,25 @@ D3D9SetTexture_Detour (
   if (pTexture != nullptr) tsf::RenderFix::active_samplers.insert (Sampler);
   else                     tsf::RenderFix::active_samplers.erase  (Sampler);
 #endif
+
+  bool clamp = false;
+
+  if (ps_checksum == tzf::RenderFix::tracked_ps.crc32 && tzf::RenderFix::tracked_ps.clamp_coords)
+    clamp = true;
+
+  if (vs_checksum == tzf::RenderFix::tracked_vs.crc32 && tzf::RenderFix::tracked_vs.clamp_coords)
+    clamp = true;
+
+  if ( clamp )
+  {
+    float fMin = -3.0f;
+
+    D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP );
+    D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP );
+    D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_ADDRESSW, D3DTADDRESS_CLAMP );
+    D3D9SetSamplerState_Original (This, Sampler, D3DSAMP_MIPMAPLODBIAS, *reinterpret_cast <DWORD *>(&fMin) );
+  }
+
 
   return D3D9SetTexture_Original (This, Sampler, pTexture);
 }
@@ -795,6 +954,14 @@ D3D9CreateTexture_Detour (IDirect3DDevice9   *This,
   HRESULT result = 
     D3D9CreateTexture_Original (This, Width, Height, levels, Usage,
                                 Format, Pool, ppTexture, pSharedHandle);
+
+  if ( SUCCEEDED (result) &&
+       ( ( Usage & D3DUSAGE_RENDERTARGET ) || 
+         ( Usage & D3DUSAGE_DEPTHSTENCIL ) ||
+         ( Usage & D3DUSAGE_DYNAMIC      ) ) )
+  {
+    tzf::RenderFix::tex_mgr.trackRenderTarget (*ppTexture);
+  }
 
   return result;
 }
@@ -1108,6 +1275,39 @@ public:
     SetEvent (control_.shutdown);
   }
 
+  size_t bytesLoaded(void) {
+    return InterlockedExchangeAdd (&bytes_loaded_, 0ULL);
+  }
+
+  int    jobsRetired  (void) {
+    return InterlockedExchangeAdd (&jobs_retired_, 0L);
+  }
+
+  FILETIME idleTime   (void) {
+    GetThreadTimes ( thread_,
+                       &runtime_.start, &runtime_.end,
+                         &runtime_.kernel, &runtime_.user );
+
+    FILETIME now;
+    GetSystemTimeAsFileTime (&now);
+
+    ULONGLONG elapsed =
+      ULARGE_INTEGER { now.dwLowDateTime,            now.dwHighDateTime            }.QuadPart -
+      ULARGE_INTEGER { runtime_.start.dwLowDateTime, runtime_.start.dwHighDateTime }.QuadPart;
+
+    ULONGLONG busy =
+      ULARGE_INTEGER { runtime_.kernel.dwLowDateTime, runtime_.kernel.dwHighDateTime }.QuadPart +
+      ULARGE_INTEGER { runtime_.user.dwLowDateTime,   runtime_.user.dwHighDateTime   }.QuadPart;
+
+    ULARGE_INTEGER idle;
+    idle.QuadPart = elapsed - busy;
+
+    return FILETIME { idle.LowPart,
+                      idle.HighPart };
+  }
+  FILETIME userTime   (void) { return runtime_.user;   };
+  FILETIME kernelTime (void) { return runtime_.kernel; };
+
 protected:
   static CRITICAL_SECTION cs_worker_init;
   static ULONG            num_threads_init;
@@ -1120,6 +1320,15 @@ protected:
   HANDLE                thread_;
 
   tzf_tex_load_s*       job_;
+
+  volatile ULONGLONG    bytes_loaded_ = 0ULL;
+  volatile LONG         jobs_retired_ = 0L;
+
+  struct {
+    FILETIME start, end;
+    FILETIME user,  kernel;
+    FILETIME idle; // Computed: (now - start) - (user + kernel)
+  } runtime_ { 0, 0, 0, 0, 0 };
 
   struct {
     union {
@@ -1253,6 +1462,26 @@ public:
     SetEvent (events_.shutdown);
   }
 
+  std::vector <tzf_tex_thread_stats_s> getWorkerStats (void)
+  {
+    std::vector <tzf_tex_thread_stats_s> stats;
+
+    for ( auto it : workers_ )
+    {
+      tzf_tex_thread_stats_s stat;
+
+      stat.bytes_loaded   = it->bytesLoaded ();
+      stat.jobs_retired   = it->jobsRetired ();
+      stat.runtime.idle   = it->idleTime    ();
+      stat.runtime.kernel = it->kernelTime  ();
+      stat.runtime.user   = it->userTime    ();
+
+      stats.push_back (stat);
+    }
+
+    return stats;
+  }
+
 
 protected:
   static unsigned int __stdcall Spooler (LPVOID user);
@@ -1369,7 +1598,7 @@ struct SK_StreamSplitter
 
 std::queue <TexLoadRef> textures_to_stream;
 
-std::map   <uint32_t, tzf_tex_load_s *>
+std::unordered_map   <uint32_t, tzf_tex_load_s *>
                               textures_in_flight;
 
 std::queue <TexLoadRef> finished_loads;
@@ -1849,7 +2078,7 @@ TZFix_LoadQueuedTextures (void)
 
     QueryPerformanceCounter_Original (&load->end);
 
-    if (true)
+    if (false)
     {
       tex_log->Log ( L"[%s] Finished %s texture %08x (%5.2f MiB in %9.4f ms)",
                        (load->type == tzf_tex_load_s::Stream) ? L"Inject Tex" :
@@ -1916,7 +2145,7 @@ TZFix_LoadQueuedTextures (void)
 
     QueryPerformanceCounter_Original (&load->end);
 
-    if (true)
+    if (false)
     {
       tex_log->Log ( L"[%s] Finished %s texture %08x (%5.2f MiB in %9.4f ms)",
                        (load->type == tzf_tex_load_s::Stream) ? L"Inject Tex" :
@@ -2630,6 +2859,8 @@ tzf::RenderFix::TextureManager::removeTexture (ISKTextureD3D9* pTexD3D9)
   remove_textures.push_back (pTexD3D9);
 
   LeaveCriticalSection (&cs_cache);
+
+  updateOSD ();
 }
 
 void
@@ -2730,8 +2961,20 @@ D3D9SetRenderTarget_Detour (
 void
 tzf::RenderFix::TextureManager::Init (void)
 {
-  InitializeCriticalSectionAndSpinCount (&cs_cache, 16384UL);
-  InitializeCriticalSectionAndSpinCount (&osd_cs,   2UL);
+  textures.reserve                  (4096);
+  textures_used.reserve             (2048);
+  textures_last_frame.reserve       (1024);
+  non_power_of_two_textures.reserve (512);
+  tracked_ps.used_textures.reserve  (256);
+  tracked_vs.used_textures.reserve  (256);
+  known.render_targets.reserve      (64);
+  used.render_targets.reserve       (64);
+  textures_in_flight.reserve        (32);
+  tracked_rt.pixel_shaders.reserve  (32);
+  tracked_rt.vertex_shaders.reserve (32);
+
+  InitializeCriticalSectionAndSpinCount (&cs_cache, 8192UL);
+  InitializeCriticalSectionAndSpinCount (&osd_cs,   32UL);
 
   // Create the directory to store dumped textures
   if (config.textures.dump)
@@ -2797,96 +3040,6 @@ tzf::RenderFix::TextureManager::Init (void)
                        files, (double)liSize.QuadPart / (1024.0 * 1024.0) );
   }
 
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9SetRenderState_Override",
-                        D3D9SetRenderState_Detour,
-              (LPVOID*)&D3D9SetRenderState_Original );
-
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9BeginScene_Override",
-                        D3D9BeginScene_Detour,
-              (LPVOID*)&D3D9BeginScene_Original );
-
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9StretchRect_Override",
-                        D3D9StretchRect_Detour,
-              (LPVOID*)&D3D9StretchRect_Original );
-
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9CreateDepthStencilSurface_Override",
-                        D3D9CreateDepthStencilSurface_Detour,
-              (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
-
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9CreateTexture_Override",
-                        D3D9CreateTexture_Detour,
-              (LPVOID*)&D3D9CreateTexture_Original );
-
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9SetTexture_Override",
-                        D3D9SetTexture_Detour,
-              (LPVOID*)&D3D9SetTexture_Original );
-
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9SetRenderTarget_Override",
-                        D3D9SetRenderTarget_Detour,
-              (LPVOID*)&D3D9SetRenderTarget_Original );
-
-  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
-                       "D3D9SetDepthStencilSurface_Override",
-                        D3D9SetDepthStencilSurface_Detour,
-              (LPVOID*)&D3D9SetDepthStencilSurface_Original );
-
-  TZF_CreateDLLHook2 ( L"D3DX9_43.DLL",
-                        "D3DXCreateTextureFromFileInMemoryEx",
-                         D3DXCreateTextureFromFileInMemoryEx_Detour,
-              (LPVOID *)&D3DXCreateTextureFromFileInMemoryEx_Original );
-
-  TZF_ApplyQueuedHooks ();
-
-  D3DXSaveTextureToFile =
-    (D3DXSaveTextureToFile_pfn)
-      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-                         "D3DXSaveTextureToFileW" );
-
-  D3DXCreateTextureFromFile =
-    (D3DXCreateTextureFromFile_pfn)
-      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-                         "D3DXCreateTextureFromFileW" );
-
-  D3DXCreateTextureFromFileEx =
-    (D3DXCreateTextureFromFileEx_pfn)
-      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-                         "D3DXCreateTextureFromFileExW" );
-
-  D3DXGetImageInfoFromFileInMemory =
-    (D3DXGetImageInfoFromFileInMemory_pfn)
-      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-                         "D3DXGetImageInfoFromFileInMemory" );
-
-  D3DXGetImageInfoFromFile =
-    (D3DXGetImageInfoFromFile_pfn)
-      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
-                         "D3DXGetImageInfoFromFileW" );
-
-  // We don't hook this, but we still use it...
-  if (D3D9CreateRenderTarget_Original == nullptr) {
-    static HMODULE hModD3D9 =
-      GetModuleHandle (config.system.injector.c_str ());
-    D3D9CreateRenderTarget_Original =
-      (CreateRenderTarget_pfn)
-        GetProcAddress (hModD3D9, "D3D9CreateRenderTarget_Override");
-  }
-
-  // We don't hook this, but we still use it...
-  if (D3D9CreateDepthStencilSurface_Original == nullptr) {
-    static HMODULE hModD3D9 =
-      GetModuleHandle (config.system.injector.c_str ());
-    D3D9CreateDepthStencilSurface_Original =
-      (CreateDepthStencilSurface_pfn)
-        GetProcAddress (hModD3D9, "D3D9CreateDepthStencilSurface_Override");
-  }
-
   InterlockedExchange64 (&bytes_saved, 0LL);
 
   time_saved  = 0.0f;
@@ -2930,6 +3083,92 @@ tzf::RenderFix::TextureManager::Init (void)
       TZF_CreateVar (SK_IVariable::Int,     &config.textures.max_cache_in_mib) );
 }
 
+void
+tzf::RenderFix::TextureManager::Hook (void)
+{
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetRenderState_Override",
+                        D3D9SetRenderState_Detour,
+              (LPVOID*)&D3D9SetRenderState_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9BeginScene_Override",
+                        D3D9BeginScene_Detour,
+              (LPVOID*)&D3D9BeginScene_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9StretchRect_Override",
+                        D3D9StretchRect_Detour,
+              (LPVOID*)&D3D9StretchRect_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9CreateRenderTarget_Override",
+                        D3D9CreateRenderTarget_Detour,
+              (LPVOID*)&D3D9CreateRenderTarget_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9CreateDepthStencilSurface_Override",
+                        D3D9CreateDepthStencilSurface_Detour,
+              (LPVOID*)&D3D9CreateDepthStencilSurface_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9CreateTexture_Override",
+                        D3D9CreateTexture_Detour,
+              (LPVOID*)&D3D9CreateTexture_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetTexture_Override",
+                        D3D9SetTexture_Detour,
+              (LPVOID*)&D3D9SetTexture_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetRenderTarget_Override",
+                        D3D9SetRenderTarget_Detour,
+              (LPVOID*)&D3D9SetRenderTarget_Original );
+
+  TZF_CreateDLLHook2 ( config.system.injector.c_str (),
+                       "D3D9SetDepthStencilSurface_Override",
+                        D3D9SetDepthStencilSurface_Detour,
+              (LPVOID*)&D3D9SetDepthStencilSurface_Original );
+
+  TZF_CreateDLLHook2 ( L"D3DX9_43.DLL",
+                        "D3DXCreateTextureFromFileInMemoryEx",
+                         D3DXCreateTextureFromFileInMemoryEx_Detour,
+              (LPVOID *)&D3DXCreateTextureFromFileInMemoryEx_Original );
+
+  TZF_ApplyQueuedHooks ();
+
+  D3DXSaveTextureToFile =
+    (D3DXSaveTextureToFile_pfn)
+      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                         "D3DXSaveTextureToFileW" );
+
+  D3DXSaveSurfaceToFileW =
+    (D3DXSaveSurfaceToFile_pfn)
+      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                         "D3DXSaveSurfaceToFileW" );
+
+  D3DXCreateTextureFromFile =
+    (D3DXCreateTextureFromFile_pfn)
+      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                         "D3DXCreateTextureFromFileW" );
+
+  D3DXCreateTextureFromFileEx =
+    (D3DXCreateTextureFromFileEx_pfn)
+      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                         "D3DXCreateTextureFromFileExW" );
+
+  D3DXGetImageInfoFromFileInMemory =
+    (D3DXGetImageInfoFromFileInMemory_pfn)
+      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                         "D3DXGetImageInfoFromFileInMemory" );
+
+  D3DXGetImageInfoFromFile =
+    (D3DXGetImageInfoFromFile_pfn)
+      GetProcAddress ( tzf::RenderFix::d3dx9_43_dll,
+                         "D3DXGetImageInfoFromFileW" );
+}
+
 // Skip the purge step on shutdown
 bool shutting_down = false;
 
@@ -2966,6 +3205,14 @@ tzf::RenderFix::TextureManager::Shutdown (void)
                    time_saved / 1000.0f,
                      time_saved / frame_time );
   tex_log->close ();
+
+  while (! screenshots_to_delete.empty ())
+  {
+    std::wstring file_to_delete = screenshots_to_delete.front ();
+    screenshots_to_delete.pop ();
+
+    DeleteFileW (file_to_delete.c_str ());
+  }
 
   FreeLibrary (d3dx9_43_dll);
 }
@@ -3088,6 +3335,19 @@ tzf::RenderFix::TextureManager::purge (void)
 void
 tzf::RenderFix::TextureManager::reset (void)
 {
+  if (! outstanding_screenshots.empty ())
+  {
+    tex_log->LogEx (true, L"[Screenshot] A queued screenshot has not finished, delaying device reset...");
+
+    while (! outstanding_screenshots.empty ())
+      ;
+
+    tex_log->LogEx (false, L"done!\n");
+  }
+  
+  known.render_targets.clear ();
+
+
   int underflows       = 0;
 
   int ext_refs         = 0;
@@ -3580,7 +3840,11 @@ SK_TextureThreadPool::Spooler (LPVOID user)
 void
 SK_TextureWorkerThread::finishJob (void)
 {
-  job_ = nullptr;
+  InterlockedExchangeAdd     (&bytes_loaded_,
+           ((tzf_tex_load_s *)InterlockedCompareExchangePointer ((PVOID *)&job_, nullptr, nullptr))
+                             ->SrcDataSize);
+  InterlockedIncrement       (&jobs_retired_);
+  InterlockedExchangePointer ((PVOID *)&job_, nullptr);
 }
 HMODULE tzf::RenderFix::d3dx9_43_dll = 0;
 
@@ -3970,4 +4234,17 @@ tzf::RenderFix::TextureManager::reloadTexture (uint32_t checksum)
     TZFix_LoadQueuedTextures ();
 
   return true;
+}
+
+
+
+std::vector <tzf_tex_thread_stats_s>
+tzf::RenderFix::TextureManager::getThreadStats (void)
+{
+  std::vector <tzf_tex_thread_stats_s> stats =
+    resample_pool->getWorkerStats ();
+
+  // For Inject (Small, Large) -> Push Back
+
+  return stats;
 }
