@@ -101,7 +101,7 @@ SK_TZF_PluginKeyPress ( BOOL Control,
       config.render.osd_disclaimer = false;
     }
 
-    else if (vkCode == '1') {
+    if (vkCode == '1') {
       command.ProcessCommandLine ("AutoAdjust false");
       command.ProcessCommandLine ("TargetFPS 60");
       command.ProcessCommandLine ("BattleFPS 60");

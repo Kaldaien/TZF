@@ -84,7 +84,11 @@ SteamVideo_Detour (void)
   ISteamVideo* pVideo = SteamVideo_Original ();
 
   int x;
-  if (pVideo != nullptr && pVideo->IsBroadcasting (&x) == true) {
+
+  // Recent changes to SteamAPI store a non-zero value in the int* passed to
+  //   IsBroadcasting (...) even if the return is false.  (4/17/17)
+  //
+  if (pVideo != nullptr /*&& pVideo->IsBroadcasting (&x) == true*/) {
     if (faker != nullptr) {
       delete faker;
     }
