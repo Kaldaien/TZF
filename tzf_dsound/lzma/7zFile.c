@@ -266,8 +266,9 @@ static SRes FileInStream_Seek(void *pp, Int64 *pos, ESzSeek origin)
 
 void FileInStream_CreateVTable(CFileInStream *p)
 {
-  p->s.Read = FileInStream_Read;
-  p->s.Seek = FileInStream_Seek;
+  p->file.handle = INVALID_HANDLE_VALUE;
+  p->s.Read      = FileInStream_Read;
+  p->s.Seek      = FileInStream_Seek;
 }
 
 

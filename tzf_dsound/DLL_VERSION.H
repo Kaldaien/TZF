@@ -4,7 +4,7 @@
 #define TZF_MAJOR 1
 #define TZF_MINOR 8
 #define TZF_BUILD 4
-#define TZF_REV   0
+#define TZF_REV   1
 
 
 

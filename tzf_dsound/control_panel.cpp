@@ -319,23 +319,34 @@ TZFix_DrawConfigUI (void)
     static char szAvg [512];
 
 
-    sprintf ( szAvg,
-                "Avg milliseconds per-frame: %6.3f  (Target: %6.3f)\n"
-                "    Extreme frametimes:      %6.3f min, %6.3f max\n\n\n\n"
-                "Variation:  %8.5f ms  ==>  %.1f FPS  +/-  %3.1f frames",
-                  sum / 120.0f, tzf::FrameRateFix::GetTargetFrametime (),
+    float target_fps       = 1000.0f / tzf::FrameRateFix::GetTargetFrametime ();
+    float target_frametime = tzf::FrameRateFix::GetTargetFrametime ();
+
+    sprintf_s
+          ( szAvg,
+              512,
+                u8"Avg milliseconds per-frame: %6.3f  (Target: %6.3f)\n"
+                u8"    Extreme frametimes:      %6.3f min, %6.3f max\n\n\n\n"
+                u8"Variation:  %8.5f ms        %.1f FPS  ±  %3.1f frames",
+                  sum / 120.0f, target_frametime,
                     min, max, max - min,
                       1000.0f / (sum / 120.0f), (max - min) / (1000.0f / (sum / 120.0f)) );
 
-    ImGui::PlotLines     ( "",
-                            values,
-                              IM_ARRAYSIZE (values),
-                                values_offset,
-                                  szAvg,
-                                    0.0f,
-                                      2.0f * tzf::FrameRateFix::GetTargetFrametime (),
-                                        ImVec2 (0, font_size * 7) );
-                        
+    ImGui::PushStyleColor ( ImGuiCol_PlotLines, 
+                              ImColor::HSV ( 0.31f - 0.31f *
+                       std::min ( 1.0f, (max - min) / (2.0f * target_frametime) ),
+                                               0.73f,
+                                                 0.93f ) );
+
+    ImGui::PlotLines ( "",
+                         values,
+                           IM_ARRAYSIZE (values),
+                             values_offset,
+                               szAvg,
+                                 0.0f,
+                                   2.0f * target_frametime,
+                                     ImVec2 (0, font_size * 7) );
+
     ImGui::SameLine     ();
 
     ImGui::PushItemWidth (210);
@@ -656,108 +667,6 @@ TZFix_DrawConfigUI (void)
   if (ImGui::CollapsingHeader ("Audio", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen))
   {
     ImGui::TreePush ("");
-
-    if (ImGui::CollapsingHeader ("Volume Levels", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen))
-    {
-      IAudioMeterInformation* pMeterInfo =
-        TZFix_GetAudioMeterInfo ();
-
-      if (pMeterInfo != nullptr)
-      {
-        UINT channels = 0;
-
-        if (SUCCEEDED (pMeterInfo->GetMeteringChannelCount (&channels)))
-        {
-          static float channel_peaks_    [32];
-
-          if (channels < 4)
-          {
-            ImGui::TextColored ( ImVec4 (0.9f, 0.7f, 0.2f, 1.0f),
-                                   "WARNING: Do not select Surround in-game, you will be missing center channel audio on your hardware!" );
-            ImGui::Separator   ();
-          }
-
-          struct
-          {
-            struct {
-              float inst_min = FLT_MAX;  DWORD dwMinSample = 0;  float disp_min = FLT_MAX;
-              float inst_max = FLT_MIN;  DWORD dwMaxSample = 0;  float disp_max = FLT_MIN;
-            } vu_peaks;
-
-            float peaks [120];
-            int   current_idx;
-          } static history [32];
-
-          #define VUMETER_TIME 300
-
-          ImGui::Columns (2);
-
-          for (int i = 0 ; i < std::min (config.audio.channels, channels); i++)
-          {
-            if (SUCCEEDED (pMeterInfo->GetChannelsPeakValues (channels, channel_peaks_)))
-            {
-              history [i].vu_peaks.inst_min = std::min (history [i].vu_peaks.inst_min, channel_peaks_ [i]);
-              history [i].vu_peaks.inst_max = std::max (history [i].vu_peaks.inst_max, channel_peaks_ [i]);
-
-              history [i].vu_peaks.disp_min    = history [i].vu_peaks.inst_min;
-
-              if (history [i].vu_peaks.dwMinSample < timeGetTime () - VUMETER_TIME * 3) {
-                history [i].vu_peaks.inst_min    = channel_peaks_ [i];
-                history [i].vu_peaks.dwMinSample = timeGetTime ();
-              }
-
-              history [i].vu_peaks.disp_max    = history [i].vu_peaks.inst_max;
-
-              if (history [i].vu_peaks.dwMaxSample < timeGetTime () - VUMETER_TIME * 3) {
-                history [i].vu_peaks.inst_max    = channel_peaks_ [i];
-                history [i].vu_peaks.dwMaxSample = timeGetTime ();
-              }
-
-              history [i].peaks [history [i].current_idx] = channel_peaks_ [i];
-              history [i].current_idx = (history [i].current_idx + 1) % IM_ARRAYSIZE (history [i].peaks);
-
-              ImGui::BeginGroup ();
-
-              ImGui::PlotLines ( "",
-                                  history [i].peaks,
-                                    IM_ARRAYSIZE (history [i].peaks),
-                                      history [i].current_idx,
-                                        "",
-                                             history [i].vu_peaks.disp_min,
-                                             1.0f,
-                                              ImVec2 (ImGui::GetContentRegionAvailWidth (), 80) );
-
-              //char szName [64];
-              //sprintf (szName, "Channel: %lu", i);
-
-              ImGui::PushStyleColor (ImGuiCol_PlotHistogram,     ImVec4 (0.9f, 0.1f, 0.1f, 0.15f));
-              ImGui::ProgressBar    (history [i].vu_peaks.disp_max, ImVec2 (-1.0f, 0.0f));
-              ImGui::PopStyleColor  ();
-
-              ImGui::ProgressBar    (channel_peaks_ [i],          ImVec2 (-1.0f, 0.0f));
-
-              ImGui::PushStyleColor (ImGuiCol_PlotHistogram,     ImVec4 (0.1f, 0.1f, 0.9f, 0.15f));
-              ImGui::ProgressBar    (history [i].vu_peaks.disp_min, ImVec2 (-1.0f, 0.0f));
-              ImGui::PopStyleColor  ();
-              ImGui::EndGroup ();
-
-              if (! (i % 2))
-              {
-                ImGui::SameLine (); ImGui::NextColumn ();
-              } else {
-                ImGui::Columns   ( 1 );
-                ImGui::Separator (   );
-                ImGui::Columns   ( 2 );
-              }
-            }
-          }
-
-          ImGui::Columns (1);
-        }
-
-        pMeterInfo->Release ();
-      }
-    }
 
     if (tzf::SoundFix::wasapi_init) {
       ImGui::PushStyleVar (ImGuiStyleVar_ChildWindowRounding, 16.0f);

@@ -780,7 +780,8 @@ D3D9EndScene_Detour (IDirect3DDevice9* This)
   {
     SKX_DrawExternalOSD ("ToZFix", "\n"
                                    "  Press Ctrl + Shift + O         to toggle In-Game OSD\n"
-                                   "  Press Ctrl + Shift + Backspace to access In-Game Config Menu\n\n"
+                                   "  Press Ctrl + Shift + Backspace to access In-Game Config Menu\n"
+                                   "    ( Select + Start on Gamepads )\n\n"
                                    "   * This message will go away the first time you actually read it and successfully toggle the OSD.");
   }
 

@@ -138,9 +138,11 @@ void LookToRead_CreateVTable(CLookToRead *p, int lookahead)
   p->s.Look = lookahead ?
       LookToRead_Look_Lookahead :
       LookToRead_Look_Exact;
-  p->s.Skip = LookToRead_Skip;
-  p->s.Read = LookToRead_Read;
-  p->s.Seek = LookToRead_Seek;
+  p->s.Skip     = LookToRead_Skip;
+  p->s.Read     = LookToRead_Read;
+  p->s.Seek     = LookToRead_Seek;
+  p->realStream = NULL;
+  p->pos        = 0;
 }
 
 void LookToRead_Init(CLookToRead *p)
@@ -156,7 +158,8 @@ static SRes SecToLook_Read(void *pp, void *buf, size_t *size)
 
 void SecToLook_CreateVTable(CSecToLook *p)
 {
-  p->s.Read = SecToLook_Read;
+  p->realStream = NULL;
+  p->s.Read     = SecToLook_Read;
 }
 
 static SRes SecToRead_Read(void *pp, void *buf, size_t *size)
@@ -165,7 +168,8 @@ static SRes SecToRead_Read(void *pp, void *buf, size_t *size)
   return p->realStream->Read(p->realStream, buf, size);
 }
 
-void SecToRead_CreateVTable(CSecToRead *p)
+void SecToRead_CreateVTable (CSecToRead *p)
 {
-  p->s.Read = SecToRead_Read;
+  p->s.Read     = SecToRead_Read;
+  p->realStream = NULL;
 }

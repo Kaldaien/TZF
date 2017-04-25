@@ -205,7 +205,7 @@ void LookToRead_Init(CLookToRead *p);
 
 typedef struct
 {
-  ISeqInStream s;
+  ISeqInStream   s;
   ILookInStream *realStream;
 } CSecToLook;
 
@@ -213,7 +213,7 @@ void SecToLook_CreateVTable(CSecToLook *p);
 
 typedef struct
 {
-  ISeqInStream s;
+  ISeqInStream   s;
   ILookInStream *realStream;
 } CSecToRead;
 
